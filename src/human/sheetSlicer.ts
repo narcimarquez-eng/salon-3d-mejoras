@@ -239,53 +239,84 @@ export async function sliceCompositeSheet(
     }
   }
 
-  const smoothCol = new Float32Array(sw);
-  for (let x = 0; x < sw; x++) {
-    let s = 0, n = 0;
-    for (let dx = -3; dx <= 3; dx++) {
-      const xx = x + dx;
-      if (xx >= 0 && xx < sw) {
-        s += colCounts[xx];
-        n++;
-      }
+  // Perfiles de tinta por columna: el de la union de las dos filas y el de cada fila por separado.
+  // Una fila puede tener un boceto suelto o una anotacion en el hueco entre dos vistas que las
+  // funde en una sola banda; la otra fila suele estar limpia y da el reparto bueno.
+  const colCountsRow0 = new Float32Array(sw);
+  const colCountsRow1 = new Float32Array(sw);
+  for (let y = 0; y < rowSh; y++) {
+    const y2 = hasTwoRows ? Math.min(sh - 1, y + splitYSmall) : y;
+    for (let x = 0; x < sw; x++) {
+      if (isFgPixel(x, y)) colCountsRow0[x]++;
+      if (hasTwoRows && isFgPixel(x, y2)) colCountsRow1[x]++;
     }
-    smoothCol[x] = s / n;
   }
+
+  const smoothProfile = (src: Float32Array): Float32Array => {
+    const out = new Float32Array(sw);
+    for (let x = 0; x < sw; x++) {
+      let acc = 0;
+      let n = 0;
+      for (let dx = -3; dx <= 3; dx++) {
+        const xx = x + dx;
+        if (xx >= 0 && xx < sw) {
+          acc += src[xx];
+          n++;
+        }
+      }
+      out[x] = acc / n;
+    }
+    return out;
+  };
+  const smoothCol = smoothProfile(colCounts);
 
   // Cuántas columnas (vistas) hay: se cuentan las bandas verticales con tinta separadas por
   // huecos de fondo, en vez de dar por hecho que siempre son 4. Así una hoja de 5 columnas
   // (frente, perfil izq, perfil der, espalda y CENITAL) se reparte sola.
-  let colMaxCount = 0;
-  for (let x = 0; x < sw; x++) if (smoothCol[x] > colMaxCount) colMaxCount = smoothCol[x];
-  const inkThreshold = Math.max(0.5, colMaxCount * 0.06);
-  const bands: Array<[number, number]> = [];
-  {
+  const mergeGap = Math.max(2, Math.round(sw * 0.012));
+  const minBandW = Math.max(4, Math.round(sw * 0.035));
+  const detectBands = (profile: Float32Array): Array<[number, number]> => {
+    let mx = 0;
+    for (let x = 0; x < sw; x++) if (profile[x] > mx) mx = profile[x];
+    const inkThreshold = Math.max(0.5, mx * 0.06);
+    const raw: Array<[number, number]> = [];
     let runStart = -1;
     for (let x = 0; x < sw; x++) {
-      const ink = smoothCol[x] > inkThreshold;
+      const ink = profile[x] > inkThreshold;
       if (ink && runStart < 0) runStart = x;
       if ((!ink || x === sw - 1) && runStart >= 0) {
-        bands.push([runStart, ink ? x : x - 1]);
+        raw.push([runStart, ink ? x : x - 1]);
         runStart = -1;
       }
     }
+    // Unir bandas separadas por un hueco mínimo (antialias, una pata suelta) y tirar las motas.
+    const merged: Array<[number, number]> = [];
+    for (const band of raw) {
+      const last = merged[merged.length - 1];
+      if (last && band[0] - last[1] <= mergeGap) last[1] = band[1];
+      else merged.push([band[0], band[1]]);
+    }
+    return merged.filter(([a, b]) => b - a + 1 >= minBandW);
+  };
+
+  // Se queda el reparto con MÁS vistas válidas: unión, fila de fotos o fila de mapas de capas.
+  const candidates: Array<[number, number]>[] = [detectBands(smoothCol)];
+  if (hasTwoRows) {
+    candidates.push(detectBands(smoothProfile(colCountsRow0)));
+    candidates.push(detectBands(smoothProfile(colCountsRow1)));
   }
-  // Unir bandas separadas por un hueco mínimo (antialias, una pata suelta) y tirar las motas.
-  const mergeGap = Math.max(2, Math.round(sw * 0.012));
-  const merged: Array<[number, number]> = [];
-  for (const band of bands) {
-    const last = merged[merged.length - 1];
-    if (last && band[0] - last[1] <= mergeGap) last[1] = band[1];
-    else merged.push([band[0], band[1]]);
+  let figureBands = candidates[0];
+  for (const cand of candidates) {
+    if (COLUMN_LAYOUTS[cand.length] && cand.length > (COLUMN_LAYOUTS[figureBands.length] ? figureBands.length : 0)) {
+      figureBands = cand;
+    }
   }
-  const minBandW = Math.max(4, Math.round(sw * 0.035));
-  const figureBands = merged.filter(([a, b]) => b - a + 1 >= minBandW);
 
   let nCols = figureBands.length;
   if (!COLUMN_LAYOUTS[nCols]) {
     // Sin bandas limpias: repartir en 4 columnas iguales (comportamiento histórico).
     nCols = 4;
-    figureBands.length = 0;
+    figureBands = [];
     for (let c = 0; c < 4; c++) {
       figureBands.push([Math.round((c * sw) / 4), Math.round(((c + 1) * sw) / 4) - 1]);
     }
@@ -317,6 +348,8 @@ export async function sliceCompositeSheet(
   const compId = new Int32Array(sw * rowSh).fill(-1);
   const figOwner = new Int8Array(sw * rowSh).fill(-1);
   const queue = new Int32Array(sw * rowSh);
+  const compArea: number[] = [];
+  const compCol: number[] = [];
   let nextComp = 0;
 
   for (let i0 = 0; i0 < sw * rowSh; i0++) {
@@ -361,10 +394,14 @@ export async function sliceCompositeSheet(
     // assign the entire connected component to the column of its center of mass!
     if (spanX < (sw * 1.76) / nCols) {
       const owner = colOfX(meanX);
+      compArea[cid] = qt;
+      compCol[cid] = owner;
       for (let k = 0; k < qt; k++) {
         figOwner[queue[k]] = owner;
       }
     } else {
+      compArea[cid] = qt;
+      compCol[cid] = -1;
       // Fallback if two figures touch: split at the vertical valley lines
       for (let k = 0; k < qt; k++) {
         const idx = queue[k];
@@ -393,6 +430,23 @@ export async function sliceCompositeSheet(
     }
   }
 
+  // Descartar los restos sueltos de cada columna: barras de escala, cotas, textos, firmas...
+  // Son componentes aparte y diminutos comparados con la figura, pero si se cuelan en el recorte
+  // acaban dentro de la silueta y el modelo sale con una repisa plana cruzándolo.
+  const discarded = new Uint8Array(nextComp);
+  {
+    const maxAreaPerCol = new Float64Array(nCols);
+    for (let cid = 0; cid < nextComp; cid++) {
+      const col = compCol[cid];
+      if (col >= 0 && compArea[cid] > maxAreaPerCol[col]) maxAreaPerCol[col] = compArea[cid];
+    }
+    for (let cid = 0; cid < nextComp; cid++) {
+      const col = compCol[cid];
+      if (col < 0) continue;
+      if (compArea[cid] < maxAreaPerCol[col] * 0.02) discarded[cid] = 1;
+    }
+  }
+
   // Compute horizontal bounding box [colMinX, colMaxX] for each figure in full resolution
   const colBounds: Array<[number, number]> = [];
   for (let col = 0; col < nCols; col++) {
@@ -403,7 +457,8 @@ export async function sliceCompositeSheet(
     let fMax = 0;
     for (let y = 0; y < rowSh; y++) {
       for (let x = 0; x < sw; x++) {
-        if (figOwner[y * sw + x] === col) {
+        const ci = compId[y * sw + x];
+        if (figOwner[y * sw + x] === col && !(ci >= 0 && discarded[ci])) {
           if (x < fMin) fMin = x;
           if (x > fMax) fMax = x;
           found = true;
@@ -491,7 +546,8 @@ export async function sliceCompositeSheet(
       for (let px = 0; px < cellW; px++) {
         const sx = Math.min(sw - 1, Math.floor(((x0 + px) / w) * sw));
         const owner = figOwner[syOff + sx];
-        if (owner >= 0 && owner !== col) {
+        const ci = compId[syOff + sx];
+        if ((owner >= 0 && owner !== col) || (ci >= 0 && discarded[ci])) {
           const o = (py * cellW + px) * 4;
           if (transparentBg) {
             d[o + 3] = 0;

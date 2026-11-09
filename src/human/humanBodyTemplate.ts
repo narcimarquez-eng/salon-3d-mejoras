@@ -3063,6 +3063,25 @@ function buildProfileDriven3DMoldGeometry(
     let maxWingSpan = refBodyHalf;
     let coreTop = fBot;
 
+    // ¿La tela pintada en esta vista se comporta como una membrana de ala, o es ropa?
+    // La clase `cloth` (azul) sirve para las dos cosas: la membrana de un ala desplegada, pero
+    // también una manta de silla, una gualdrapa, una capa o un tabardo. La diferencia es dónde
+    // está: un ala sale POR FUERA del cuerpo, y una tela encima del lomo no. Si en toda la vista
+    // no hay tela más allá del cuerpo, no hay alas que separar y la tela se queda como cuerpo
+    // (si no, la manta de la silla se extruye en una placa plana que atraviesa el modelo).
+    let maxClothDx = 0;
+    for (let y = fTop; y <= fBot; y++) {
+      for (let x = 0; x < w; x++) {
+        const i = y * w + x;
+        if (viewMask[i] !== 1) continue;
+        const off = layerOff ? layerOff[i] : NaN;
+        if (!isClothOff(off)) continue;
+        const dx = Math.abs(x - fAxisX);
+        if (dx > maxClothDx) maxClothDx = dx;
+      }
+    }
+    const clothIsWingLike = maxClothDx > refBodyHalf * 1.1;
+
     for (let y = fTop; y <= fBot; y++) {
       const uCoreY = (y - fCoreTopEst) / Math.max(1, HcoreEst - 1);
       const runs = rowRuns(viewMask, w, y);
@@ -3112,7 +3131,8 @@ function buildProfileDriven3DMoldGeometry(
           const fOff = inputs.frontLayer ? inputs.frontLayer.offset[i] : NaN;
           // Nota: en el mapa de capas trasero del dragón las alas están pintadas en verde (skin), mientras que en el frontal
           // las membranas de las alas están pintadas en azul (cloth = 0.35). Usamos ambos para identificar la membrana.
-          const isCloth = isClothOff(off) || (dx > refBodyHalf * 0.85 && isClothOff(fOff));
+          const isCloth =
+            clothIsWingLike && (isClothOff(off) || (dx > refBodyHalf * 0.85 && isClothOff(fOff)));
           const isCoreArmorOrSpike =
             dx <= maxCoreDx &&
             (isArmorOff(off) ||
