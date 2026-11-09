@@ -32,10 +32,18 @@ const classIndex = (id: string) => LAYER_CLASSES.findIndex((c) => c.id === id);
 /**
  * Index into LAYER_CLASSES, or -1 for "no change".
  * Classified by hue rather than exact colour, so any red counts as armour,
- * any bright green as skin, etc. (and JPEG noise does not matter):
- *   red → armour, yellow → fur/hair, bright green → skin, cyan → hollows,
- *   blue → cloth, magenta → spikes, dark green or mid grey → leather/straps.
+ * any green as skin, etc. (and JPEG noise does not matter):
+ *   red → armour, yellow → fur/hair, green → skin, cyan → hollows,
+ *   blue → cloth, magenta → spikes, brown, olive/muted green or mid grey →
+ *   leather/straps.
  * Light greys/whites (typical backgrounds) and black mean no change.
+ *
+ * Skin vs leather is decided by SATURATION, not by brightness: a clearly
+ * green green is skin however dark it is (a dark forest-green body painted
+ * (29,86,43) used to fall through to "leather" and lifted the whole creature
+ * +0.5 units), while a muted olive / khaki green is leather.
+ * Brown (orange hue + medium-dark value) is leather too, so saddles and straps
+ * are no longer read as armour plates.
  */
 export function classifyLayerColor(r: number, g: number, b: number): number {
   const mx = Math.max(r, g, b);
@@ -53,9 +61,12 @@ export function classifyLayerColor(r: number, g: number, b: number): number {
   else if (mx === g) hue = ((b - r) / d + 2) * 60;
   else hue = ((r - g) / d + 4) * 60;
   if (hue < 0) hue += 360;
+  // Brown = orange hue that is not bright (saddles, straps, leather barding).
+  if (hue >= 10 && hue < 50 && v < 0.62 && sat > 0.3) return classIndex('leather');
   if (hue < 25 || hue >= 335) return classIndex('armor');
   if (hue < 75) return sat > 0.35 ? classIndex('fur') : classIndex('leather');
-  if (hue < 165) return v > 0.45 && sat > 0.35 ? classIndex('skin') : classIndex('leather');
+  // Green: saturated green = skin / body at any brightness; washed-out olive = leather.
+  if (hue < 165) return sat > 0.45 && v > 0.22 ? classIndex('skin') : classIndex('leather');
   if (hue < 200) return classIndex('hollow');
   if (hue < 265) return classIndex('cloth');
   return classIndex('spikes');

@@ -49,6 +49,16 @@ export interface HumanBodyInputs {
   /** Relieve normalizado (0..1) de las vistas de perfil derecho e izquierdo. */
   sideRelief?: Float32Array | null;
   sideLeftRelief?: Float32Array | null;
+  /**
+   * Silueta de la VISTA SUPERIOR (cenital), en un tensor del mismo tamaño.
+   * Es el TERCER plano ortográfico: frente y perfil solo miden en función de la ALTURA
+   * (ancho(Y) y profundidad(Y)), así que en un cuadrúpedo toda la franja de altura de la
+   * barriga -hocico, pecho, cadera y cola- recibe el mismo ancho. La vista superior da
+   * ancho(Z): hocico estrecho, hombros anchos, separación real entre patas y cola fina.
+   */
+  topMask?: Uint8Array | null;
+  /** Mapa de capas pintado de la vista superior (opcional). */
+  topLayer?: { offset: Float32Array; soft: Uint8Array } | null;
   /** Marks which vertices are in use (the viewport reads it). */
   vertexUsedMask: Uint8Array;
   maxVertices: number;
@@ -143,6 +153,14 @@ export interface HumanBodyOptions {
   depthScale: number;
   /** How much of the photo relief is added on top (0..1). */
   reliefAmount: number;
+  /** Cuánto talla la vista superior el molde 3D (0 = ignorarla, 1 = casco visual completo). */
+  topStrength?: number;
+  /**
+   * Orientación de la vista superior a lo largo del eje del cuerpo:
+   * 'auto' la deduce correlacionando su perfil de anchura con el grosor del perfil lateral,
+   * 'head-first' / 'tail-first' la fuerzan (cabeza en el extremo inicial del eje largo o en el final).
+   */
+  topOrientation?: 'auto' | 'head-first' | 'tail-first';
   /** Mesh rows over the figure height. */
   rows: number;
   /** Also build a skeleton and skin weights (skinIndex / skinWeight attributes). */
@@ -3889,6 +3907,224 @@ function buildProfileDriven3DMoldGeometry(
         vol[(iy * nz + iz) * nx + ix] = vFinal;
       }
     }
+  }
+
+  // 4c) TERCER PLANO ORTOGRÁFICO: intersección del volumen con la VISTA SUPERIOR (`topMask`).
+  //
+  //     Frente y perfil miden AMBOS en función de la altura: el frente da ancho(Y) y el perfil
+  //     profundidad(Y). En un bípedo basta, porque cada franja de altura es una sola parte del
+  //     cuerpo (cabeza, hombros, cintura, piernas). En un cuadrúpedo se rompe: a la altura de la
+  //     barriga el perfil contiene hocico + cuello + torso + cadera + cola a la vez y el frente
+  //     solo aporta UN ancho para toda esa franja, así que el morro sale tan ancho como el pecho,
+  //     la cola tan gruesa como el torso y las cuatro patas se funden en una losa.
+  //
+  //     La vista superior aporta la dimensión que falta, ancho(Z): hocico estrecho -> cuello ->
+  //     hombros anchos -> cintura -> caderas -> cola que se afila, y la separación real entre la
+  //     pata izquierda y la derecha. Aquí se aplica como una INTERSECCIÓN pura (solo talla, nunca
+  //     añade volumen), que es justo la definición de casco visual de tres planos.
+  const topMaskIn = inputs.topMask ?? null;
+  const topStrength = Math.max(0, Math.min(1, options.topStrength ?? 1));
+  let topViewApplied = false;
+  if (topMaskIn && topStrength > 0.001) {
+    // a) Caja de la silueta cenital y eje largo (longitud del cuerpo) vs eje corto (anchura).
+    let tpX0 = w, tpX1 = -1, tpY0 = w, tpY1 = -1;
+    for (let y = 0; y < w; y++) {
+      for (let x = 0; x < w; x++) {
+        if (topMaskIn[y * w + x] === 1) {
+          if (x < tpX0) tpX0 = x;
+          if (x > tpX1) tpX1 = x;
+          if (y < tpY0) tpY0 = y;
+          if (y > tpY1) tpY1 = y;
+        }
+      }
+    }
+    const tpW = tpX1 - tpX0 + 1;
+    const tpH = tpY1 - tpY0 + 1;
+    if (tpX1 >= 0 && tpW >= 8 && tpH >= 8) {
+      const longHorizontal = tpW >= tpH;
+      const lenSpan = Math.max(8, longHorizontal ? tpW : tpH);
+      const lenStart = longHorizontal ? tpX0 : tpY0;
+
+      // b) Por cada corte perpendicular al eje largo: semianchura y centro de la silueta cenital.
+      //    Se toma el casco (mín..máx) del corte, no cada tramo suelto, para que el hueco entre las
+      //    dos patas de un mismo corte no talle el cuerpo que hay por encima.
+      const topHalf = new Float32Array(lenSpan);
+      const topCent = new Float32Array(lenSpan);
+      const topHas = new Uint8Array(lenSpan);
+      for (let u = 0; u < lenSpan; u++) {
+        const a = lenStart + u;
+        let lo = w, hi = -1;
+        if (longHorizontal) {
+          for (let y = tpY0; y <= tpY1; y++) {
+            if (topMaskIn[y * w + a] === 1) {
+              if (y < lo) lo = y;
+              if (y > hi) hi = y;
+            }
+          }
+        } else {
+          const row = a * w;
+          for (let x = tpX0; x <= tpX1; x++) {
+            if (topMaskIn[row + x] === 1) {
+              if (x < lo) lo = x;
+              if (x > hi) hi = x;
+            }
+          }
+        }
+        if (hi >= lo) {
+          topHalf[u] = 0.5 * (hi - lo + 1);
+          topCent[u] = 0.5 * (lo + hi);
+          topHas[u] = 1;
+        }
+      }
+      // Rellenar cortes vacíos (anti-aliasing, huecos del dibujo) con el vecino válido más cercano.
+      for (let u = 1; u < lenSpan; u++) {
+        if (!topHas[u] && topHas[u - 1]) {
+          topHalf[u] = topHalf[u - 1];
+          topCent[u] = topCent[u - 1];
+          topHas[u] = 1;
+        }
+      }
+      for (let u = lenSpan - 2; u >= 0; u--) {
+        if (!topHas[u] && topHas[u + 1]) {
+          topHalf[u] = topHalf[u + 1];
+          topCent[u] = topCent[u + 1];
+          topHas[u] = 1;
+        }
+      }
+      smooth1D(topHalf, 0, lenSpan - 1, 2);
+      smooth1D(topCent, 0, lenSpan - 1, 2);
+
+      // c) ¿Qué extremo del eje largo es la CABEZA? El perfil lateral ya sabe hacia dónde mira
+      //    (`facingRight`), y su grosor vertical a lo largo de Z es fino en el hocico, grueso en el
+      //    torso y muy fino en la cola. Se correlaciona ese perfil con la anchura cenital en los dos
+      //    sentidos y gana el que menos error cuadrático da. `topOrientation` permite forzarlo.
+      const BINS = 48;
+      const resample = (src: Float32Array, reversed: boolean): Float32Array => {
+        const out = new Float32Array(BINS);
+        for (let b = 0; b < BINS; b++) {
+          const t = b / (BINS - 1);
+          const idx = (reversed ? 1 - t : t) * (src.length - 1);
+          const i0 = Math.max(0, Math.min(src.length - 1, Math.floor(idx)));
+          const i1 = Math.max(0, Math.min(src.length - 1, i0 + 1));
+          out[b] = lerp(src[i0], src[i1], idx - i0);
+        }
+        let mx = 0;
+        for (let b = 0; b < BINS; b++) if (out[b] > mx) mx = out[b];
+        if (mx > 1e-5) for (let b = 0; b < BINS; b++) out[b] /= mx;
+        return out;
+      };
+
+      // Grosor vertical del perfil lateral por columna, ya normalizado a "0 = cola, 1 = cabeza".
+      const sideThick = new Float32Array(BINS);
+      {
+        const span = Math.max(1, sGlobalMaxX - sGlobalMinX);
+        for (let sx = sGlobalMinX; sx <= sGlobalMaxX; sx++) {
+          let yA = -1;
+          let yB = -1;
+          for (let sy = sTop; sy <= sBot; sy++) {
+            if (sMaskPrimary[sy * w + sx] === 1) {
+              if (yA < 0) yA = sy;
+              yB = sy;
+            }
+          }
+          if (yA < 0) continue;
+          const tHead = facingRight ? (sx - sGlobalMinX) / span : (sGlobalMaxX - sx) / span;
+          const b = Math.max(0, Math.min(BINS - 1, Math.round(tHead * (BINS - 1))));
+          const th = yB - yA + 1;
+          if (th > sideThick[b]) sideThick[b] = th;
+        }
+        for (let b = 1; b < BINS; b++) if (sideThick[b] === 0) sideThick[b] = sideThick[b - 1];
+        for (let b = BINS - 2; b >= 0; b--) if (sideThick[b] === 0) sideThick[b] = sideThick[b + 1];
+        let mx = 0;
+        for (let b = 0; b < BINS; b++) if (sideThick[b] > mx) mx = sideThick[b];
+        if (mx > 1e-5) for (let b = 0; b < BINS; b++) sideThick[b] /= mx;
+      }
+
+      // El error se pondera hacia los extremos (`|2t-1|`): el centro del cuerpo es parecido mire
+      // hacia donde mire, y lo que distingue cabeza de cola está justo en las puntas.
+      const ssd = (a: Float32Array, b: Float32Array): number => {
+        let acc = 0;
+        for (let i = 0; i < BINS; i++) {
+          const t = i / (BINS - 1);
+          const wgt = Math.pow(Math.abs(2 * t - 1), 1.5);
+          const d = a[i] - b[i];
+          acc += wgt * d * d;
+        }
+        return acc;
+      };
+      // headAtEnd = true -> la cabeza está en el extremo FINAL del eje largo (x máx / y máx).
+      const errHeadAtEnd = ssd(resample(topHalf, false), sideThick);
+      const errHeadAtStart = ssd(resample(topHalf, true), sideThick);
+
+      // Señal principal: la punta de la cola es más fina que el hocico, casi sin excepción.
+      // Solo se usa cuando la diferencia entre las dos puntas es clara; si no, decide el error.
+      const tipMean = (fromEnd: boolean): number => {
+        const n = Math.max(2, Math.round(lenSpan * 0.06));
+        let acc = 0;
+        for (let k = 0; k < n; k++) acc += topHalf[fromEnd ? lenSpan - 1 - k : k];
+        return acc / n;
+      };
+      const tipStart = tipMean(false);
+      const tipEnd = tipMean(true);
+      const tipRatio = Math.max(tipStart, tipEnd) / Math.max(1e-3, Math.min(tipStart, tipEnd));
+
+      const orientation = options.topOrientation ?? 'auto';
+      const headAtEnd =
+        orientation === 'head-first'
+          ? false
+          : orientation === 'tail-first'
+          ? true
+          : tipRatio > 1.5
+          ? tipEnd > tipStart
+          : errHeadAtEnd <= errHeadAtStart;
+
+      // d) Escala. La vista superior y el perfil miden la MISMA longitud de cuerpo (hocico->cola),
+      //    así que la escala sale de la longitud y se respeta la proporción con la que está dibujada.
+      //    Si aun así la anchura resultante se desvía más de un tercio de la del frente, se recalibra
+      //    (dibujo mal proporcionado) en vez de deformar todo el bicho.
+      const zSpan = Math.max(4, zMaxRaw - zMinRaw);
+      let xScale = zSpan / lenSpan;
+      let topHalfMax = 0;
+      for (let u = 0; u < lenSpan; u++) if (topHalf[u] > topHalfMax) topHalfMax = topHalf[u];
+      const frontHalfMax = Math.max(4, Math.max(fAxisX - fMinX, fMaxX - fAxisX));
+      const widthRatio = (topHalfMax * xScale) / frontHalfMax;
+      if (widthRatio > 1e-3 && (widthRatio < 0.75 || widthRatio > 1.33)) {
+        xScale *= 1 / widthRatio;
+      }
+
+      // e) Tallado: por cada vóxel, su Z dice en qué corte cenital cae y ese corte limita su X.
+      const kSmooth = Math.max(1.0, stepX * 1.35);
+      const minHalfTex = Math.max(1.1, stepX * 0.75);
+      for (let iz = 1; iz < nz - 1; iz++) {
+        const zTex = z0Tex + iz * stepZ;
+        // zMaxRaw = cabeza (el perfil siempre deja la cabeza en +Z), zMinRaw = cola.
+        const tHead = Math.max(0, Math.min(1, (zTex - zMinRaw) / zSpan));
+        const uf = (headAtEnd ? tHead : 1 - tHead) * (lenSpan - 1);
+        const u0 = Math.max(0, Math.min(lenSpan - 1, Math.floor(uf)));
+        const u1 = Math.max(0, Math.min(lenSpan - 1, u0 + 1));
+        const ut = uf - u0;
+        const halfTex = Math.max(minHalfTex, lerp(topHalf[u0], topHalf[u1], ut) * xScale);
+        const centTop = lerp(topCent[u0], topCent[u1], ut);
+        const centTex = fAxisX + (centTop - 0.5 * (longHorizontal ? tpY0 + tpY1 : tpX0 + tpX1)) * xScale;
+        for (let ix = 1; ix < nx - 1; ix++) {
+          const tx = x0Tex + ix * stepX;
+          const dC = halfTex - Math.abs(tx - centTex);
+          for (let iy = 1; iy < ny - 1; iy++) {
+            const vi = (iy * nz + iz) * nx + ix;
+            const cur = vol[vi];
+            if (cur <= dC - kSmooth) continue; // el frente/perfil ya corta más que la cenital
+            // Mínimo suave (intersección redondeada) y mezcla según `topStrength`.
+            const h = Math.max(0, Math.min(1, 0.5 + (0.5 * (cur - dC)) / kSmooth));
+            const inter = lerp(cur, dC, h) - kSmooth * h * (1 - h);
+            vol[vi] = lerp(cur, inter, topStrength);
+          }
+        }
+      }
+      topViewApplied = true;
+    }
+  }
+  if (topMaskIn && !topViewApplied) {
+    // La vista superior venía vacía o demasiado pequeña: se construye solo con frente y perfil.
   }
 
   // 5) Mantener la componente conexa principal y cualquier pieza sustancial (>= 150 vóxeles)

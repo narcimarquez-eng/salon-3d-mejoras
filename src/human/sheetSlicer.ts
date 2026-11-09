@@ -4,6 +4,53 @@ export interface SlicedSheetResult {
   images: Record<SlotId, HTMLImageElement | null>;
   names: Record<SlotId, string | null>;
   isAllInOne: boolean;
+  /** Número de vistas (columnas) encontradas en la hoja: 2, 3, 4 o 5. */
+  columns: number;
+}
+
+/** Orden de las columnas de la hoja según cuántas vistas tenga. */
+const COLUMN_LAYOUTS: Record<number, SlotId[]> = {
+  2: ['front', 'back'],
+  3: ['front', 'side', 'back'],
+  4: ['front', 'sideLeft', 'side', 'back'],
+  // 5 columnas: la quinta es la VISTA SUPERIOR (cenital), el tercer plano ortográfico.
+  5: ['front', 'sideLeft', 'side', 'back', 'top'],
+};
+
+const LAYER_OF: Partial<Record<SlotId, SlotId>> = {
+  front: 'frontLayer',
+  back: 'backLayer',
+  side: 'sideLayer',
+  sideLeft: 'sideLeftLayer',
+  top: 'topLayer',
+};
+
+const SLOT_FILE_SUFFIX: Partial<Record<SlotId, string>> = {
+  front: 'frente',
+  back: 'espalda',
+  side: 'perfil_der',
+  sideLeft: 'perfil_izq',
+  top: 'cenital',
+  frontLayer: 'capas_frente',
+  backLayer: 'capas_espalda',
+  sideLayer: 'capas_perfil_der',
+  sideLeftLayer: 'capas_perfil_izq',
+  topLayer: 'capas_cenital',
+};
+
+function emptySlots<T>(): Record<SlotId, T | null> {
+  return {
+    front: null,
+    back: null,
+    side: null,
+    sideLeft: null,
+    top: null,
+    frontLayer: null,
+    backLayer: null,
+    sideLayer: null,
+    sideLeftLayer: null,
+    topLayer: null,
+  };
 }
 
 /**
@@ -64,29 +111,11 @@ export async function sliceCompositeSheet(
 
   // If the image is roughly square or tall (single portrait / front-only photo)
   if (ratio < 1.15) {
-    return {
-      images: {
-        front: sheetImg,
-        back: null,
-        side: null,
-        sideLeft: null,
-        frontLayer: null,
-        backLayer: null,
-        sideLayer: null,
-        sideLeftLayer: null,
-      },
-      names: {
-        front: fileName,
-        back: null,
-        side: null,
-        sideLeft: null,
-        frontLayer: null,
-        backLayer: null,
-        sideLayer: null,
-        sideLeftLayer: null,
-      },
-      isAllInOne: false,
-    };
+    const images = emptySlots<HTMLImageElement>();
+    const names = emptySlots<string>();
+    images.front = sheetImg;
+    names.front = fileName;
+    return { images, names, isAllInOne: false, columns: 1 };
   }
 
   // Analysis resolution for connected-component figure isolation
@@ -143,35 +172,56 @@ export async function sliceCompositeSheet(
     return dr * dr + dg * dg + db * db > 28 * 28;
   };
 
-  // 2. Determine if the sheet has 2 rows (Row 0: views, Row 1: layer maps)
-  const hasTwoRows = ratio > 1.22 && ratio < 2.25;
-  let splitYSmall = hasTwoRows ? Math.round(sh * 0.5) : sh;
+  // 2. ¿La hoja tiene 2 filas (fila de vistas + fila de mapas de capas)?
+  //    No se decide por la proporción de la imagen -eso solo valía para hojas de 4 columnas-,
+  //    sino buscando una franja horizontal realmente vacía a media altura. Así funciona igual
+  //    con 2, 3, 4 o 5 columnas, cuyas proporciones no tienen nada que ver entre sí.
+  const rowCounts = new Float32Array(sh);
+  for (let y = 0; y < sh; y++) {
+    let c = 0;
+    for (let x = 0; x < sw; x++) {
+      if (isFgPixel(x, y)) c++;
+    }
+    rowCounts[y] = c;
+  }
+  const smoothRow = new Float32Array(sh);
+  for (let y = 0; y < sh; y++) {
+    let acc = 0;
+    let n = 0;
+    for (let dy = -2; dy <= 2; dy++) {
+      const yy = y + dy;
+      if (yy >= 0 && yy < sh) {
+        acc += rowCounts[yy];
+        n++;
+      }
+    }
+    smoothRow[y] = acc / n;
+  }
+  let rowMaxCount = 0;
+  for (let y = 0; y < sh; y++) if (smoothRow[y] > rowMaxCount) rowMaxCount = smoothRow[y];
+
+  const midY0 = Math.round(sh * 0.38);
+  const midY1 = Math.round(sh * 0.62);
+  let midMin = Infinity;
+  for (let y = midY0; y <= midY1; y++) if (smoothRow[y] < midMin) midMin = smoothRow[y];
+  // Ambas mitades deben tener figuras de verdad, y la franja central estar prácticamente vacía.
+  let topHalfInk = 0;
+  let botHalfInk = 0;
+  for (let y = 0; y < sh; y++) {
+    if (y < sh * 0.5) topHalfInk += rowCounts[y];
+    else botHalfInk += rowCounts[y];
+  }
+  const hasTwoRows =
+    ratio > 1.15 &&
+    rowMaxCount > 0 &&
+    midMin < rowMaxCount * 0.07 &&
+    topHalfInk > 0 &&
+    botHalfInk > 0 &&
+    Math.min(topHalfInk, botHalfInk) / Math.max(topHalfInk, botHalfInk) > 0.25;
+
+  let splitYSmall = sh;
   if (hasTwoRows) {
-    const rowCounts = new Float32Array(sh);
-    for (let y = 0; y < sh; y++) {
-      let c = 0;
-      for (let x = 0; x < sw; x++) {
-        if (isFgPixel(x, y)) c++;
-      }
-      rowCounts[y] = c;
-    }
-    const smoothRow = new Float32Array(sh);
-    for (let y = 0; y < sh; y++) {
-      let s = 0, n = 0;
-      for (let dy = -2; dy <= 2; dy++) {
-        const yy = y + dy;
-        if (yy >= 0 && yy < sh) {
-          s += rowCounts[yy];
-          n++;
-        }
-      }
-      smoothRow[y] = s / n;
-    }
-    splitYSmall = findBestValley(
-      smoothRow,
-      Math.round(sh * 0.41),
-      Math.round(sh * 0.59)
-    );
+    splitYSmall = findBestValley(smoothRow, Math.round(sh * 0.41), Math.round(sh * 0.59));
   }
 
   const rowSh = hasTwoRows ? splitYSmall : sh;
@@ -202,17 +252,63 @@ export async function sliceCompositeSheet(
     smoothCol[x] = s / n;
   }
 
-  // Find the 3 vertical valleys separating the 4 columns
-  const split1 = findBestValley(smoothCol, Math.round(sw * 0.13), Math.round(sw * 0.33));
-  const split2 = findBestValley(smoothCol, Math.round(sw * 0.40), Math.round(sw * 0.60));
-  const split3 = findBestValley(smoothCol, Math.round(sw * 0.67), Math.round(sw * 0.87));
-  const splits = [0, split1, split2, split3, sw];
+  // Cuántas columnas (vistas) hay: se cuentan las bandas verticales con tinta separadas por
+  // huecos de fondo, en vez de dar por hecho que siempre son 4. Así una hoja de 5 columnas
+  // (frente, perfil izq, perfil der, espalda y CENITAL) se reparte sola.
+  let colMaxCount = 0;
+  for (let x = 0; x < sw; x++) if (smoothCol[x] > colMaxCount) colMaxCount = smoothCol[x];
+  const inkThreshold = Math.max(0.5, colMaxCount * 0.06);
+  const bands: Array<[number, number]> = [];
+  {
+    let runStart = -1;
+    for (let x = 0; x < sw; x++) {
+      const ink = smoothCol[x] > inkThreshold;
+      if (ink && runStart < 0) runStart = x;
+      if ((!ink || x === sw - 1) && runStart >= 0) {
+        bands.push([runStart, ink ? x : x - 1]);
+        runStart = -1;
+      }
+    }
+  }
+  // Unir bandas separadas por un hueco mínimo (antialias, una pata suelta) y tirar las motas.
+  const mergeGap = Math.max(2, Math.round(sw * 0.012));
+  const merged: Array<[number, number]> = [];
+  for (const band of bands) {
+    const last = merged[merged.length - 1];
+    if (last && band[0] - last[1] <= mergeGap) last[1] = band[1];
+    else merged.push([band[0], band[1]]);
+  }
+  const minBandW = Math.max(4, Math.round(sw * 0.035));
+  const figureBands = merged.filter(([a, b]) => b - a + 1 >= minBandW);
+
+  let nCols = figureBands.length;
+  if (!COLUMN_LAYOUTS[nCols]) {
+    // Sin bandas limpias: repartir en 4 columnas iguales (comportamiento histórico).
+    nCols = 4;
+    figureBands.length = 0;
+    for (let c = 0; c < 4; c++) {
+      figureBands.push([Math.round((c * sw) / 4), Math.round(((c + 1) * sw) / 4) - 1]);
+    }
+  }
+
+  // Cortes verticales: el punto medio del hueco entre dos bandas consecutivas.
+  const splits: number[] = [0];
+  for (let c = 0; c + 1 < nCols; c++) {
+    const gapA = figureBands[c][1];
+    const gapB = figureBands[c + 1][0];
+    splits.push(
+      gapB - gapA > 2
+        ? findBestValley(smoothCol, gapA, gapB)
+        : Math.round(0.5 * (gapA + gapB))
+    );
+  }
+  splits.push(sw);
 
   const colOfX = (x: number): number => {
-    if (x < split1) return 0;
-    if (x < split2) return 1;
-    if (x < split3) return 2;
-    return 3;
+    for (let c = nCols - 1; c >= 1; c--) {
+      if (x >= splits[c]) return c;
+    }
+    return 0;
   };
 
   // 4. Connected-Component Figure Isolation:
@@ -261,9 +357,9 @@ export async function sliceCompositeSheet(
 
     const spanX = maxX - minX + 1;
     const meanX = sumX / qt;
-    // If this component is a single figure (doesn't bridge two figures across >44% of the sheet),
+    // If this component is a single figure (doesn't bridge two figures across ~1.8 column widths),
     // assign the entire connected component to the column of its center of mass!
-    if (spanX < sw * 0.44) {
+    if (spanX < (sw * 1.76) / nCols) {
       const owner = colOfX(meanX);
       for (let k = 0; k < qt; k++) {
         figOwner[queue[k]] = owner;
@@ -297,9 +393,9 @@ export async function sliceCompositeSheet(
     }
   }
 
-  // Compute horizontal bounding box [colMinX, colMaxX] for each of the 4 figures in full resolution
+  // Compute horizontal bounding box [colMinX, colMaxX] for each figure in full resolution
   const colBounds: Array<[number, number]> = [];
-  for (let col = 0; col < 4; col++) {
+  for (let col = 0; col < nCols; col++) {
     let minX = splits[col];
     let maxX = splits[col + 1] - 1;
     let found = false;
@@ -413,52 +509,28 @@ export async function sliceCompositeSheet(
     return imgFromDataUrl(cellCanvas.toDataURL('image/png'));
   };
 
-  // Col 0: Front, Col 1: Profile facing right (left flank), Col 2: Profile facing left (right flank), Col 3: Back
-  // The original photo (photoRow) strictly populates front, sideLeft, side, and back
-  const [front, sideLeft, side, back] = await Promise.all([
-    cropCell(0, photoRow),
-    cropCell(1, photoRow),
-    cropCell(2, photoRow),
-    cropCell(3, photoRow),
-  ]);
-
-  let frontLayer: HTMLImageElement | null = null;
-  let sideLeftLayer: HTMLImageElement | null = null;
-  let sideLayer: HTMLImageElement | null = null;
-  let backLayer: HTMLImageElement | null = null;
-
-  if (hasTwoRows && layerRow >= 0) {
-    [frontLayer, sideLeftLayer, sideLayer, backLayer] = await Promise.all([
-      cropCell(0, layerRow),
-      cropCell(1, layerRow),
-      cropCell(2, layerRow),
-      cropCell(3, layerRow),
-    ]);
-  }
-
+  // Reparto de columnas segun COLUMN_LAYOUTS. Con 5 columnas la ultima es la VISTA SUPERIOR.
+  // La fila de fotos (`photoRow`) llena los huecos de foto y la otra los de mapa de capas.
+  const layout = COLUMN_LAYOUTS[nCols];
+  const images = emptySlots<HTMLImageElement>();
+  const names = emptySlots<string>();
   const basePrefix = fileName.replace(/\.[^/.]+$/, '');
 
-  return {
-    images: {
-      front,
-      side,
-      sideLeft,
-      back,
-      frontLayer,
-      sideLayer,
-      sideLeftLayer,
-      backLayer,
-    },
-    names: {
-      front: `${basePrefix}_frente.png`,
-      side: `${basePrefix}_perfil_der.png`,
-      sideLeft: `${basePrefix}_perfil_izq.png`,
-      back: `${basePrefix}_espalda.png`,
-      frontLayer: frontLayer ? `${basePrefix}_capas_frente.png` : null,
-      sideLayer: sideLayer ? `${basePrefix}_capas_perfil_der.png` : null,
-      sideLeftLayer: sideLeftLayer ? `${basePrefix}_capas_perfil_izq.png` : null,
-      backLayer: backLayer ? `${basePrefix}_capas_espalda.png` : null,
-    },
-    isAllInOne: true,
-  };
+  const photoCells = await Promise.all(layout.map((_, col) => cropCell(col, photoRow)));
+  layout.forEach((slot, col) => {
+    images[slot] = photoCells[col];
+    names[slot] = `${basePrefix}_${SLOT_FILE_SUFFIX[slot] ?? slot}.png`;
+  });
+
+  if (hasTwoRows && layerRow >= 0) {
+    const layerCells = await Promise.all(layout.map((_, col) => cropCell(col, layerRow)));
+    layout.forEach((slot, col) => {
+      const layerSlot = LAYER_OF[slot];
+      if (!layerSlot) return;
+      images[layerSlot] = layerCells[col];
+      names[layerSlot] = `${basePrefix}_${SLOT_FILE_SUFFIX[layerSlot] ?? layerSlot}.png`;
+    });
+  }
+
+  return { images, names, isAllInOne: true, columns: nCols };
 }

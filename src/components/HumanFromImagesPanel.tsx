@@ -110,7 +110,9 @@ export type SlotId =
   | 'frontLayer'
   | 'backLayer'
   | 'sideLayer'
-  | 'sideLeftLayer';
+  | 'sideLeftLayer'
+  | 'top'
+  | 'topLayer';
 
 interface Slot {
   id: SlotId;
@@ -127,6 +129,8 @@ const SLOTS: Slot[] = [
   { id: 'backLayer', label: 'Mapa de capas (espalda)', hint: 'Opcional. Igual, sobre la foto de espalda.' },
   { id: 'sideLayer', label: 'Mapa de capas (perfil)', hint: 'Opcional. Afina la silueta del frente y atrás en el perfil.' },
   { id: 'sideLeftLayer', label: 'Mapa de capas (2.º perfil)', hint: 'Opcional. Afina el segundo perfil en hojas de 4 columnas.' },
+  { id: 'top', label: 'Foto cenital (vista superior)', hint: 'Opcional (5.ª columna de la hoja). Tercer plano: da el ancho a lo largo del cuerpo (hocico, hombros, caderas, cola) en vez de deducirlo por altura. Clave en cuadrúpedos y dragones.' },
+  { id: 'topLayer', label: 'Mapa de capas (cenital)', hint: 'Opcional. Afina la silueta de la vista superior.' },
 ];
 
 const TERMINAL_BONES = new Set(['Head', 'RightHand', 'LeftHand', 'RightFoot', 'LeftFoot']);
@@ -136,6 +140,7 @@ const PAIRED_LAYER_SLOT: Partial<Record<SlotId, SlotId>> = {
   back: 'backLayer',
   side: 'sideLayer',
   sideLeft: 'sideLeftLayer',
+  top: 'topLayer',
 };
 
 interface CutoutPreviewData {
@@ -247,6 +252,8 @@ export default function HumanFromImagesPanel({
     backLayer: null,
     sideLayer: null,
     sideLeftLayer: null,
+    top: null,
+    topLayer: null,
   });
   const [names, setNames] = useState<Record<SlotId, string | null>>({
     front: null,
@@ -257,6 +264,8 @@ export default function HumanFromImagesPanel({
     backLayer: null,
     sideLayer: null,
     sideLeftLayer: null,
+    top: null,
+    topLayer: null,
   });
   const [options, setOptions] = useState<HumanBuildOptions>(() => loadSavedDefaultHumanOptions());
   const [hasCustomDefault, setHasCustomDefault] = useState<boolean>(() =>
@@ -290,6 +299,8 @@ export default function HumanFromImagesPanel({
     backLayer: null,
     sideLayer: null,
     sideLeftLayer: null,
+    top: null,
+    topLayer: null,
   });
   const allInOneInputRef = useRef<HTMLInputElement | null>(null);
   const freeformInputRef = useRef<HTMLInputElement | null>(null);
@@ -312,6 +323,8 @@ export default function HumanFromImagesPanel({
           backLayer: images.backLayer,
           sideLayer: images.sideLayer,
           sideLeftLayer: images.sideLeftLayer,
+          top: images.top,
+          topLayer: images.topLayer,
         },
         {
           ...nextOpts,
@@ -659,6 +672,8 @@ export default function HumanFromImagesPanel({
           backLayer: null,
           sideLayer: null,
           sideLeftLayer: null,
+          top: null,
+          topLayer: null,
         };
         setImages(nextImages);
         setNames({
@@ -670,6 +685,8 @@ export default function HumanFromImagesPanel({
           backLayer: null,
           sideLayer: null,
           sideLeftLayer: null,
+          top: null,
+          topLayer: null,
         });
         onBuild({ front: img }, baseOpts);
       }
@@ -708,6 +725,8 @@ export default function HumanFromImagesPanel({
             backLayer: nextImages.backLayer,
             sideLayer: nextImages.sideLayer,
             sideLeftLayer: nextImages.sideLeftLayer,
+            top: nextImages.top,
+            topLayer: nextImages.topLayer,
           },
           { ...options, customRig: currentRig ?? options.customRig ?? null }
         );
@@ -2035,6 +2054,57 @@ export default function HumanFromImagesPanel({
           'Fuerza del mapa de normales sacado de la foto. 1,5 es el valor de Vortex3D.')}
         {slider('Importancia del perfil (Gradual)', 'sideStrength', 0, 1, 0.01, (v) => `${Math.round(v * 100)}%`,
           'Importancia gradual del perfil en el Plano ZY (0% a 100%, continuo sin saltos bruscos).')}
+        {images.top && slider('Importancia de la cenital', 'topStrength', 0, 1, 0.01, (v) => `${Math.round(v * 100)}%`,
+          'Cuánto talla la vista superior el molde (Plano XZ). Es la que da el ancho a lo largo del cuerpo: hocico estrecho, hombros anchos, cola fina. 0% la ignora.')}
+        {slider('Recorte del contorno', 'outlineTrimPx', -1, 3, 1,
+          (v) => (v < 0 ? 'Automático' : v === 0 ? 'Desactivado' : `${v} px`),
+          'La línea negra del dibujo forma parte del recorte y engorda la silueta en las cuatro vistas. Automático mide el grosor real del borde oscuro y recorta la mitad, respetando colas, cuernos y dedos.')}
+        {images.side && images.sideLeft && (
+          <label
+            className="flex items-center gap-1.5 text-[10px] text-slate-400 cursor-pointer"
+            title="Perfil derecho e izquierdo son la misma silueta vista desde ±X: promediarlos corrige la asimetría de la pose."
+          >
+            <input
+              type="checkbox"
+              checked={options.mergeProfiles !== false}
+              onChange={(e) => {
+                const next = { ...options, mergeProfiles: e.target.checked };
+                setOptions(next);
+                triggerBuildIfReady(next);
+              }}
+              className="accent-amber-400 cursor-pointer"
+            />
+            Promediar los dos perfiles
+          </label>
+        )}
+        {images.top && (
+          <div title="Hacia qué lado mira la cabeza en la vista cenital. 'Automático' lo deduce comparando su anchura con el grosor del perfil lateral.">
+            <div className="text-[10px] text-slate-400 mb-0.5">Cabeza en la cenital</div>
+            <div className="flex gap-1">
+              {([
+                ['auto', 'Automático'],
+                ['head-first', 'Al principio'],
+                ['tail-first', 'Al final'],
+              ] as Array<[HumanBuildOptions['topOrientation'], string]>).map(([v, lbl]) => (
+                <button
+                  key={v}
+                  onClick={() => {
+                    const next = { ...options, topOrientation: v };
+                    setOptions(next);
+                    triggerBuildIfReady(next);
+                  }}
+                  className={`flex-1 px-1.5 py-0.5 rounded text-[10px] transition-colors ${
+                    (options.topOrientation ?? 'auto') === v
+                      ? 'bg-amber-400 text-slate-950 font-semibold'
+                      : 'bg-slate-800 text-slate-400 hover:bg-slate-700'
+                  }`}
+                >
+                  {lbl}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
@@ -2798,6 +2868,8 @@ export default function HumanFromImagesPanel({
               backLayer: images.backLayer,
               sideLayer: images.sideLayer,
               sideLeftLayer: images.sideLeftLayer,
+              top: images.top,
+              topLayer: images.topLayer,
             },
             options
           );

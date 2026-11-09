@@ -122,20 +122,38 @@ humano cerrado con profundidad por partes, le busca la cara, le pone botas, un e
   que es lo que mide el dibujo (0,32). Da igual el perfil izquierdo o el derecho: solo se mide
   su anchura. Píntale también su mapa de capas: el pelo y los pinchos se descuentan de la
   medida (si no, una melena hace que la cabeza salga como una pelota).
+- **Para una criatura horizontal (cuadrúpedo, dragón, montura) dale la VISTA SUPERIOR.**
+  Frente y perfil miden los dos en función de la altura: el frente da ancho(Y) y el perfil
+  profundidad(Y). En un bípedo basta, porque cada franja de altura es una sola parte del
+  cuerpo. En un cuadrúpedo no: a la altura de la barriga el perfil contiene hocico, pecho,
+  cadera y cola a la vez, y el frente solo aporta **un** ancho para toda esa franja, así que
+  el morro sale tan ancho como el pecho y la cola tan gruesa como el torso. La vista cenital
+  es el tercer plano y da ancho(Z): hocico estrecho, hombros anchos, caderas, cola que se
+  afila y la separación real entre las patas.
+- **Formato de hoja**: la app detecta sola 2, 3, 4 o 5 columnas y si hay una segunda fila con
+  los mapas de capas. Con 5 columnas el orden es **frente, perfil izquierdo (mirando a la
+  derecha), perfil derecho (mirando a la izquierda), espalda y cenital**. Deja un hueco de
+  fondo liso entre columnas y entre las dos filas: los cortes se buscan ahí.
+- **Colores del mapa de capas** (`src/human/layerMap.ts`): planos y saturados, **sin contorno
+  negro y sin sombreado** — el negro y los grises claros significan "no tocar", así que una
+  línea de tinta alrededor de cada placa deja sus bordes sin clasificar. Verde = piel/cuerpo,
+  rojo = armadura, azul = tela, amarillo = pelo, magenta = pinchos, cian = huecos, marrón o
+  gris medio = cuero/correas.
 - Código en `src/human/`: `imagePrep.ts` (recorte, silueta, relieve, atlas),
   `humanBodyTemplate.ts` y `humanRig.ts` (copiados de Vortex3D, no los cambies sin mirar
-  allí), `buildHuman.ts` (orquesta y monta el material) y `exportHuman.ts` (exporta el .glb
-  conservando esqueleto, animaciones y mapas).
+  allí), `buildHuman.ts` (orquesta y monta el material), `sheetSlicer.ts` (parte la hoja),
+  `maskRefine.ts` (recorte del contorno de tinta y promediado de los dos perfiles) y
+  `exportHuman.ts` (exporta el .glb conservando esqueleto, animaciones y mapas).
 - El personaje se monta con su material PBR de foto y la app cambia sola a "📐 PBR Base" con
   el suavizado de normales a 0. Lleva `userData.photoHuman`, que hace que las texturas de
   procedimiento, el contorno de tinta y el suavizado de normales lo dejen en paz.
 - **Para el .glb usa el botón del propio panel.** El exportador general reconstruye cada
   malla y dejaría al personaje sin esqueleto.
-- Si las fotos vienen en **una hoja de varios paneles**, sepáralas antes con los scripts de la
-  skill `personaje-3d-desde-imagenes` del repo 3d-con-imagenes: `split_sheet.py` para una fila
-  de cuatro, `separar_hoja8.py` para dos filas de cuatro (natural arriba, codificada abajo), y
-  después `limpiar_paneles.py`, que quita los restos del panel vecino; si no, el modelo sale
-  con una repisa plana atravesándolo.
+- Si las fotos vienen en **una hoja de varios paneles**, el panel la parte solo (arrastra la
+  hoja entera): aísla cada figura por componentes conexas, así que una cola o un ala que cruce
+  la línea de corte no se trocea. Los scripts de la skill `personaje-3d-desde-imagenes` del
+  repo 3d-con-imagenes (`split_sheet.py`, `separar_hoja8.py`, `limpiar_paneles.py`) siguen
+  valiendo para partirla a mano.
 - Ejemplos: `humano/orco/` (cuatro paneles, sin perfil) y `humano/orco_perfil/` (ocho paneles,
   con perfil: es el bueno).
 - Prueba de punta a punta (con el servidor en marcha):

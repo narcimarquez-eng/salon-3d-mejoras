@@ -50,6 +50,13 @@ import {
 } from './humanWeapons';
 import { LAYER_CLASSES } from './layerMap';
 import {
+  averageSilhouettes,
+  estimateOutlineThickness,
+  maskIoU,
+  mirrorMaskX,
+  trimOutline,
+} from './maskRefine';
+import {
   ATLAS,
   DEFAULT_CUTOUT,
   DEFAULT_PHOTO_TRANSFORM,
@@ -102,10 +109,13 @@ export interface HumanImageSet {
   side?: HTMLImageElement | null;
   /** Segunda vista de perfil (perfil izquierdo en hojas de 4 columnas). */
   sideLeft?: HTMLImageElement | null;
+  /** Vista superior (cenital): tercer plano ortográfico, da el ancho a lo largo del cuerpo. */
+  top?: HTMLImageElement | null;
   frontLayer?: HTMLImageElement | null;
   backLayer?: HTMLImageElement | null;
   sideLayer?: HTMLImageElement | null;
   sideLeftLayer?: HTMLImageElement | null;
+  topLayer?: HTMLImageElement | null;
 }
 
 export interface HumanBuildOptions {
@@ -113,6 +123,17 @@ export interface HumanBuildOptions {
   depthScale: number;
   /** Cuánto relieve de la foto se añade encima (0..1). */
   reliefAmount: number;
+  /** Cuánto talla la vista superior el molde 3D (0 = ignorarla, 1 = casco visual completo). */
+  topStrength: number;
+  /**
+   * Píxeles de línea de contorno que se recortan de cada silueta.
+   * -1 = automático (mide el grosor del borde oscuro del dibujo), 0 = desactivado.
+   */
+  outlineTrimPx: number;
+  /** Promediar perfil derecho e izquierdo cuando están los dos (corrige la asimetría de la pose). */
+  mergeProfiles: boolean;
+  /** Orientación de la vista superior: 'auto', o forzar la cabeza al principio / al final de su eje largo. */
+  topOrientation: 'auto' | 'head-first' | 'tail-first';
   /** Filas de malla sobre la altura de la figura. */
   rows: number;
   /**
@@ -399,6 +420,10 @@ export const FACTORY_HUMAN_OPTIONS: HumanBuildOptions = {
   rig: true,
   shoes: true,
   sideStrength: 1.0,
+  topStrength: 1.0,
+  outlineTrimPx: -1,
+  mergeProfiles: true,
+  topOrientation: 'auto',
   metalMix: 0.45,
   normalStrength: 0.6,
   weapon: 'none',
@@ -653,6 +678,26 @@ export function buildHumanFromImages(
     }
   }
 
+  // 2b. Vista superior (cenital): TERCER plano ortográfico. Frente y perfil miden ambos en
+  //     función de la altura; la cenital da el ancho a lo largo del cuerpo, que es lo que
+  //     distingue un hocico de un pecho y una cola de un torso en un cuadrúpedo.
+  let topMask: Uint8Array | null = null;
+  let topLayer: LayerMapBuffers | null = null;
+  let topPrepared: ReturnType<typeof prepareProfileInput> | null = null;
+  if (images.top) {
+    const topRes = prepareProfileInput(images.top, images.topLayer, cut, isFreeform);
+    topPrepared = topRes;
+    topMask = topRes.mask;
+    topLayer = topRes.layer;
+    notes.push(
+      'Vista superior activa: el molde se talla con los tres planos (frente, perfil y cenital), así que el hocico, la cola y la separación entre patas salen del dibujo y no de una estimación.'
+    );
+  } else if (isFreeform) {
+    notes.push(
+      'Sin vista superior: el ancho solo puede medirse por altura, así que en criaturas horizontales (cuadrúpedos, dragones) el hocico y la cola saldrán tan anchos como el torso. Añade una quinta columna cenital a la hoja para corregirlo.'
+    );
+  }
+
   // 3. Mapas de capas pintados (opcionales)
   let frontLayer: LayerMapBuffers | null = null;
   let backLayer: LayerMapBuffers | null = null;
@@ -682,6 +727,10 @@ export function buildHumanFromImages(
       sideMask = maskFromCutoutAndPaint(sideView.cutout, TENSOR, sideLayer?.offset);
     }
   }
+  if (topMask && options.photoTransforms?.top) {
+    applyPhotoTransformToPreparedView(topPrepared!.view, topLayer, options.photoTransforms.top, false, false);
+    topMask = maskFromCutoutAndPaint(topPrepared!.view.cutout, TENSOR, topLayer?.offset);
+  }
   if (sideLeftView && options.photoTransforms?.sideLeft) {
     applyPhotoTransformToPreparedView(sideLeftView, sideLeftLayer, options.photoTransforms.sideLeft, false, false);
     if (sideLeftMask) {
@@ -689,10 +738,48 @@ export function buildHumanFromImages(
     }
   }
 
-  const frontMask = maskFromCutoutAndPaint(frontView.cutout, TENSOR, frontLayer?.offset);
+  let frontMask = maskFromCutoutAndPaint(frontView.cutout, TENSOR, frontLayer?.offset);
   let rawBackMask = backView
     ? maskFromCutoutAndPaint(backView.cutout, TENSOR, backLayer?.offset, true)
     : frontMask;
+
+  // 3b. Recorte de la línea de contorno. En arte cel-shade la línea negra forma parte del
+  //     recorte, así que cada vista sale engordada media línea por lado y el error se suma al
+  //     cruzar las vistas. Se mide el grosor real del borde oscuro y se recorta la mitad.
+  const trimOption = options.outlineTrimPx ?? -1;
+  let trimPx = 0;
+  if (trimOption !== 0) {
+    trimPx =
+      trimOption > 0
+        ? Math.min(3, Math.round(trimOption))
+        : Math.min(3, Math.floor(estimateOutlineThickness(frontMask, frontView.rgb, TENSOR) / 2));
+  }
+  if (trimPx > 0) {
+    frontMask = trimOutline(frontMask, TENSOR, trimPx);
+    if (backView) rawBackMask = trimOutline(rawBackMask, TENSOR, trimPx);
+    if (sideMask) sideMask = trimOutline(sideMask, TENSOR, trimPx);
+    if (sideLeftMask) sideLeftMask = trimOutline(sideLeftMask, TENSOR, trimPx);
+    if (topMask) topMask = trimOutline(topMask, TENSOR, trimPx);
+    notes.push(
+      `Contorno del dibujo detectado (${trimPx * 2} px): se recortan ${trimPx} px de cada silueta para que la línea negra no engorde el modelo.`
+    );
+  }
+
+  // 3c. Si hay los dos perfiles, son la misma silueta vista desde ±X: se promedian (tras espejar
+  //     el izquierdo) para que una pose asimétrica no deje el cuerpo torcido.
+  if (options.mergeProfiles !== false && sideMask && sideLeftMask && sideMask !== sideLeftMask) {
+    // Normalmente los dos perfiles miran en sentidos opuestos y hay que espejar uno, pero no
+    // siempre: se queda el que mejor solapa con el perfil principal.
+    const mirrored = mirrorMaskX(sideLeftMask, TENSOR);
+    const other =
+      maskIoU(sideMask, mirrored, TENSOR) >= maskIoU(sideMask, sideLeftMask, TENSOR)
+        ? mirrored
+        : sideLeftMask;
+    sideMask = averageSilhouettes(sideMask, other, TENSOR, 0.5);
+    notes.push(
+      'Los dos perfiles se han promediado: la silueta de frente/atrás sale de la forma media de ambos, no solo del derecho.'
+    );
+  }
 
   const autoProfile3D =
     Boolean(sideMask || sideLeftMask) &&
@@ -761,6 +848,8 @@ export function buildHumanFromImages(
       sideLeftLayer,
       sideRelief: sideView ? sideView.relief : null,
       sideLeftRelief: sideLeftView ? sideLeftView.relief : null,
+      topMask,
+      topLayer,
       vertexUsedMask,
       maxVertices: MAX_HUMAN_VERTICES,
       atlas: {
@@ -777,6 +866,8 @@ export function buildHumanFromImages(
     {
       depthScale: Math.max(0.2, Math.min(1.8, options.depthScale)),
       reliefAmount: Math.max(0, Math.min(1, options.reliefAmount)),
+      topStrength: Math.max(0, Math.min(1, options.topStrength ?? 1)),
+      topOrientation: options.topOrientation ?? 'auto',
       rows: Math.max(40, Math.min(1000, Math.round(options.rows))),
       orthogonalSilhouetteAndSeam: useOrthogonalMode,
       profileSeamWidthCm: seamWidthCm,

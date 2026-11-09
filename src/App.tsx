@@ -87,6 +87,13 @@ import {
 } from './human/humanBodyTemplate';
 import type { HumanBuildOptions, HumanImageSet } from './human/buildHuman';
 import {
+  averageSilhouettes,
+  estimateOutlineThickness,
+  maskIoU,
+  mirrorMaskX,
+  trimOutline,
+} from './human/maskRefine';
+import {
   clipNameForAnimation,
   cloneHumanRig,
   createHumanAnimationClips,
@@ -708,6 +715,9 @@ nodo.data.materials.append(mat)`);
       const sideLeftPrep = sideLeftData
         ? prepareView(sideLeftData.source, false, DEFAULT_CUTOUT)
         : null;
+      // Vista superior (cenital): tercer plano ortografico del casco visual.
+      const topData = images.top ? imageToSourceAndCrop(images.top) : null;
+      const topPrep = topData ? prepareView(topData.source, false, DEFAULT_CUTOUT) : null;
 
       const frontLayer = images.frontLayer ? loadLayerMap(images.frontLayer, frontData.crop) : null;
       const rawBackLayer = images.backLayer
@@ -719,6 +729,7 @@ nodo.data.materials.append(mat)`);
       const sideLeftLayer = images.sideLeftLayer
         ? loadLayerMap(images.sideLeftLayer, sideLeftData?.crop ?? null)
         : null;
+      const topLayer = images.topLayer ? loadLayerMap(images.topLayer, topData?.crop ?? null) : null;
 
       const pTransforms = options.photoTransforms;
       // Aplicar rotación y espejo en los tensores de 256x256; la posición X/Y y la escala del recuadro
@@ -735,15 +746,46 @@ nodo.data.materials.append(mat)`);
       if (sideLeftPrep && pTransforms?.sideLeft) {
         applyPhotoTransformToPreparedView(sideLeftPrep, sideLeftLayer, pTransforms.sideLeft, false, false);
       }
+      if (topPrep && pTransforms?.top) {
+        applyPhotoTransformToPreparedView(topPrep, topLayer, pTransforms.top, false, false);
+      }
 
       // PLANO XY: La silueta frontal la marca SIEMPRE la imagen delantera (frontMask)
-      const frontMask = maskFromCutoutAndPaint(frontPrep.cutout, 256, frontLayer?.offset);
-      const sideMask = sidePrep
+      let frontMask = maskFromCutoutAndPaint(frontPrep.cutout, 256, frontLayer?.offset);
+      let sideMask = sidePrep
         ? maskFromCutoutAndPaint(sidePrep.cutout, 256, sideLayer?.offset)
         : null;
-      const sideLeftMask = sideLeftPrep
+      let sideLeftMask = sideLeftPrep
         ? maskFromCutoutAndPaint(sideLeftPrep.cutout, 256, sideLeftLayer?.offset)
         : null;
+      let topMask = topPrep
+        ? maskFromCutoutAndPaint(topPrep.cutout, 256, topLayer?.offset)
+        : null;
+
+      // Recorte de la linea de contorno del dibujo (el arte cel-shade engorda cada silueta).
+      const trimOption = options.outlineTrimPx ?? -1;
+      let trimPx = 0;
+      if (trimOption !== 0) {
+        trimPx =
+          trimOption > 0
+            ? Math.min(3, Math.round(trimOption))
+            : Math.min(3, Math.floor(estimateOutlineThickness(frontMask, frontPrep.rgb, 256) / 2));
+      }
+      if (trimPx > 0) {
+        frontMask = trimOutline(frontMask, 256, trimPx);
+        if (sideMask) sideMask = trimOutline(sideMask, 256, trimPx);
+        if (sideLeftMask) sideLeftMask = trimOutline(sideLeftMask, 256, trimPx);
+        if (topMask) topMask = trimOutline(topMask, 256, trimPx);
+      }
+      // Forma media de los dos perfiles cuando estan los dos.
+      if (options.mergeProfiles !== false && sideMask && sideLeftMask) {
+        const mirrored = mirrorMaskX(sideLeftMask, 256);
+        const other =
+          maskIoU(sideMask, mirrored, 256) >= maskIoU(sideMask, sideLeftMask, 256)
+            ? mirrored
+            : sideLeftMask;
+        sideMask = averageSilhouettes(sideMask, other, 256, 0.5);
+      }
 
       const isProfile3D =
         Boolean(options.freeformFromPhotos) ||
@@ -767,9 +809,10 @@ nodo.data.materials.append(mat)`);
           applyPhotoTransformToPreparedView(backPrep, backLayer, relBackTf, true, true);
         }
       }
-      const rawBackMask = backData
+      let rawBackMask = backData
         ? maskFromCutoutAndPaint(backPrep.cutout, 256, backLayer?.offset, true)
         : frontMask;
+      if (trimPx > 0 && backData) rawBackMask = trimOutline(rawBackMask, 256, trimPx);
       const effectiveBackMask =
         isProfile3D || isPhotoTransformModified(relBackTf) ? rawBackMask : frontMask;
 
@@ -833,10 +876,12 @@ nodo.data.materials.append(mat)`);
         sideLeftRelief: sideLeftPrep ? sideLeftPrep.relief : null,
         sideMask,
         sideLeftMask,
+        topMask,
         frontLayer,
         backLayer,
         sideLayer,
         sideLeftLayer,
+        topLayer,
         vertexUsedMask: new Uint8Array(600000),
         maxVertices: 600000,
         atlas: {

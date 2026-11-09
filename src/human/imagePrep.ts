@@ -1633,10 +1633,12 @@ export type PhotoTransformSlotId =
   | 'back'
   | 'side'
   | 'sideLeft'
+  | 'top'
   | 'frontLayer'
   | 'backLayer'
   | 'sideLayer'
-  | 'sideLeftLayer';
+  | 'sideLeftLayer'
+  | 'topLayer';
 
 export type PhotoTransformsMap = Partial<Record<PhotoTransformSlotId, PhotoTransform>>;
 
