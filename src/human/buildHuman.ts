@@ -49,6 +49,7 @@ import {
   type HumanWeaponId,
 } from './humanWeapons';
 import { LAYER_CLASSES } from './layerMap';
+import { createCreatureAnimationClips } from './creatureAnimations';
 import {
   averageSilhouettes,
   estimateOutlineThickness,
@@ -134,6 +135,12 @@ export interface HumanBuildOptions {
   mergeProfiles: boolean;
   /** Orientación de la vista superior: 'auto', o forzar la cabeza al principio / al final de su eje largo. */
   topOrientation: 'auto' | 'head-first' | 'tail-first';
+  /**
+   * Qué esqueleto montar. 'auto' lo decide por la forma de la malla: un bicho
+   * horizontal recibe el de criatura (cuadrúpedo, con alas si las tiene) y una
+   * figura erguida el humanoide de 19 huesos.
+   */
+  rigKind: 'auto' | 'human' | 'creature';
   /** Filas de malla sobre la altura de la figura. */
   rows: number;
   /**
@@ -424,6 +431,7 @@ export const FACTORY_HUMAN_OPTIONS: HumanBuildOptions = {
   outlineTrimPx: -1,
   mergeProfiles: true,
   topOrientation: 'auto',
+  rigKind: 'auto',
   metalMix: 0.45,
   normalStrength: 0.6,
   weapon: 'none',
@@ -868,6 +876,7 @@ export function buildHumanFromImages(
       reliefAmount: Math.max(0, Math.min(1, options.reliefAmount)),
       topStrength: Math.max(0, Math.min(1, options.topStrength ?? 1)),
       topOrientation: options.topOrientation ?? 'auto',
+      rigKind: options.rigKind ?? 'auto',
       rows: Math.max(40, Math.min(1000, Math.round(options.rows))),
       orthogonalSilhouetteAndSeam: useOrthogonalMode,
       profileSeamWidthCm: seamWidthCm,
@@ -956,8 +965,20 @@ export function buildHumanFromImages(
     skinned.add(boneRoot);
     skinned.updateMatrixWorld(true);
     skinned.bind(new THREE.Skeleton(bones));
-    attachHumanEquipment(skinned, stats.rig, options.weapon, options.offhand);
-    clips = createHumanAnimationClips(stats.rig, options.weapon);
+    if (stats.rigKind && stats.rigKind !== 'human' && stats.creatureMetrics) {
+      // Esqueleto de criatura: sus propios clips (paso, trote, galope, salto,
+      // zarpazo, mordisco, impacto, muerte, sentado y, si hay alas, vuelo).
+      // Las armas son de mano humana, así que aquí no se enganchan.
+      clips = createCreatureAnimationClips(stats.rig, stats.creatureMetrics);
+      notes.push(
+        stats.rigKind === 'quadrupedWinged'
+          ? `Esqueleto de cuadrúpedo ALADO (${stats.rig.bones.length} huesos): columna horizontal, cuatro patas, cola y dos alas, con ${clips.length} animaciones propias.`
+          : `Esqueleto de cuadrúpedo (${stats.rig.bones.length} huesos): columna horizontal, cuatro patas y cola, con ${clips.length} animaciones propias.`
+      );
+    } else {
+      attachHumanEquipment(skinned, stats.rig, options.weapon, options.offhand);
+      clips = createHumanAnimationClips(stats.rig, options.weapon);
+    }
     mesh = skinned;
   } else {
     mesh = new THREE.Mesh(geometry, material);

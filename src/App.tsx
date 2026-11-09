@@ -86,6 +86,7 @@ import {
   type HumanBodyStats,
 } from './human/humanBodyTemplate';
 import type { HumanBuildOptions, HumanImageSet } from './human/buildHuman';
+import { createCreatureAnimationClips } from './human/creatureAnimations';
 import {
   averageSilhouettes,
   estimateOutlineThickness,
@@ -961,7 +962,10 @@ nodo.data.materials.append(mat)`);
         skinnedMesh.add(skeletonData.root);
         skinnedMesh.bind(skeleton);
 
-        animClips = createHumanAnimationClips(stats.rig);
+        animClips =
+          stats.rigKind && stats.rigKind !== 'human' && stats.creatureMetrics
+            ? createCreatureAnimationClips(stats.rig, stats.creatureMetrics)
+            : createHumanAnimationClips(stats.rig);
         currentClipsRef.current = animClips;
 
         const mixer = new AnimationMixer(skinnedMesh);

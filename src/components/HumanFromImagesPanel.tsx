@@ -2077,6 +2077,32 @@ export default function HumanFromImagesPanel({
             Promediar los dos perfiles
           </label>
         )}
+        <div title="Qué esqueleto se monta. Un bicho horizontal necesita el de criatura: columna horizontal, cuatro patas y cola, con sus propias animaciones. El humanoide de 19 huesos lo despedazaría al animarlo.">
+          <div className="text-[10px] text-slate-400 mb-0.5">Esqueleto</div>
+          <div className="flex gap-1">
+            {([
+              ['auto', 'Automático'],
+              ['human', 'Humanoide'],
+              ['creature', 'Cuadrúpedo'],
+            ] as Array<[HumanBuildOptions['rigKind'], string]>).map(([v, lbl]) => (
+              <button
+                key={v}
+                onClick={() => {
+                  const next = { ...options, rigKind: v };
+                  setOptions(next);
+                  triggerBuildIfReady(next);
+                }}
+                className={`flex-1 px-1.5 py-0.5 rounded text-[10px] transition-colors ${
+                  (options.rigKind ?? 'auto') === v
+                    ? 'bg-amber-400 text-slate-950 font-semibold'
+                    : 'bg-slate-800 text-slate-400 hover:bg-slate-700'
+                }`}
+              >
+                {lbl}
+              </button>
+            ))}
+          </div>
+        </div>
         {images.top && (
           <div title="Hacia qué lado mira la cabeza en la vista cenital. 'Automático' lo deduce comparando su anchura con el grosor del perfil lateral.">
             <div className="text-[10px] text-slate-400 mb-0.5">Cabeza en la cenital</div>

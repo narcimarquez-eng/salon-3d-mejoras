@@ -1,6 +1,13 @@
 import * as THREE from 'three';
 import { computeHumanRig, computeSkinWeightMaps, sampleSkinWeights, type HumanRig } from './humanRig';
 import {
+  computeCreatureRig,
+  computeSkinWeights3D,
+  looksLikeQuadruped,
+  type CreatureKind,
+  type CreatureMetrics,
+} from './creatureRig';
+import {
   computeRelativePhotoTransform,
   type PhotoTransform,
   type PhotoTransformsMap,
@@ -165,6 +172,12 @@ export interface HumanBodyOptions {
   rows: number;
   /** Also build a skeleton and skin weights (skinIndex / skinWeight attributes). */
   rig?: boolean;
+  /**
+   * Qué esqueleto montar. 'auto' decide por la forma de la malla: un bicho
+   * horizontal (cuadrúpedo, dragón, montura) recibe el esqueleto de criatura y
+   * una figura erguida el humanoide de 19 huesos.
+   */
+  rigKind?: 'auto' | 'human' | 'creature';
   /** Optional custom skeleton rig (if the user edited bone positions). */
   customRig?: HumanRig | null;
   /** Height multiplier for painted layer maps. */
@@ -284,6 +297,10 @@ export interface HumanBodyStats {
   triangleCount: number;
   landmarks: HumanBodyLandmarks;
   rig?: HumanRig;
+  /** Qué esqueleto se ha montado: humanoide o criatura (cuadrúpedo / cuadrúpedo alado). */
+  rigKind?: 'human' | CreatureKind;
+  /** Medidas del cuerpo, solo con esqueleto de criatura: las usan sus animaciones. */
+  creatureMetrics?: CreatureMetrics;
   rebindData?: HumanRebindData;
 }
 
@@ -4114,7 +4131,10 @@ function buildProfileDriven3DMoldGeometry(
 
       // e) Tallado: por cada vóxel, su Z dice en qué corte cenital cae y ese corte limita su X.
       const kSmooth = Math.max(1.0, stepX * 1.35);
-      const minHalfTex = Math.max(1.1, stepX * 0.75);
+      // Suelo de media anchura: al menos un vóxel de ancho. Si se deja tallar por
+      // debajo de eso, una cola o un cuerno finos se parten en trozos sueltos
+      // porque la rejilla ya no puede representarlos.
+      const minHalfTex = Math.max(1.25, stepX * 1.05);
       for (let iz = 1; iz < nz - 1; iz++) {
         const zTex = z0Tex + iz * stepZ;
         // zMaxRaw = cabeza (el perfil siempre deja la cabeza en +Z), zMinRaw = cola.
@@ -4824,34 +4844,56 @@ function buildProfileDriven3DMoldGeometry(
   }
 
   let rig: HumanRig | undefined;
+  let rigKind: 'human' | CreatureKind = 'human';
+  let creatureMetrics: CreatureMetrics | undefined;
   if (options.rig) {
-    rig = options.customRig
-      ? {
-          bones: options.customRig.bones.map((b) => ({
-            name: b.name,
-            parent: b.parent,
-            head: [...b.head] as [number, number, number],
-            tail: [...b.tail] as [number, number, number],
-          })),
-        }
-      : computeHumanRig(frontMask, w, landmarks, WORLD_SPAN);
-    const maps = computeSkinWeightMaps(rig, frontMask, w, WORLD_SPAN);
-    const skinIndex = new Uint16Array(allCount * 4);
-    const skinWeight = new Float32Array(allCount * 4);
-    for (let i = 0; i < allCount; i++) {
-      sampleSkinWeights(
-        maps,
-        frontMask,
-        w,
-        usedNodeX[i],
-        usedNodeY[i],
-        skinIndex,
-        skinWeight,
-        i * 4
-      );
+    // ¿Esqueleto humanoide o de criatura? En un bicho horizontal el humanoide no
+    // vale: su columna es vertical y solo tiene dos piernas, así que al animarlo
+    // despedaza al animal. `looksLikeQuadruped` lo decide con la malla ya hecha.
+    const kindOption = options.rigKind ?? 'auto';
+    const useCreature =
+      !options.customRig &&
+      (kindOption === 'creature' || (kindOption === 'auto' && looksLikeQuadruped(P)));
+
+    if (useCreature) {
+      const built = computeCreatureRig(P);
+      rig = built.rig;
+      rigKind = built.kind;
+      creatureMetrics = built.metrics;
+      // Pesos en 3D: en la vista frontal las patas delanteras tapan a las traseras,
+      // así que un mapa 2D les daría los mismos pesos y la malla reventaría al andar.
+      const skin = computeSkinWeights3D(rig, P, WORLD_SPAN);
+      geometry.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(skin.index, 4));
+      geometry.setAttribute('skinWeight', new THREE.Float32BufferAttribute(skin.weight, 4));
+    } else {
+      rig = options.customRig
+        ? {
+            bones: options.customRig.bones.map((b) => ({
+              name: b.name,
+              parent: b.parent,
+              head: [...b.head] as [number, number, number],
+              tail: [...b.tail] as [number, number, number],
+            })),
+          }
+        : computeHumanRig(frontMask, w, landmarks, WORLD_SPAN);
+      const maps = computeSkinWeightMaps(rig, frontMask, w, WORLD_SPAN);
+      const skinIndex = new Uint16Array(allCount * 4);
+      const skinWeight = new Float32Array(allCount * 4);
+      for (let i = 0; i < allCount; i++) {
+        sampleSkinWeights(
+          maps,
+          frontMask,
+          w,
+          usedNodeX[i],
+          usedNodeY[i],
+          skinIndex,
+          skinWeight,
+          i * 4
+        );
+      }
+      geometry.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(skinIndex, 4));
+      geometry.setAttribute('skinWeight', new THREE.Float32BufferAttribute(skinWeight, 4));
     }
-    geometry.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(skinIndex, 4));
-    geometry.setAttribute('skinWeight', new THREE.Float32BufferAttribute(skinWeight, 4));
   } else {
     if (geometry.getAttribute('skinIndex')) geometry.deleteAttribute('skinIndex');
     if (geometry.getAttribute('skinWeight')) geometry.deleteAttribute('skinWeight');
@@ -4884,6 +4926,8 @@ function buildProfileDriven3DMoldGeometry(
     triangleCount: nTris,
     landmarks,
     rig,
+    rigKind,
+    creatureMetrics,
     rebindData,
   };
 }
