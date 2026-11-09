@@ -1,0 +1,68 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Default Deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidUser(data) {
+      return data.keys().hasAll(['id', 'email', 'createdAt'])
+        && data.keys().hasOnly(['id', 'email', 'displayName', 'photoURL', 'createdAt', 'updatedAt'])
+        && data.id is string && data.id == request.auth.uid
+        && data.email is string && data.email.size() <= 200
+        && (!('displayName' in data) || (data.displayName is string && data.displayName.size() <= 100))
+        && (!('photoURL' in data) || (data.photoURL is string && data.photoURL.size() <= 1000));
+    }
+
+    function isValidSavedModel(data) {
+      return data.keys().hasAll(['id', 'userId', 'title', 'pythonCode', 'createdAt'])
+        && data.keys().hasOnly(['id', 'userId', 'title', 'summary', 'pythonCode', 'triangles', 'vertices', 'normalSmoothing', 'shadingMode', 'createdAt', 'updatedAt'])
+        && data.id is string && data.id.size() <= 128
+        && data.userId is string && data.userId == request.auth.uid
+        && data.title is string && data.title.size() <= 100
+        && (!('summary' in data) || (data.summary is string && data.summary.size() <= 500))
+        && data.pythonCode is string && data.pythonCode.size() <= 30000
+        && (!('triangles' in data) || data.triangles is number)
+        && (!('vertices' in data) || data.vertices is number)
+        && (!('normalSmoothing' in data) || data.normalSmoothing is number)
+        && (!('shadingMode' in data) || (data.shadingMode is string && data.shadingMode.size() <= 50));
+    }
+
+    match /users/{userId} {
+      allow get: if isOwner(userId);
+      allow create: if isOwner(userId) && isValidUser(request.resource.data);
+      allow update: if isOwner(userId) && isValidUser(request.resource.data)
+        && request.resource.data.id == resource.data.id
+        && request.resource.data.email == resource.data.email
+        && request.resource.data.createdAt == resource.data.createdAt;
+      allow delete: if isOwner(userId);
+    }
+
+    match /saved_models/{modelId} {
+      allow get: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow create: if isSignedIn() && isValidId(modelId)
+        && isValidSavedModel(request.resource.data)
+        && request.resource.data.userId == request.auth.uid;
+      allow update: if isSignedIn() && isValidId(modelId)
+        && resource.data.userId == request.auth.uid
+        && isValidSavedModel(request.resource.data)
+        && request.resource.data.userId == resource.data.userId
+        && request.resource.data.createdAt == resource.data.createdAt;
+      allow delete: if isSignedIn() && resource.data.userId == request.auth.uid;
+    }
+  }
+}

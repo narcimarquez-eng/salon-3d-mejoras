@@ -1,0 +1,47 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile information",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "email": { "type": "string" },
+        "displayName": { "type": "string" },
+        "photoURL": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "email", "createdAt"]
+    },
+    "SavedModel": {
+      "title": "SavedModel",
+      "description": "Saved 3D model generated or customized by user",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "title": { "type": "string", "maxLength": 100 },
+        "summary": { "type": "string", "maxLength": 500 },
+        "pythonCode": { "type": "string", "maxLength": 30000 },
+        "triangles": { "type": "number" },
+        "vertices": { "type": "number" },
+        "normalSmoothing": { "type": "number" },
+        "shadingMode": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "userId", "title", "pythonCode", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "Stores user profile data"
+    },
+    "/saved_models/{modelId}": {
+      "schema": "SavedModel",
+      "description": "Stores user's saved 3D procedural models and code"
+    }
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "name": "CelShade Studio 3D",
+  "description": "Visor interactivo 3D con suavizado de normales por código, sombreado Cel-Shading de 3 tonos, Outline Shader, SSAO y SMAA/FXAA para archivos .glb.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
