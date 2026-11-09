@@ -912,7 +912,13 @@ nodo.data.materials.append(mat)`);
       };
 
       const geometry = new BufferGeometry();
-      const stats = buildHumanBodyTemplateGeometry(geometry, inputs, options);
+      // En el molde por perfil, el 0% de textura de perfil significa "automatico": si no, la
+      // foto de frente se estira a lo largo de todo el costado de un bicho horizontal.
+      const moldOptions =
+        isProfile3D && (sideMask || sideLeftMask) && (options.profileTexturePct ?? 0) < 0.5
+          ? { ...options, profileTexturePct: 100 }
+          : options;
+      const stats = buildHumanBodyTemplateGeometry(geometry, inputs, moldOptions);
       currentHumanStatsRef.current = stats;
       applyNormalSmoothingToModel(new Mesh(geometry));
 

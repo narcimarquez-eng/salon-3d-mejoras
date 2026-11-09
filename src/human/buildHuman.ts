@@ -828,6 +828,18 @@ export function buildHumanFromImages(
     sideLeftLayer
   );
 
+  // Textura de los perfiles en el molde 3D: al 0% la cara y la espalda se proyectan a lo
+  // largo de TODO el cuerpo, lo que en una figura erguida es correcto pero en un bicho
+  // horizontal de tres metros deja la foto frontal estirada por todo el costado. En ese
+  // modo el 0% se interpreta como "automático" y se aplica el perfil entero.
+  let profileTexPct = Math.max(0, Math.min(100, options.profileTexturePct ?? 0));
+  if (isProfile3D && profileTexPct < 0.5 && (sideMask || sideLeftMask)) {
+    profileTexPct = 100;
+    notes.push(
+      'Molde por perfil: la textura de los costados se toma de las fotos de perfil (100%). Con el 0% la foto de frente se estiraría a lo largo de todo el cuerpo.'
+    );
+  }
+
   const seamWidthCm = Math.max(0, Math.min(20, options.profileSeamWidthCm ?? 5.6));
   if (useOrthogonalMode && (sideProfileSeam || sideLeftProfileSeam) && seamWidthCm > 0.05) {
     notes.push(
@@ -880,7 +892,7 @@ export function buildHumanFromImages(
       rows: Math.max(40, Math.min(1000, Math.round(options.rows))),
       orthogonalSilhouetteAndSeam: useOrthogonalMode,
       profileSeamWidthCm: seamWidthCm,
-      profileTexturePct: Math.max(0, Math.min(100, options.profileTexturePct ?? 0)),
+      profileTexturePct: profileTexPct,
       freeformFromPhotos: Boolean(options.freeformFromPhotos),
       freeformPhotoVolume: Math.max(0, Math.min(2.0, options.freeformPhotoVolume ?? 1.0)),
       freeformSectionRoundness: Math.max(0.3, Math.min(2.5, options.freeformSectionRoundness ?? 1.0)),

@@ -3202,8 +3202,15 @@ function buildProfileDriven3DMoldGeometry(
     backWingMask
   );
 
-  const hasWings = frontSplit.wingCount > 180 || backSplit.wingCount > 180;
   const maxWingHalfSpan = Math.max(frontSplit.maxWingSpan, backSplit.maxWingSpan);
+  // Para que haya alas no basta con que sobresalga algo del cuerpo: un ala DESPLEGADA
+  // llega mucho más lejos que el torso. Sin esta condición, la melena de un león, unas
+  // orejas grandes o una gorguera disparaban la separación de alas, y entonces el perfil
+  // se medía desde debajo de la melena (`sBodyTop`), con lo que la textura del perfil se
+  // aplastaba contra la mitad inferior del dibujo y el lomo acababa pintado con la barriga.
+  const wingSpanRatio = maxWingHalfSpan / Math.max(1, refBodyHalf);
+  const hasWings =
+    (frontSplit.wingCount > 180 || backSplit.wingCount > 180) && wingSpanRatio > 1.55;
   const fCoreTop = Math.min(frontSplit.coreTop, backSplit.coreTop, fCoreTopEst);
   const tCoreTop = Math.max(0, (fCoreTop - fTop) / Math.max(1, Hf - 1));
 

@@ -350,6 +350,7 @@ export async function sliceCompositeSheet(
   const queue = new Int32Array(sw * rowSh);
   const compArea: number[] = [];
   const compCol: number[] = [];
+  const compMinDim: number[] = [];
   let nextComp = 0;
 
   for (let i0 = 0; i0 < sw * rowSh; i0++) {
@@ -361,6 +362,7 @@ export async function sliceCompositeSheet(
     compId[i0] = cid;
 
     let minX = sw, maxX = 0;
+    let minY = rowSh, maxY = 0;
     let sumX = 0;
     while (qh < qt) {
       const idx = queue[qh++];
@@ -368,6 +370,8 @@ export async function sliceCompositeSheet(
       const cy = (idx / sw) | 0;
       if (cx < minX) minX = cx;
       if (cx > maxX) maxX = cx;
+      if (cy < minY) minY = cy;
+      if (cy > maxY) maxY = cy;
       sumX += cx;
 
       if (cx > 0 && fgMask[idx - 1] === 1 && compId[idx - 1] < 0) {
@@ -389,6 +393,8 @@ export async function sliceCompositeSheet(
     }
 
     const spanX = maxX - minX + 1;
+    const spanY = maxY - minY + 1;
+    compMinDim[cid] = Math.min(spanX, spanY);
     const meanX = sumX / qt;
     // If this component is a single figure (doesn't bridge two figures across ~1.8 column widths),
     // assign the entire connected component to the column of its center of mass!
@@ -440,10 +446,15 @@ export async function sliceCompositeSheet(
       const col = compCol[cid];
       if (col >= 0 && compArea[cid] > maxAreaPerCol[col]) maxAreaPerCol[col] = compArea[cid];
     }
+    // Una mota suelta se tira por tamaño; una regla de escala o una cota se tira además
+    // por FORMA: son barras larguísimas y finas, y con el umbral de tamaño a secas se
+    // colaban (la regla de "1.2 m" de una hoja real pesaba un 2,4% de la figura).
+    const lineLike = Math.max(4, Math.round(sw * 0.025));
     for (let cid = 0; cid < nextComp; cid++) {
       const col = compCol[cid];
       if (col < 0) continue;
-      if (compArea[cid] < maxAreaPerCol[col] * 0.02) discarded[cid] = 1;
+      const rel = compArea[cid] / Math.max(1, maxAreaPerCol[col]);
+      if (rel < 0.02 || (rel < 0.12 && compMinDim[cid] <= lineLike)) discarded[cid] = 1;
     }
   }
 
