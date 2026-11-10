@@ -1614,7 +1614,19 @@ function configureNewlySpawnedMesh(
     mesh.remove(existingOutline);
   }
 
-  const outlineMat = createComicOutlineMaterial(outlineThickness, outlineOpacity);
+  // Con el grosor por defecto (1,25 unidades) el contorno engorda cada pieza en metros: un león
+  // de 2,8 m se cubría de manchas negras. Para ese caso se limita al 3 % del tamaño de la pieza
+  // (las piezas de más de 41 m siguen con 1,25 como antes).
+  let grosorContorno = outlineThickness;
+  if (outlineThickness === 1.25) {
+    mesh.geometry.computeBoundingBox();
+    const caja = mesh.geometry.boundingBox;
+    if (caja) {
+      const tamano = Math.max(caja.max.x - caja.min.x, caja.max.y - caja.min.y, caja.max.z - caja.min.z);
+      grosorContorno = Math.min(1.25, 0.03 * tamano);
+    }
+  }
+  const outlineMat = createComicOutlineMaterial(grosorContorno, outlineOpacity);
   const outlineMesh = new THREE.Mesh(mesh.geometry, outlineMat);
   outlineMesh.name = `${mesh.name}_outline`;
   outlineMesh.userData.isOutlineMesh = true;
@@ -1922,6 +1934,7 @@ function applyMaterialToThreeMesh(
   // Si es una malla de contorno manual (flipNormals + negro), ocultar su outlineMesh hijo para no duplicar bordes
   if (extraPbr?.flipNormals && mesh.userData.outlineMesh) {
     (mesh.userData.outlineMesh as THREE.Mesh).visible = false;
+    (mesh.userData.outlineMesh as THREE.Mesh).userData.wantVisible = false;
   }
 
   mesh.userData.pbrProps = {

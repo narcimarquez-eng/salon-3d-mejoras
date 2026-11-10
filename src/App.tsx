@@ -496,6 +496,15 @@ nodo.data.materials.append(mat)`);
         } else if (outline) {
           outline.visible = false;
         }
+
+        // Contornos creados por el motor Python (bpy): el botón "Contorno" también los apaga
+        const contornoMotor = mesh.userData.outlineMesh as Mesh | undefined;
+        if (contornoMotor && !outline) {
+          contornoMotor.visible =
+            outlineEnabled &&
+            (shadingMode === 'cel' || shadingMode === 'pbr') &&
+            contornoMotor.userData.wantVisible !== false;
+        }
       }
     });
   }, [shadingMode, outlineEnabled, outlineThickness, matcapPreset]);
