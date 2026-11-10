@@ -108,7 +108,9 @@ const ANIM = process.env.ANIM || '';
     ['side', [1, 0.12, 0]],
     ['back', [0, 0.12, -1]],
   ];
-  for (const [nombre, dir] of vistas) {
+  const hayVisor = await page.evaluate(() => !!window.celshadeViewer);
+  if (!hayVisor) console.log('  Aviso: la app no expone window.celshadeViewer; se omiten las capturas.');
+  for (const [nombre, dir] of hayVisor ? vistas : []) {
     await page.evaluate(
       ([d]) => window.celshadeViewer.frameModel(1.2, d),
       [dir]
@@ -124,7 +126,7 @@ const ANIM = process.env.ANIM || '';
   if (glbOut) {
     const [download] = await Promise.all([
       page.waitForEvent('download', { timeout: 180000 }),
-      container.getByRole('button', { name: /Descargar \.glb/ }).click(),
+      container.getByRole('button', { name: /Descargar \.GLB Completo/i }).click(),
     ]);
     await download.saveAs(path.resolve(glbOut));
     const size = fs.statSync(path.resolve(glbOut)).size;
