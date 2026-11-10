@@ -599,14 +599,27 @@ nodo.data.materials.append(mat)`);
     if (!cameraRef.current || !controlsRef.current) return;
     const cam = cameraRef.current;
     const ctrl = controlsRef.current;
-    const targetY = 1.25;
-    const target = new Vector3(0, targetY, 0);
+    // Las vistas miran al modelo que hay en escena (no a un punto fijo): tras ejecutar un script
+    // el modelo puede estar lejos del origen. Sin modelo se usan las poses de siempre.
+    const group = currentModelGroupRef.current;
+    const box = group ? new Box3().setFromObject(group) : null;
+    if (view === 'reset' && box && !box.isEmpty()) {
+      frameActiveModel(group);
+      return;
+    }
+    let target = new Vector3(0, 1.25, 0);
+    let dist = 3.8;
+    if (box && !box.isEmpty()) {
+      const size = box.getSize(new Vector3());
+      target = box.getCenter(new Vector3());
+      dist = Math.max(2.5, Math.max(0.8, size.x, size.y, size.z) * 2.4);
+    }
     ctrl.target.copy(target);
-    if (view === 'front') cam.position.set(0, targetY, 3.8);
-    else if (view === 'side') cam.position.set(3.8, targetY, 0);
-    else if (view === 'back') cam.position.set(0, targetY, -3.8);
-    else if (view === 'top') cam.position.set(0, 4.4, 0.01);
-    else if (view === 'reset') cam.position.set(0, 1.45, 3.9);
+    if (view === 'front') cam.position.set(target.x, target.y, target.z + dist);
+    else if (view === 'side') cam.position.set(target.x + dist, target.y, target.z);
+    else if (view === 'back') cam.position.set(target.x, target.y, target.z - dist);
+    else if (view === 'top') cam.position.set(target.x, target.y + dist * 1.15, target.z + 0.01);
+    else if (view === 'reset') cam.position.set(target.x, target.y + 0.2, target.z + dist);
     ctrl.update();
   };
 

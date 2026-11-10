@@ -64,9 +64,12 @@ const URL = process.env.URL || 'http://127.0.0.1:5173/?visor-api=1';
     await page.waitForTimeout(600);
   }
 
-  // Alejar la cámara: la app deja la vista pegada al modelo tras ejecutar el script.
-  // ZOOM = número de pasos de rueda (por defecto 6; 0 para no alejar).
-  const zoom = Number(process.env.ZOOM ?? 6);
+  // Encuadrar el modelo: "Restablecer Cámara" mira al modelo que hay en escena (no a un punto fijo).
+  // Después se aleja la cámara un poco para que quepa entero con margen.
+  // ZOOM = número de pasos de rueda para alejar tras el Restablecer (por defecto 3; 0 para no alejar).
+  await page.locator('button[title="Restablecer Cámara"]').first().click().catch(() => {});
+  await page.waitForTimeout(600);
+  const zoom = Number(process.env.ZOOM ?? 3);
   await page.mouse.move(500, 500);
   for (let i = 0; i < zoom; i++) {
     await page.mouse.wheel(0, 400);
@@ -74,7 +77,7 @@ const URL = process.env.URL || 'http://127.0.0.1:5173/?visor-api=1';
   }
   await page.waitForTimeout(800);
   // Vistas de la app: los botones Frente / Perfil / Espalda (title "Vista ...") de la barra superior.
-  // La vista general (3/4) es la que deja la app tras ejecutar el script.
+  // Cada una encuadra el modelo de nuevo; la vista general (3/4) es la del Restablecer + zoom.
   const vistaBoton = async (archivo, titulo) => {
     await page.mouse.move(1300, 120);
     if (titulo) {
@@ -83,7 +86,6 @@ const URL = process.env.URL || 'http://127.0.0.1:5173/?visor-api=1';
     await page.waitForTimeout(2500);
     await page.screenshot({ path: `${prefijo}_${archivo}.png` });
   };
-  await page.locator('button[title="Restablecer Cámara"]').first().click().catch(() => {});
   await vistaBoton('overview', null);
   await vistaBoton('front', 'Vista Frente');
   await vistaBoton('side', 'Vista Perfil');
