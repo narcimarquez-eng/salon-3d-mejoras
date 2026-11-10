@@ -734,7 +734,9 @@ nodo.data.materials.append(mat)`);
       const rawBackPrep = backData ? prepareView(backData.source, true, viewCut) : frontPrep;
       const sideData = images.side ? imageToSourceAndCrop(images.side) : null;
       const sidePrep = sideData ? prepareView(sideData.source, false, viewCut) : null;
-      const sideLeftData = images.sideLeft ? imageToSourceAndCrop(images.sideLeft) : null;
+      // Con "Usar solo un perfil" se ignora la foto del 2.º perfil y se usa solo el principal
+      const useSideLeft = Boolean(images.sideLeft) && !options.singleProfile;
+      const sideLeftData = useSideLeft && images.sideLeft ? imageToSourceAndCrop(images.sideLeft) : null;
       const sideLeftPrep = sideLeftData
         ? prepareView(sideLeftData.source, false, viewCut)
         : null;
@@ -749,7 +751,7 @@ nodo.data.materials.append(mat)`);
       const sideLayer = images.sideLayer
         ? loadLayerMap(images.sideLayer, sideData?.crop ?? null)
         : null;
-      const sideLeftLayer = images.sideLeftLayer
+      const sideLeftLayer = useSideLeft && images.sideLeftLayer
         ? loadLayerMap(images.sideLeftLayer, sideLeftData?.crop ?? null)
         : null;
       const topLayer = images.topLayer ? loadLayerMap(images.topLayer, topData?.crop ?? null) : null;
@@ -868,7 +870,7 @@ nodo.data.materials.append(mat)`);
             return p;
           })()
         : sidePrep;
-      const diffuseSideLeftPrep = useLayerTexture && images.sideLeftLayer
+      const diffuseSideLeftPrep = useLayerTexture && useSideLeft && images.sideLeftLayer
         ? (() => {
             const p = prepareView(imageToSourceAndCrop(images.sideLeftLayer).source, false, DEFAULT_CUTOUT);
             if (pTransforms?.sideLeft) applyPhotoTransformToPreparedView(p, null, pTransforms.sideLeft, false, false);

@@ -2330,6 +2330,24 @@ export default function HumanFromImagesPanel({
         {images.side && images.sideLeft && (
           <label
             className="flex items-center gap-1.5 text-[10px] text-slate-400 cursor-pointer"
+            title="Ignora la foto del 2.º perfil y construye el perfil solo con el principal (sin promediar)."
+          >
+            <input
+              type="checkbox"
+              checked={Boolean(options.singleProfile)}
+              onChange={(e) => {
+                const next = { ...options, singleProfile: e.target.checked };
+                setOptions(next);
+                triggerBuildIfReady(next);
+              }}
+              className="accent-amber-400 cursor-pointer"
+            />
+            Usar solo un perfil (ignora el 2.º)
+          </label>
+        )}
+        {images.side && images.sideLeft && !options.singleProfile && (
+          <label
+            className="flex items-center gap-1.5 text-[10px] text-slate-400 cursor-pointer"
             title="Perfil derecho e izquierdo son la misma silueta vista desde ±X: promediarlos corrige la asimetría de la pose."
           >
             <input

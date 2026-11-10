@@ -136,6 +136,8 @@ export interface HumanBuildOptions {
   outlineTrimPx: number;
   /** Promediar perfil derecho e izquierdo cuando están los dos (corrige la asimetría de la pose). */
   mergeProfiles: boolean;
+  /** Usar solo el perfil principal: se ignora la foto del 2.º perfil aunque esté cargada. */
+  singleProfile?: boolean;
   /** Orientación de la vista superior: 'auto', o forzar la cabeza al principio / al final de su eje largo. */
   topOrientation: 'auto' | 'head-first' | 'tail-first';
   /**
