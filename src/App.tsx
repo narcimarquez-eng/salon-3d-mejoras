@@ -822,6 +822,17 @@ nodo.data.materials.append(mat)`);
       let topMask = topPrep
         ? maskFromCutoutAndPaint(topPrep.cutout, 256, topLayer?.offset)
         : null;
+      // Patas y rabos: el mapa de capas pintado suele ser algo más gordo que la foto y deja una
+      // franja de fondo alrededor de patas y cola. Con la opción activa manda el recorte de la foto.
+      const clipToPhoto = (m: Uint8Array | null, cut: Uint8Array | undefined) => {
+        if (!options.separateLimbs || !m || !cut) return;
+        for (let k = 0; k < m.length; k++) if (m[k] === 1 && cut[k] !== 1) m[k] = 0;
+      };
+      clipToPhoto(frontMask, frontPrep.cutout);
+      clipToPhoto(sideMask, sidePrep?.cutout);
+      clipToPhoto(sideLeftMask, sideLeftPrep?.cutout);
+      clipToPhoto(topMask, topPrep?.cutout);
+
 
       // Recorte de la linea de contorno del dibujo (el arte cel-shade engorda cada silueta).
       const trimOption = options.outlineTrimPx ?? -1;
@@ -873,6 +884,7 @@ nodo.data.materials.append(mat)`);
       let rawBackMask = backData
         ? maskFromCutoutAndPaint(backPrep.cutout, 256, backLayer?.offset, true)
         : frontMask;
+      if (backData) clipToPhoto(rawBackMask, backPrep.cutout);
       if (trimPx > 0 && backData) rawBackMask = trimOutline(rawBackMask, 256, trimPx);
       const effectiveBackMask =
         isProfile3D || isPhotoTransformModified(relBackTf) ? rawBackMask : frontMask;

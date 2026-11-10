@@ -870,12 +870,6 @@ export function trimViewLegs(
     for (let y = 0; y < w; y++) if (rowRuns(mask, w, y).length) { if (t < 0) t = y; b = y; }
     if (t >= 0) removeBrightHalo(mask, rgb, w, Math.round(b - 0.45 * (b - t + 1)), b - 2, removed);
   }
-  {
-    let t = -1;
-    let b = -1;
-    for (let y = 0; y < w; y++) if (rowRuns(mask, w, y).length) { if (t < 0) t = y; b = y; }
-    if (t >= 0) trimToInkEdge(mask, rgb, w, Math.round(b - 0.45 * (b - t + 1)), b - 2, 0, w - 1, removed);
-  }
   const legs = measureLegsFromView(mask, w);
   if (!legs.length) return [];
   let top = -1;
@@ -916,7 +910,6 @@ export function trimSideLegs(
   // Solo debajo del vientre: por encima está el tronco, que no se toca
   const legTop = Math.round(parts.bellyY + 0.15 * (parts.bottom - parts.bellyY));
   removeBrightHalo(mask, rgb, w, legTop, parts.bottom - 2, removed);
-  for (const p of pats) trimToInkEdge(mask, rgb, w, Math.max(legTop, p.minY), p.maxY - 2, p.minX - 4, p.maxX + 4, removed);
   let done = 0;
   pats.forEach((p, idx) => {
     const y0 = Math.max(legTop, p.minY);
