@@ -341,6 +341,25 @@ export default function HumanFromImagesPanel({
       setPendingBuild(true);
     }
   };
+  /** Pinchar una pata o la cola en la imagen de detección: se limpian sus hilos al reconstruir. */
+  const handleDetectionClick = (e: React.MouseEvent<HTMLImageElement>) => {
+    const img = e.currentTarget;
+    const rect = img.getBoundingClientRect();
+    if (!rect.width || !img.naturalWidth) return;
+    const px = ((e.clientX - rect.left) / rect.width) * img.naturalWidth;
+    const py = ((e.clientY - rect.top) / rect.height) * img.naturalHeight;
+    // La imagen lleva 1 panel (frente) o 2 (frente + perfil), de 512 px cada uno a escala 2x de la rejilla de 256
+    const hasSide = img.naturalWidth >= 1024;
+    const panelW = img.naturalWidth / (hasSide ? 2 : 1);
+    const view: 'front' | 'side' = hasSide && px >= panelW ? 'side' : 'front';
+    const local = view === 'side' ? px - panelW : px;
+    const x = Math.max(0, Math.min(255, Math.round(local / 2)));
+    const y = Math.max(0, Math.min(255, Math.round(py / 2)));
+    const next = { ...options, cleanPoints: [...(options.cleanPoints ?? []), { view, x, y }] };
+    setOptions(next);
+    triggerBuildIfReady(next);
+  };
+
   const verCambios = () => {
     setPendingBuild(false);
     triggerBuildIfReady(options, false);
@@ -3322,9 +3341,30 @@ export default function HumanFromImagesPanel({
               <img
                 src={result.detectionPreview}
                 alt="Lo detectado sobre la foto de frente"
-                className="w-full rounded border border-slate-800"
+                data-testid="limb-detection-preview"
+                onClick={handleDetectionClick}
+                title="Pincha una pata o la cola para limpiar los hilos que la unen al cuerpo"
+                className="w-full rounded border border-slate-800 cursor-crosshair"
                 style={{ imageRendering: 'pixelated' }}
               />
+              <div className="flex items-center justify-between gap-2 mt-1 text-[9.5px]">
+                <span className="text-slate-300">
+                  Partes limpiadas: <b className="text-amber-300">{options.cleanPoints?.length ?? 0}</b>
+                </span>
+                <button
+                  type="button"
+                  data-testid="clear-clean-points"
+                  disabled={!options.cleanPoints?.length}
+                  onClick={() => {
+                    const next = { ...options, cleanPoints: [] };
+                    setOptions(next);
+                    triggerBuildIfReady(next);
+                  }}
+                  className="px-1.5 py-0.5 rounded border border-slate-700 bg-slate-900 text-slate-300 hover:bg-slate-800 cursor-pointer disabled:opacity-40"
+                >
+                  Quitar limpiezas
+                </button>
+              </div>
               <p className="text-[9px] text-slate-500 leading-snug mt-0.5">
                 Azul: cuerpo · naranja: rabo · rojo: hilos cortados · óvalos: ojos
                 (cian), nariz (amarillo), boca (rosa), orejas (verde). En un

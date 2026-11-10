@@ -74,6 +74,41 @@ export interface ViewTensors {
   threadCount?: number;
 }
 
+/** Punto pinchado en la imagen de detección: limpia los hilos de la pata o cola que hay alrededor. */
+export interface CleanPoint {
+  view: 'front' | 'side';
+  /** Coordenadas en la rejilla de 256 px de esa vista. */
+  x: number;
+  y: number;
+}
+
+/**
+ * Limpia los hilos finos (de ancho `maxWidth` o menos) que unen la parte pinchada con el cuerpo:
+ * solo se cortan dentro de `radius` píxeles de (cx, cy). Los píxeles cortados pasan a `threadCut`,
+ * así que la imagen de detección los muestra en rojo. Devuelve cuántos píxeles se han quitado.
+ */
+export function cutThreadsNear(view: ViewTensors, cx: number, cy: number, radius: number, maxWidth: number): number {
+  const copy = view.cutout.slice();
+  const res = cutThinBridges(copy, TENSOR, maxWidth);
+  const r2 = radius * radius;
+  if (!view.threadCut) view.threadCut = new Uint8Array(TENSOR_LEN);
+  let removed = 0;
+  for (let y = Math.max(0, cy - radius); y <= Math.min(TENSOR - 1, cy + radius); y++) {
+    for (let x = Math.max(0, cx - radius); x <= Math.min(TENSOR - 1, cx + radius); x++) {
+      const i = y * TENSOR + x;
+      if (!res.cut[i] || view.cutout[i] !== 1) continue;
+      const dx = x - cx;
+      const dy = y - cy;
+      if (dx * dx + dy * dy > r2) continue;
+      view.cutout[i] = 0;
+      view.threadCut[i] = 1;
+      removed++;
+    }
+  }
+  view.threadCount = removed > 0 ? (view.threadCount ?? 0) + 1 : view.threadCount;
+  return removed;
+}
+
 export interface CutoutSettings {
   /** Umbral de relieve plano que se considera fondo. */
   flatThreshold: number;

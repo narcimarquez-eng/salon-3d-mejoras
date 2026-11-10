@@ -76,8 +76,7 @@ import {
   fitImageToTensor,
   isPhotoTransformModified,
   loadLayerMap,
-  prepareView,
-} from './human/imagePrep';
+  prepareView, cutThreadsNear } from './human/imagePrep';
 import {
   buildHumanBodyTemplateGeometry,
   hasProfileDriven3DFeatures,
@@ -743,6 +742,16 @@ nodo.data.materials.append(mat)`);
       // Vista superior (cenital): tercer plano ortografico del casco visual.
       const topData = images.top ? imageToSourceAndCrop(images.top) : null;
       const topPrep = topData ? prepareView(topData.source, false, viewCut) : null;
+      // Patas y colas pinchadas en la imagen de detección: se limpian sus hilos antes de
+      // derivar las máscaras, para que el molde ya salga sin ellos.
+      const cleanReport: Array<{ view: 'front' | 'side'; x: number; y: number; removed: number }> = [];
+      for (const c of options.cleanPoints ?? []) {
+        const target = c.view === 'front' ? frontPrep : sidePrep;
+        const removed = target
+          ? cutThreadsNear(target, c.x, c.y, 26, Math.max(2, (options.threadWidth ?? 3) * 2))
+          : 0;
+        cleanReport.push({ view: c.view, x: c.x, y: c.y, removed });
+      }
 
       const frontLayer = images.frontLayer ? loadLayerMap(images.frontLayer, frontData.crop) : null;
       const rawBackLayer = images.backLayer
@@ -970,6 +979,7 @@ nodo.data.materials.append(mat)`);
         landmarks: stats.landmarks,
         rigKind: stats.rigKind,
         creatureMetrics: stats.creatureMetrics,
+        cleanReport,
         options,
       });
 

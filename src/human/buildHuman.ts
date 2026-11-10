@@ -85,6 +85,7 @@ import {
   type PhotoTransformSlotId,
   type PhotoTransformsMap,
   type TensorCrop,
+  type CleanPoint,
 } from './imagePrep';
 
 export {
@@ -138,6 +139,8 @@ export interface HumanBuildOptions {
   mergeProfiles: boolean;
   /** Usar solo el perfil principal: se ignora la foto del 2.º perfil aunque esté cargada. */
   singleProfile?: boolean;
+  /** Patas y colas pinchadas en la imagen de detección: se limpian los hilos que las unen. */
+  cleanPoints?: CleanPoint[];
   /** Orientación de la vista superior: 'auto', o forzar la cabeza al principio / al final de su eje largo. */
   topOrientation: 'auto' | 'head-first' | 'tail-first';
   /**

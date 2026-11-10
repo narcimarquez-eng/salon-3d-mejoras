@@ -53,6 +53,8 @@ export interface LimbFaceInput {
   sideView: ViewLike | null;
   landmarks: { top: number; bottom: number; axisX: number; crotchY: number; neckY: number };
   rigKind?: string;
+  /** Resultado de cada parte pinchada para limpiar: cuántos píxeles de hilo se han quitado. */
+  cleanReport?: Array<{ view: 'front' | 'side'; x: number; y: number; removed: number }>;
   /** Medidas de la criatura (suelo, vientre, largo), para separar las patas traseras. */
   creatureMetrics?: {
     axisX: number;
@@ -158,6 +160,17 @@ export function applyLimbAndFaceExtras(input: LimbFaceInput): LimbFaceResult {
         const movidos = separateHindLegs(geometry, input.creatureMetrics);
         detection.push(`Patas traseras separadas por el hueco entre ellas (${movidos} vértices).`);
       }
+    }
+  }
+
+  if (input.cleanReport?.length) {
+    for (const c of input.cleanReport) {
+      const donde = c.view === 'front' ? 'frente' : 'perfil';
+      detection.push(
+        c.removed > 0
+          ? `Parte limpiada (${donde}, ${c.x},${c.y}): ${c.removed} píxeles de hilo quitados.`
+          : `Parte limpiada (${donde}, ${c.x},${c.y}): no hay hilos que quitar ahí.`
+      );
     }
   }
 
