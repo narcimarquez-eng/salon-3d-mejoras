@@ -31,12 +31,15 @@ const URL = process.env.URL || 'http://127.0.0.1:5173/?visor-api=1';
   await page.waitForTimeout(2500);
 
   // Pegar y ejecutar el script en el estudio Python
-  await page.getByText('Abrir Estudio Completo Python + Gemini').first().click();
+  // La app actual: pestaña "Blender Python" y botón "Estudio Completo" (el texto antiguo ya no existe)
+  await page.getByText('Blender Python', { exact: true }).first().click().catch(() => {});
+  await page.waitForTimeout(400);
+  await page.getByText('Estudio Completo', { exact: true }).first().click();
   await page.waitForTimeout(900);
   await page.locator('textarea[placeholder^="# Pega aquí"]').fill(fs.readFileSync(scriptPath, 'utf8'));
   const t0 = Date.now();
   await page.getByRole('button', { name: /Ejecutar y Ver en 3D/ }).first().click();
-  await page.waitForFunction(() => /triángulos/.test(document.body.innerText), null, { timeout: 300000 }).catch(() => {});
+  await page.waitForFunction(() => /Tris|triángulos/.test(document.body.innerText), null, { timeout: 300000 }).catch(() => {});
   await page.waitForTimeout(8000);
   const body = await page.locator('body').innerText();
   const fallo = (body.match(/Fallo en Línea \d+[^\n]*|SyntaxError[^\n]{0,160}|Por qué falla:[^\n]{0,200}/g) || []).slice(0, 2).join(' || ');
@@ -48,30 +51,32 @@ const URL = process.env.URL || 'http://127.0.0.1:5173/?visor-api=1';
     await page.locator('button', { hasText: 'Ejes Visibles' }).first().click();
     await page.waitForTimeout(400);
   }
-  const etiqueta = await page.locator('text=/triángulos/').first().innerText().catch(() => '');
+  const etiqueta = await page.locator('text=/Tris|triángulos/').first().innerText().catch(() => '');
   console.log(`ERROR: ${fallo || 'ninguno'} | ${etiqueta.slice(0, 80)} | ${Math.round((Date.now() - t0) / 1000)} s | errores de página: ${JSON.stringify(pageErrors.slice(0, 3))}`);
 
-  // Vistas de la app
-  // Vistas generales encuadradas a todo el modelo. Dirección hacia la cámara en ejes de la escena
-  // de la app (x = x del script, y = altura, z = -y del script): la fachada que mira a -Y del
-  // script se ve desde +z.
-  const vistaGeneral = async (archivo, dir, margen = 1.15) => {
+  // Vistas de la app: los botones Frente / Perfil / Espalda (title "Vista ...") de la barra superior.
+  // La vista general (3/4) es la que deja la app tras ejecutar el script.
+  const vistaBoton = async (archivo, titulo) => {
     await page.mouse.move(1300, 120);
-    await page.evaluate(([d, m]) => window.celshadeViewer.frameModel(m, d || undefined), [dir, margen]);
-    await page.waitForTimeout(3000);
+    if (titulo) {
+      await page.locator(`button[title="${titulo}"]`).first().click();
+    }
+    await page.waitForTimeout(2500);
     await page.screenshot({ path: `${prefijo}_${archivo}.png` });
   };
-  await page.getByRole('button', { name: '3/4 Estudio', exact: true }).first().click();
-  await page.waitForTimeout(1200);
-  await vistaGeneral('overview', null);
-  await vistaGeneral('front', [0, 0.18, 1]);
-  await vistaGeneral('side', [1, 0.18, 0]);
-  await vistaGeneral('top', [0.25, 1, 0.45], 1.45);
+  await page.locator('button[title="Restablecer Cámara"]').first().click().catch(() => {});
+  await vistaBoton('overview', null);
+  await vistaBoton('front', 'Vista Frente');
+  await vistaBoton('side', 'Vista Perfil');
+  await vistaBoton('back', 'Vista Espalda');
 
   // Vistas propias en metros del script
   const refs = JSON.parse(process.env.REFS || '[]');
   const vistas = JSON.parse(process.env.VISTAS || '[]');
   if (vistas.length) {
+    console.log('Aviso: VISTAS necesita window.celshadeViewer, que la app ya no expone; se omiten.');
+  }
+  if (false) {
     if (refs.length < 2) throw new Error('VISTAS necesita REFS con dos piezas de referencia');
     const a = await page.evaluate((n) => window.celshadeViewer.worldPosOf(n), refs[0].nombre);
     const c = await page.evaluate((n) => window.celshadeViewer.worldPosOf(n), refs[1].nombre);
@@ -89,10 +94,9 @@ const URL = process.env.URL || 'http://127.0.0.1:5173/?visor-api=1';
 
   // Exportar el GLB en modo Completo
   if (glbOut) {
-    await page.getByRole('button', { name: /Completo/ }).filter({ hasText: /💎/ }).first().click();
-    await page.waitForTimeout(300);
+    // Botón "Completo" del panel de exportación (bajar escena actual en .GLB)
     const descarga = page.waitForEvent('download', { timeout: 300000 });
-    await page.getByRole('button', { name: 'Descargar .GLB' }).click();
+    await page.getByRole('button', { name: 'Completo', exact: true }).first().click();
     await (await descarga).saveAs(glbOut);
     console.log(`GLB guardado en ${glbOut}`);
   }
