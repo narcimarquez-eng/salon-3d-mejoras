@@ -314,6 +314,27 @@ export default function HumanFromImagesPanel({
     }
   }, []);
   const liveBuildTimerRef = useRef<number | null>(null);
+  // Edición del estudio de fotos: hay que activarla para tocar tamaños y posiciones. Los cambios
+  // se ven al pulsar "Ver cambios" (manual) o en cada movimiento (tiempo real).
+  const [editMode, setEditMode] = useState(false);
+  const [liveMode, setLiveMode] = useState(false);
+  const [pendingBuild, setPendingBuild] = useState(false);
+  const editModeRef = useRef(false);
+  editModeRef.current = editMode;
+  const liveModeRef = useRef(false);
+  liveModeRef.current = liveMode;
+  const commitTransform = (opts: HumanBuildOptions, interactive = false) => {
+    if (liveModeRef.current) {
+      setPendingBuild(false);
+      triggerBuildIfReady(opts, interactive);
+    } else {
+      setPendingBuild(true);
+    }
+  };
+  const verCambios = () => {
+    setPendingBuild(false);
+    triggerBuildIfReady(options, false);
+  };
 
   const inputs = useRef<Record<SlotId, HTMLInputElement | null>>({
     front: null,
@@ -377,6 +398,7 @@ export default function HumanFromImagesPanel({
     patch: Partial<PhotoTransform>,
     interactivePreview = false
   ) => {
+    if (!editModeRef.current) return;
     const prevTf = getSlotTransform(slot, options);
     const nextTf: PhotoTransform = {
       ...prevTf,
@@ -403,7 +425,7 @@ export default function HumanFromImagesPanel({
       customRig: currentRig ?? options.customRig ?? null,
     };
     setOptions(nextOpts);
-    triggerBuildIfReady(nextOpts, interactivePreview);
+    commitTransform(nextOpts, interactivePreview);
   };
 
   const resetSlotTransform = (slot: SlotId) => {
@@ -417,7 +439,7 @@ export default function HumanFromImagesPanel({
       customRig: currentRig ?? options.customRig ?? null,
     };
     setOptions(nextOpts);
-    triggerBuildIfReady(nextOpts, false);
+    commitTransform(nextOpts, false);
   };
 
   // Seleccionar automáticamente el perfil (si existe) o el frente en el estudio de alineación
@@ -1229,7 +1251,66 @@ export default function HumanFromImagesPanel({
             </button>
           </div>
 
-          {showAlignStudio && (() => {
+          {showAlignStudio && (<>
+          <div className="p-2 rounded-md bg-slate-900/80 border border-slate-700 space-y-1.5">
+            <div className="flex flex-wrap items-center gap-1.5">
+              <button
+                type="button"
+                data-testid="photo-edit-toggle"
+                onClick={() => setEditMode((v) => !v)}
+                className={`px-2 py-1 rounded text-[10px] font-semibold border cursor-pointer transition-all ${
+                  editMode
+                    ? 'bg-emerald-500/25 border-emerald-400 text-emerald-200'
+                    : 'bg-slate-800 border-slate-600 text-slate-200 hover:bg-slate-700'
+                }`}
+              >
+                {editMode ? 'Edición activada' : 'Activar edición'}
+              </button>
+              <div className="flex rounded border border-slate-700 overflow-hidden text-[10px]">
+                <button
+                  type="button"
+                  data-testid="photo-mode-manual"
+                  onClick={() => setLiveMode(false)}
+                  className={`px-2 py-1 cursor-pointer ${
+                    !liveMode ? 'bg-amber-400 text-slate-950 font-semibold' : 'bg-slate-900 text-slate-300 hover:bg-slate-800'
+                  }`}
+                >
+                  Manual
+                </button>
+                <button
+                  type="button"
+                  data-testid="photo-mode-live"
+                  onClick={() => {
+                    setLiveMode(true);
+                    if (pendingBuild) verCambios();
+                  }}
+                  className={`px-2 py-1 cursor-pointer ${
+                    liveMode ? 'bg-amber-400 text-slate-950 font-semibold' : 'bg-slate-900 text-slate-300 hover:bg-slate-800'
+                  }`}
+                >
+                  Tiempo real
+                </button>
+              </div>
+              <button
+                type="button"
+                data-testid="photo-apply-changes"
+                disabled={!pendingBuild}
+                onClick={verCambios}
+                className="px-2 py-1 rounded text-[10px] font-semibold border border-sky-400/60 bg-sky-500/20 text-sky-100 cursor-pointer hover:bg-sky-500/30 disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                Ver cambios{pendingBuild ? ' (pendientes)' : ''}
+              </button>
+            </div>
+            <div className="text-[9.5px] text-slate-400">
+              {!editMode
+                ? 'Activa la edición para mover o cambiar el tamaño de las fotos.'
+                : liveMode
+                  ? 'Tiempo real: cada cambio reconstruye el personaje al momento.'
+                  : 'Manual: mueve y ajusta las fotos; pulsa "Ver cambios" para reconstruir el personaje.'}
+            </div>
+          </div>
+          <fieldset disabled={!editMode} className="space-y-2 min-w-0 disabled:opacity-60">
+          {(() => {
             const frontTf = getSlotTransform('front', options);
             const activeTf = getSlotTransform(effectiveAlignSlot, options);
             const activeImg = images[effectiveAlignSlot] ?? images.front!;
@@ -1351,6 +1432,7 @@ export default function HumanFromImagesPanel({
             };
 
             const handleCanvasPointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
+              if (!editModeRef.current) return;
               const canvas = alignCanvasRef.current;
               if (!canvas) return;
               canvas.setPointerCapture(e.pointerId);
@@ -1501,7 +1583,7 @@ export default function HumanFromImagesPanel({
                   // el objeto no dé un salto al soltar.
                   pinchStateRef.current = null;
                   dragStateRef.current = null;
-                  triggerBuildIfReady(options, false);
+                  commitTransform(options, false);
                 }
                 return;
               }
@@ -1511,11 +1593,12 @@ export default function HumanFromImagesPanel({
               if (canvas && canvas.hasPointerCapture(e.pointerId)) {
                 canvas.releasePointerCapture(e.pointerId);
               }
-              triggerBuildIfReady(options, false);
+              commitTransform(options, false);
             };
 
             const handleCanvasWheel = (e: WheelEvent) => {
               e.preventDefault();
+              if (!editModeRef.current) return;
               scaleActiveBy(e.deltaY < 0 ? 1.05 : 1 / 1.05, false);
             };
             wheelHandlerRef.current = handleCanvasWheel;
@@ -1732,8 +1815,8 @@ export default function HumanFromImagesPanel({
                             true
                           )
                         }
-                        onMouseUp={() => triggerBuildIfReady(options, false)}
-                        onTouchEnd={() => triggerBuildIfReady(options, false)}
+                        onMouseUp={() => commitTransform(options, false)}
+                        onTouchEnd={() => commitTransform(options, false)}
                         className="w-full accent-sky-400 cursor-pointer h-1.5"
                       />
                     </div>
@@ -1759,8 +1842,8 @@ export default function HumanFromImagesPanel({
                             true
                           )
                         }
-                        onMouseUp={() => triggerBuildIfReady(options, false)}
-                        onTouchEnd={() => triggerBuildIfReady(options, false)}
+                        onMouseUp={() => commitTransform(options, false)}
+                        onTouchEnd={() => commitTransform(options, false)}
                         className="w-full accent-sky-400 cursor-pointer h-1.5"
                       />
                     </div>
@@ -1786,8 +1869,8 @@ export default function HumanFromImagesPanel({
                             true
                           )
                         }
-                        onMouseUp={() => triggerBuildIfReady(options, false)}
-                        onTouchEnd={() => triggerBuildIfReady(options, false)}
+                        onMouseUp={() => commitTransform(options, false)}
+                        onTouchEnd={() => commitTransform(options, false)}
                         className="w-full accent-sky-400 cursor-pointer h-1.5"
                       />
                     </div>
@@ -1813,8 +1896,8 @@ export default function HumanFromImagesPanel({
                             true
                           )
                         }
-                        onMouseUp={() => triggerBuildIfReady(options, false)}
-                        onTouchEnd={() => triggerBuildIfReady(options, false)}
+                        onMouseUp={() => commitTransform(options, false)}
+                        onTouchEnd={() => commitTransform(options, false)}
                         className="w-full accent-sky-400 cursor-pointer h-1.5"
                       />
                     </div>
@@ -1863,8 +1946,8 @@ export default function HumanFromImagesPanel({
                           true
                         );
                       }}
-                      onMouseUp={() => triggerBuildIfReady(options, false)}
-                      onTouchEnd={() => triggerBuildIfReady(options, false)}
+                      onMouseUp={() => commitTransform(options, false)}
+                      onTouchEnd={() => commitTransform(options, false)}
                       className="w-full accent-amber-400 cursor-pointer h-1.5"
                     />
                   </div>
@@ -1888,8 +1971,8 @@ export default function HumanFromImagesPanel({
                           const val = parseFloat(e.target.value);
                           updateSlotTransform(effectiveAlignSlot, { scaleY: val }, true);
                         }}
-                        onMouseUp={() => triggerBuildIfReady(options, false)}
-                        onTouchEnd={() => triggerBuildIfReady(options, false)}
+                        onMouseUp={() => commitTransform(options, false)}
+                        onTouchEnd={() => commitTransform(options, false)}
                         className="w-full accent-amber-400 cursor-pointer h-1.5"
                       />
                     </div>
@@ -1950,8 +2033,8 @@ export default function HumanFromImagesPanel({
                           true
                         )
                       }
-                      onMouseUp={() => triggerBuildIfReady(options, false)}
-                      onTouchEnd={() => triggerBuildIfReady(options, false)}
+                      onMouseUp={() => commitTransform(options, false)}
+                      onTouchEnd={() => commitTransform(options, false)}
                       className="w-full accent-amber-400 cursor-pointer h-1.5"
                     />
                   </div>
@@ -1978,8 +2061,8 @@ export default function HumanFromImagesPanel({
                           true
                         )
                       }
-                      onMouseUp={() => triggerBuildIfReady(options, false)}
-                      onTouchEnd={() => triggerBuildIfReady(options, false)}
+                      onMouseUp={() => commitTransform(options, false)}
+                      onTouchEnd={() => commitTransform(options, false)}
                       className="w-full accent-amber-400 cursor-pointer h-1.5"
                     />
                   </div>
@@ -2004,8 +2087,8 @@ export default function HumanFromImagesPanel({
                             true
                           )
                         }
-                        onMouseUp={() => triggerBuildIfReady(options, false)}
-                        onTouchEnd={() => triggerBuildIfReady(options, false)}
+                        onMouseUp={() => commitTransform(options, false)}
+                        onTouchEnd={() => commitTransform(options, false)}
                         className="w-full accent-amber-400 cursor-pointer h-1.5"
                       />
                     </div>
@@ -2061,6 +2144,8 @@ export default function HumanFromImagesPanel({
               </div>
             );
           })()}
+          </fieldset>
+          </>)}
         </div>
       )}
 
