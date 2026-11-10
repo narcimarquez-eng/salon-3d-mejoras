@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import * as BufferGeometryUtils from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import {
   applyGlobalLaplacianSmoothing,
   decimateModelGeometry,
@@ -6290,7 +6291,26 @@ export async function executeBlenderPythonScript(
         select_all: (_opts?: { action?: string }) => {},
         select_by_type: (_opts?: { type?: string }) => {},
         mode_set: (_opts?: { mode?: string }) => {},
-        shade_smooth: () => {},
+        shade_smooth: () => {
+          // Suaviza de verdad la pieza activa: une los vértices repetidos (from_pydata crea
+          // triángulos sueltos) y recalcula normales compartidas. Sin esto la piel sale facetada.
+          const mesh = currentActiveObjProxy?._threeMesh as THREE.Mesh | undefined;
+          const geo = mesh?.geometry as THREE.BufferGeometry | undefined;
+          if (!mesh || !geo?.attributes?.position) return;
+          const base = geo.clone();
+          base.deleteAttribute('normal');
+          const merged = BufferGeometryUtils.mergeVertices(base, 1e-4);
+          merged.computeVertexNormals();
+          mesh.geometry = merged;
+          const meshData = currentActiveObjProxy?._meshData || currentActiveObjProxy?.data;
+          if (meshData) {
+            meshData._threeGeometry = merged;
+            meshData._geometry = merged;
+          }
+          if (mesh.userData.outlineMesh) (mesh.userData.outlineMesh as THREE.Mesh).geometry = merged;
+          mesh.userData.initialPositions = new Float32Array(merged.attributes.position.array);
+          geo.dispose();
+        },
         shade_auto_smooth: () => {},
         shade_flat: () => {},
         origin_set: () => {},
