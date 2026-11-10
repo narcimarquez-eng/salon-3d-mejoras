@@ -909,7 +909,8 @@ export function trimSideLegs(
   parts: { parts: LowerPart[]; bottom: number; bellyY: number },
   hindWidth: number | null,
   rgb: Float32Array,
-  margin = 2
+  margin = 2,
+  frontWidth: number | null = null
 ): number {
   const pats = parts.parts.filter((p) => p.kind === 'pata' && p.area > 0).sort((a, b) => a.minX - b.minX);
   // Solo debajo del vientre: por encima está el tronco, que no se toca
@@ -922,7 +923,9 @@ export function trimSideLegs(
     const own = measureRunsInRows(mask, w, y0, p.maxY - 2, p.minX - 4, p.maxX + 4);
     if (!own) return;
     const isHind = pats.length > 1 && idx === 0;
-    const width = isHind && hindWidth ? hindWidth : own.width;
+    // Grosor de cada pata: la trasera, de la espalda; la delantera, de su perfil, pero sin pasar del
+    // ancho que da la vista de frente (ahí las patas están limpias)
+    const width = isHind && hindWidth ? hindWidth : frontWidth ? Math.min(own.width, frontWidth) : own.width;
     // La pata en el perfil puede ir inclinada: el centro se sigue fila a fila (mediana de 5 filas)
     const centers: number[] = [];
     for (let y = y0; y <= p.maxY - 2; y++) {

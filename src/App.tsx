@@ -750,7 +750,12 @@ nodo.data.materials.append(mat)`);
           if (!p.threadCut) p.threadCut = new Uint8Array(256 * 256);
           return p.threadCut;
         };
-        trimViewLegs(frontPrep.cutout, 256, sinkOf(frontPrep), frontPrep.rgb);
+        const legsFront = trimViewLegs(frontPrep.cutout, 256, sinkOf(frontPrep), frontPrep.rgb);
+        let frontWidth: number | null = null;
+        if (legsFront.length) {
+          const wsF = legsFront.map((l) => l.width).sort((a, b) => a - b);
+          frontWidth = wsF[Math.floor(wsF.length / 2)];
+        }
         let hindWidth: number | null = null;
         if (backData && rawBackPrep !== frontPrep) {
           const legsBack = trimViewLegs(rawBackPrep.cutout, 256, sinkOf(rawBackPrep), rawBackPrep.rgb);
@@ -761,7 +766,7 @@ nodo.data.materials.append(mat)`);
         }
         if (sidePrep) {
           const sideParts = detectSideViewParts(sidePrep.cutout, 256);
-          if (sideParts) trimSideLegs(sidePrep.cutout, 256, sinkOf(sidePrep), sideParts, hindWidth, sidePrep.rgb);
+          if (sideParts) trimSideLegs(sidePrep.cutout, 256, sinkOf(sidePrep), sideParts, hindWidth, sidePrep.rgb, 2, frontWidth);
         }
       }
       // Patas y colas pinchadas en la imagen de detección: se limpian sus hilos antes de
