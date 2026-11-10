@@ -673,6 +673,54 @@ export function removeBrightHalo(
   return n;
 }
 
+/**
+ * Quita el sobrante que queda fuera del contorno de tinta: en cada fila, desde el borde de la
+ * silueta hacia dentro, si en los `maxDepth` píxeles primeros aparece una línea oscura (la tinta del
+ * dibujo), todo lo que hay entre el borde y esa línea se quita. Solo se mira dentro de [xa, xb].
+ * Devuelve cuántos píxeles se han quitado.
+ */
+export function trimToInkEdge(
+  mask: Uint8Array,
+  rgb: Float32Array,
+  w: number,
+  y0: number,
+  y1: number,
+  xa: number,
+  xb: number,
+  removed: Uint8Array,
+  maxDepth = 12,
+  darkThresh = 0.4
+): number {
+  const dark = (i: number) => 0.3 * rgb[i * 3] + 0.59 * rgb[i * 3 + 1] + 0.11 * rgb[i * 3 + 2] < darkThresh;
+  let n = 0;
+  for (let y = Math.max(0, y0); y <= Math.min(w - 1, y1); y++) {
+    for (const r of rowRuns(mask, w, y)) {
+      if (r[1] < xa || r[0] > xb) continue;
+      // Borde izquierdo: buscar la tinta hacia dentro
+      for (let k = 0; k < maxDepth && r[0] + k <= r[1]; k++) {
+        const x = r[0] + k;
+        if (dark(y * w + x)) {
+          for (let q = r[0]; q < x; q++) {
+            if (mask[y * w + q] === 1) { mask[y * w + q] = 0; removed[y * w + q] = 1; n++; }
+          }
+          break;
+        }
+      }
+      // Borde derecho
+      for (let k = 0; k < maxDepth && r[1] - k >= r[0]; k++) {
+        const x = r[1] - k;
+        if (dark(y * w + x)) {
+          for (let q = x + 1; q <= r[1]; q++) {
+            if (mask[y * w + q] === 1) { mask[y * w + q] = 0; removed[y * w + q] = 1; n++; }
+          }
+          break;
+        }
+      }
+    }
+  }
+  return n;
+}
+
 /** Una pata con su centro y su ancho, medidos en su franja media. */
 export interface LegMeasure {
   cx: number;
@@ -822,6 +870,12 @@ export function trimViewLegs(
     for (let y = 0; y < w; y++) if (rowRuns(mask, w, y).length) { if (t < 0) t = y; b = y; }
     if (t >= 0) removeBrightHalo(mask, rgb, w, Math.round(b - 0.45 * (b - t + 1)), b - 2, removed);
   }
+  {
+    let t = -1;
+    let b = -1;
+    for (let y = 0; y < w; y++) if (rowRuns(mask, w, y).length) { if (t < 0) t = y; b = y; }
+    if (t >= 0) trimToInkEdge(mask, rgb, w, Math.round(b - 0.45 * (b - t + 1)), b - 2, 0, w - 1, removed);
+  }
   const legs = measureLegsFromView(mask, w);
   if (!legs.length) return [];
   let top = -1;
@@ -859,8 +913,9 @@ export function trimSideLegs(
 ): number {
   const pats = parts.parts.filter((p) => p.kind === 'pata' && p.area > 0).sort((a, b) => a.minX - b.minX);
   // Solo debajo del vientre: por encima está el tronco, que no se toca
-  const legTop = Math.round(parts.bellyY + 0.4 * (parts.bottom - parts.bellyY));
+  const legTop = Math.round(parts.bellyY + 0.15 * (parts.bottom - parts.bellyY));
   removeBrightHalo(mask, rgb, w, legTop, parts.bottom - 2, removed);
+  for (const p of pats) trimToInkEdge(mask, rgb, w, Math.max(legTop, p.minY), p.maxY - 2, p.minX - 4, p.maxX + 4, removed);
   let done = 0;
   pats.forEach((p, idx) => {
     const y0 = Math.max(legTop, p.minY);
