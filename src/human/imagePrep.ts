@@ -197,6 +197,7 @@ export function fitImageToTensor(
       const bb = m ? +m[3] : 0;
       const colCount = new Int32Array(sw);
       const rowCount = new Int32Array(sh);
+      const fgMask = new Uint8Array(sw * sh);
       for (let y = 0; y < sh; y++) {
         for (let x = 0; x < sw; x++) {
           const o = (y * sw + x) * 4;
@@ -206,6 +207,7 @@ export function fitImageToTensor(
           if (fg) {
             colCount[x]++;
             rowCount[y]++;
+            fgMask[y * sw + x] = 1;
           }
         }
       }
@@ -216,6 +218,64 @@ export function fitImageToTensor(
       while (x1 > x0 && colCount[x1] < minHits) x1--;
       while (y0 < sh && rowCount[y0] < minHits) y0++;
       while (y1 > y0 && rowCount[y1] < minHits) y1--;
+
+      // El encuadre lo decide la FIGURA, no todo lo que haya en la imagen. Con la caja de
+      // todo lo no-blanco, un boceto suelto, una firma o una cota al lado del personaje
+      // agrandan la caja y la figura se dibuja más pequeña dentro del tensor. Eso hace que
+      // dos vistas del MISMO bicho salgan a escalas distintas, y entonces ni se pueden
+      // promediar ni la textura de una encaja en la silueta de la otra.
+      // Se usa el trozo conexo mayor, más los que midan al menos un cuarto que él (una pieza
+      // suelta grande de verdad, como un arma o un ala separada, sigue contando).
+      {
+        const label = new Int32Array(sw * sh).fill(-1);
+        const stack = new Int32Array(sw * sh);
+        const areas: number[] = [];
+        const boxes: Array<[number, number, number, number]> = [];
+        for (let start = 0; start < sw * sh; start++) {
+          if (fgMask[start] !== 1 || label[start] >= 0) continue;
+          const id = areas.length;
+          let sp = 0;
+          stack[sp++] = start;
+          label[start] = id;
+          let bx0 = sw, bx1 = -1, by0 = sh, by1 = -1, n = 0;
+          while (sp > 0) {
+            const i = stack[--sp];
+            const px = i % sw;
+            const py = (i / sw) | 0;
+            n++;
+            if (px < bx0) bx0 = px;
+            if (px > bx1) bx1 = px;
+            if (py < by0) by0 = py;
+            if (py > by1) by1 = py;
+            if (px > 0 && fgMask[i - 1] === 1 && label[i - 1] < 0) { label[i - 1] = id; stack[sp++] = i - 1; }
+            if (px < sw - 1 && fgMask[i + 1] === 1 && label[i + 1] < 0) { label[i + 1] = id; stack[sp++] = i + 1; }
+            if (py > 0 && fgMask[i - sw] === 1 && label[i - sw] < 0) { label[i - sw] = id; stack[sp++] = i - sw; }
+            if (py < sh - 1 && fgMask[i + sw] === 1 && label[i + sw] < 0) { label[i + sw] = id; stack[sp++] = i + sw; }
+          }
+          areas.push(n);
+          boxes.push([bx0, bx1, by0, by1]);
+        }
+        let maxArea = 0;
+        for (const n of areas) if (n > maxArea) maxArea = n;
+        if (maxArea > 0) {
+          let fx0 = sw, fx1 = -1, fy0 = sh, fy1 = -1;
+          for (let i = 0; i < areas.length; i++) {
+            if (areas[i] < maxArea * 0.25) continue;
+            const [a0, a1, b0, b1] = boxes[i];
+            if (a0 < fx0) fx0 = a0;
+            if (a1 > fx1) fx1 = a1;
+            if (b0 < fy0) fy0 = b0;
+            if (b1 > fy1) fy1 = b1;
+          }
+          if (fx1 > fx0 && fy1 > fy0) {
+            x0 = fx0;
+            x1 = fx1;
+            y0 = fy0;
+            y1 = fy1;
+          }
+        }
+      }
+
       if (x1 - x0 > sw * 0.05 && y1 - y0 > sh * 0.05) {
         const margin = Math.round(Math.max(x1 - x0, y1 - y0) * 0.03);
         x0 = Math.max(0, x0 - margin);

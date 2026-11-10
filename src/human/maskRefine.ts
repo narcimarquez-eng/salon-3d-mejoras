@@ -155,20 +155,44 @@ export function mirrorMaskX(mask: Uint8Array, w: number): Uint8Array {
   return out;
 }
 
-function maskBounds(mask: Uint8Array, w: number) {
-  let x0 = w, x1 = -1, y0 = w, y1 = -1;
-  for (let y = 0; y < w; y++) {
-    for (let x = 0; x < w; x++) {
-      if (mask[y * w + x] === 1) {
-        if (x < x0) x0 = x;
-        if (x > x1) x1 = x;
-        if (y < y0) y0 = y;
-        if (y > y1) y1 = y;
-      }
+/**
+ * Caja del trozo conexo MÁS GRANDE de la silueta.
+ *
+ * Para encajar dos vistas hay que medirlas por la figura, no por todo lo que haya en la
+ * imagen. Si un recorte arrastra un boceto suelto, una firma o una cota, la caja de la
+ * máscara entera se estira y la escala sale mal: se acaba encajando "figura + basura"
+ * contra "figura". El trozo más grande siempre es la figura.
+ */
+function largestBlobBounds(mask: Uint8Array, w: number) {
+  const n = w * w;
+  const seen = new Uint8Array(n);
+  const queue = new Int32Array(n);
+  let best = { x0: w, x1: -1, y0: w, y1: -1, empty: true, area: 0 };
+  for (let start = 0; start < n; start++) {
+    if (mask[start] !== 1 || seen[start]) continue;
+    let qh = 0;
+    let qt = 0;
+    queue[qt++] = start;
+    seen[start] = 1;
+    let x0 = w, x1 = -1, y0 = w, y1 = -1;
+    while (qh < qt) {
+      const i = queue[qh++];
+      const x = i % w;
+      const y = (i / w) | 0;
+      if (x < x0) x0 = x;
+      if (x > x1) x1 = x;
+      if (y < y0) y0 = y;
+      if (y > y1) y1 = y;
+      if (x > 0 && mask[i - 1] === 1 && !seen[i - 1]) { seen[i - 1] = 1; queue[qt++] = i - 1; }
+      if (x < w - 1 && mask[i + 1] === 1 && !seen[i + 1]) { seen[i + 1] = 1; queue[qt++] = i + 1; }
+      if (y > 0 && mask[i - w] === 1 && !seen[i - w]) { seen[i - w] = 1; queue[qt++] = i - w; }
+      if (y < w - 1 && mask[i + w] === 1 && !seen[i + w]) { seen[i + w] = 1; queue[qt++] = i + w; }
     }
+    if (qt > best.area) best = { x0, x1, y0, y1, empty: false, area: qt };
   }
-  return { x0, x1, y0, y1, empty: x1 < 0 };
+  return best;
 }
+
 
 /**
  * Forma media de dos siluetas del mismo cuerpo. `b` se encaja primero en la
@@ -182,36 +206,63 @@ export function averageSilhouettes(
   w: number,
   weightB = 0.5
 ): Uint8Array {
-  const ba = maskBounds(a, w);
-  const bb = maskBounds(b, w);
+  const ba = largestBlobBounds(a, w);
+  const bb = largestBlobBounds(b, w);
   if (ba.empty || bb.empty) return a;
-  const sx = (ba.x1 - ba.x0 + 1) / Math.max(1, bb.x1 - bb.x0 + 1);
-  const sy = (ba.y1 - ba.y0 + 1) / Math.max(1, bb.y1 - bb.y0 + 1);
-  // Encajes absurdos (una vista casi vacía) se descartan en vez de deformar nada.
-  if (sx < 0.55 || sx > 1.8 || sy < 0.55 || sy > 1.8) return a;
 
-  const fitted = new Uint8Array(w * w);
-  for (let y = 0; y < w; y++) {
-    const srcY = Math.round(bb.y0 + (y - ba.y0) / sy);
-    if (srcY < 0 || srcY >= w) continue;
-    for (let x = 0; x < w; x++) {
-      const srcX = Math.round(bb.x0 + (x - ba.x0) / sx);
-      if (srcX < 0 || srcX >= w) continue;
-      fitted[y * w + x] = b[srcY * w + srcX];
+  const aCx = 0.5 * (ba.x0 + ba.x1);
+  const aCy = 0.5 * (ba.y0 + ba.y1);
+  const bCx = 0.5 * (bb.x0 + bb.x1);
+  const bCy = 0.5 * (bb.y0 + bb.y1);
+  const sx0 = (ba.x1 - ba.x0 + 1) / Math.max(1, bb.x1 - bb.x0 + 1);
+  const sy0 = (ba.y1 - ba.y0 + 1) / Math.max(1, bb.y1 - bb.y0 + 1);
+  if (sx0 < 0.5 || sx0 > 2.0 || sy0 < 0.5 || sy0 > 2.0) return a;
+
+  /** Remuestrea `b` con la escala y el desplazamiento dados, en coordenadas de `a`. */
+  const warp = (sx: number, sy: number, dx: number, dy: number, step: number, out?: Uint8Array) => {
+    let inter = 0;
+    let union = 0;
+    for (let y = 0; y < w; y += step) {
+      const srcY = Math.round(bCy + (y - aCy - dy) / sy);
+      for (let x = 0; x < w; x += step) {
+        const srcX = Math.round(bCx + (x - aCx - dx) / sx);
+        const inB =
+          srcX >= 0 && srcX < w && srcY >= 0 && srcY < w && b[srcY * w + srcX] === 1;
+        if (out && inB) out[y * w + x] = 1;
+        if (!out) {
+          const inA = a[y * w + x] === 1;
+          if (inA && inB) inter++;
+          if (inA || inB) union++;
+        }
+      }
+    }
+    return union > 0 ? inter / union : 0;
+  };
+
+  // La caja da una primera estimación, pero cuando un recorte arrastra algo pegado a la
+  // figura (un boceto suelto que la toca) la caja miente. Así que se BUSCA la escala y el
+  // desplazamiento que hacen coincidir de verdad las dos siluetas, quedándose con los que
+  // maximizan el solape. Es lo mismo que ajustar el tamaño de un lado hasta que encaje.
+  let best = { sx: sx0, sy: sy0, dx: 0, dy: 0, iou: warp(sx0, sy0, 0, 0, 2) };
+  const shift = Math.round(w * 0.06);
+  for (const m of [0.84, 0.88, 0.92, 0.96, 1.0, 1.04, 1.08, 1.13, 1.18]) {
+    for (let dy = -shift; dy <= shift; dy += Math.max(2, Math.round(shift / 3))) {
+      for (let dx = -shift; dx <= shift; dx += Math.max(2, Math.round(shift / 3))) {
+        const sx = sx0 * m;
+        const sy = sy0 * m;
+        if (sx < 0.45 || sx > 2.2 || sy < 0.45 || sy > 2.2) continue;
+        const iou = warp(sx, sy, dx, dy, 2);
+        if (iou > best.iou) best = { sx, sy, dx, dy, iou };
+      }
     }
   }
 
-  // Si tras encajarlas siguen sin parecerse, no son la misma pose (o una de las dos vistas
-  // trae basura en su recorte): promediarlas estropearía la silueta, así que se deja `a`.
-  let inter = 0;
-  let union = 0;
-  for (let i = 0; i < w * w; i++) {
-    const x = a[i] === 1;
-    const y = fitted[i] === 1;
-    if (x && y) inter++;
-    if (x || y) union++;
-  }
-  if (union === 0 || inter / union < 0.82) return a;
+  // Si ni con el mejor encaje se parecen, no son la misma pose (o una vista trae basura):
+  // promediarlas estropearía la silueta, así que se deja `a` tal cual.
+  if (best.iou < 0.82) return a;
+
+  const fitted = new Uint8Array(w * w);
+  warp(best.sx, best.sy, best.dx, best.dy, 1, fitted);
 
   const sa = signedDistance(a, w);
   const sb = signedDistance(fitted, w);
