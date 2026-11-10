@@ -1050,6 +1050,7 @@ export function buildHumanFromImages(
     sideView,
     landmarks: stats.landmarks,
     rigKind: stats.rigKind,
+    creatureMetrics: stats.creatureMetrics,
     options,
   });
   notes.push(...extras.notes);

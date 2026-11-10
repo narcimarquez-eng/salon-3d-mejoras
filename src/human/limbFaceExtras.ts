@@ -53,6 +53,15 @@ export interface LimbFaceInput {
   sideView: ViewLike | null;
   landmarks: { top: number; bottom: number; axisX: number; crotchY: number; neckY: number };
   rigKind?: string;
+  /** Medidas de la criatura (suelo, vientre, largo), para separar las patas traseras. */
+  creatureMetrics?: {
+    axisX: number;
+    groundY: number;
+    bellyY: number;
+    minZ: number;
+    maxZ: number;
+    height: number;
+  };
   options: {
     separateLimbs?: boolean;
     faceParts?: FacePartId[];
@@ -64,6 +73,50 @@ export interface LimbFaceResult {
   detection: string[];
   notes: string[];
   detectionPreview?: string;
+}
+
+/**
+ * Separa las dos patas traseras de un cuadrúpedo. En el perfil se ven solapadas y el molde
+ * las talla como un único bloque que llena el hueco entre ellas, así que la malla queda con
+ * las dos patas pegadas. Aquí, en la mitad trasera y por debajo del vientre, los vértices
+ * cercanos al eje se empujan hacia fuera dejando un hueco de `gap` metros; más arriba y lejos
+ * del eje no cambian. La función es monótona en X, así que no se pliega la malla.
+ */
+export function separateHindLegs(
+  geometry: THREE.BufferGeometry,
+  m: { axisX: number; groundY: number; bellyY: number; minZ: number; maxZ: number; height: number },
+  opts: { gap?: number; reach?: number } = {}
+): number {
+  const pos = geometry.getAttribute('position') as THREE.BufferAttribute | undefined;
+  if (!pos) return 0;
+  const gap = opts.gap ?? 0.06;
+  const reach = opts.reach ?? 0.3;
+  const length = Math.max(1e-3, m.maxZ - m.minZ);
+  const zHind = m.minZ + 0.45 * length;
+  const fade = 0.1 * Math.max(1e-3, m.height);
+  let moved = 0;
+  const arr = pos.array as Float32Array;
+  for (let i = 0; i < pos.count; i++) {
+    const x = arr[i * 3];
+    const y = arr[i * 3 + 1];
+    const z = arr[i * 3 + 2];
+    if (z >= zHind) continue;
+    // Peso vertical: pleno por debajo del vientre, se apaga hacia arriba
+    const wy = Math.max(0, Math.min(1, (m.bellyY + fade - y) / fade));
+    if (wy <= 0) continue;
+    const dx = x - m.axisX;
+    const ad = Math.abs(dx);
+    if (ad >= reach) continue;
+    const s = dx >= 0 ? 1 : -1;
+    const push = gap * wy * (1 - ad / reach);
+    arr[i * 3] = x + s * push;
+    moved++;
+  }
+  if (moved > 0) {
+    pos.needsUpdate = true;
+    geometry.computeVertexNormals();
+  }
+  return moved;
 }
 
 export function applyLimbAndFaceExtras(input: LimbFaceInput): LimbFaceResult {
@@ -101,6 +154,10 @@ export function applyLimbAndFaceExtras(input: LimbFaceInput): LimbFaceResult {
     );
     if (isCreature) {
       detection.push('El esqueleto de cuadrúpedo coloca sus cuatro patas y la cola en la malla 3D.');
+      if (input.creatureMetrics) {
+        const movidos = separateHindLegs(geometry, input.creatureMetrics);
+        detection.push(`Patas traseras separadas por el hueco entre ellas (${movidos} vértices).`);
+      }
     }
   }
 

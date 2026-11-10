@@ -967,6 +967,7 @@ nodo.data.materials.append(mat)`);
         sideView: sidePrep ?? sideLeftPrep,
         landmarks: stats.landmarks,
         rigKind: stats.rigKind,
+        creatureMetrics: stats.creatureMetrics,
         options,
       });
 
