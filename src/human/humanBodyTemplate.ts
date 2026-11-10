@@ -236,6 +236,8 @@ export interface HumanBodyOptions {
   shoes?: boolean;
   /** Cuánto manda el perfil sobre el grosor del cuerpo (0 = nada, 1 = del todo). */
   sideStrength?: number;
+  /** Perfil único: el cuerpo se recorta con la silueta del perfil principal. */
+  singleProfile?: boolean;
   /**
    * Modo ortogonal 4 vistas:
    * - Silueta Izq/Der tomada estrictamente de la imagen delantera,
@@ -3744,6 +3746,8 @@ function buildProfileDriven3DMoldGeometry(
   // con 180 un 0,845, sin tocar nada más. El deslizador de filas sigue mandando por encima.
   const userRows = Math.max(200, Math.min(1000, Math.round(options.rows ?? 160)));
   const sideStrength = Math.max(0, Math.min(1, options.sideStrength ?? 1));
+  // Perfil único: el volumen del cuerpo se recorta con la silueta del perfil cargado (ver más abajo).
+  const clipBodyToProfile = Boolean(options.singleProfile) && Boolean(inputs.sideMask);
   const rowScale = Math.max(0.4, Math.min(5.0, userRows / 160));
   const baseStep = Math.max(
     1.6,
@@ -3911,6 +3915,9 @@ function buildProfileDriven3DMoldGeometry(
           }
 
           valBody = signedSuperellipse(dX, rX, dSide, rSide);
+          // Perfil único: nada del cuerpo puede quedar fuera de la silueta de perfil. La superelipse
+          // deja un margen blando que sobresale por el lomo; aquí se intersecta con el perfil.
+          if (clipBodyToProfile) valBody = Math.min(valBody, dSide);
         }
 
         // B) Alas 3D desplegadas en ±X:
