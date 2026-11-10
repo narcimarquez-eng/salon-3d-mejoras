@@ -3646,6 +3646,20 @@ function buildProfileDriven3DMoldGeometry(
     ? hindFootSamples[hindFootSamples.length >> 1]
     : sSpineX + (facingRight ? -refBodyHalf * 1.6 : refBodyHalf * 1.6);
 
+  // Ancho del pie trasero (tramo de atrás en las filas del suelo). El hueco cola-pata queda DETRÁS
+  // del pie; el hueco bajo la barriga queda al menos un pie por delante. Sin esta comprobación, en
+  // las filas donde ya no hay cola el hueco de la barriga se tomaba por el de la cola y la pata
+  // trasera entera se modelaba como un tubo fino de cola (desaparecía).
+  const hindFootWidths: number[] = [];
+  for (let ys = Math.round(sTop + Hs * 0.91); ys <= sBot; ys++) {
+    const fr = rowRuns(sideBodyMask, w, ys);
+    if (!fr.length) continue;
+    const rr = facingRight ? fr[0] : fr[fr.length - 1];
+    hindFootWidths.push(rr[1] - rr[0] + 1);
+  }
+  hindFootWidths.sort((a, b) => a - b);
+  const hindFootWidth = hindFootWidths.length ? hindFootWidths[hindFootWidths.length >> 1] : refBodyHalf;
+
   const hindLegRearByRow = new Float32Array(w).fill(hindFootRearX);
   for (let ys = Math.round(sTop + Hs * 0.48); ys <= sBot; ys++) {
     const runs = rowRuns(sideBodyMask, w, ys);
@@ -3659,8 +3673,8 @@ function buildProfileDriven3DMoldGeometry(
       // El hueco entre `rearRun` y `nextRun` es el hueco entre la cola y la pata trasera SOLO si dicho hueco
       // está claramente detrás de `sSpineX` (cerca o detrás de `hindFootRearX`), y NO bajo la barriga!
       const isGapBehindHindLeg = facingRight
-        ? gapMid < sSpineX - refBodyHalf * 0.85
-        : gapMid > sSpineX + refBodyHalf * 0.85;
+        ? gapMid < sSpineX - refBodyHalf * 0.85 && gapMid < hindFootRearX + 0.5 * hindFootWidth
+        : gapMid > sSpineX + refBodyHalf * 0.85 && gapMid > hindFootRearX - 0.5 * hindFootWidth;
       if (isGapBehindHindLeg) {
         boundaryX = gapMid;
       }
