@@ -77,6 +77,7 @@ import {
   isPhotoTransformModified,
   loadLayerMap,
   prepareView, cutThreadsNear } from './human/imagePrep';
+import { trimViewLegs, trimSideLegs, detectSideViewParts } from './human/limbParts';
 import {
   buildHumanBodyTemplateGeometry,
   hasProfileDriven3DFeatures,
@@ -742,6 +743,27 @@ nodo.data.materials.append(mat)`);
       // Vista superior (cenital): tercer plano ortografico del casco visual.
       const topData = images.top ? imageToSourceAndCrop(images.top) : null;
       const topPrep = topData ? prepareView(topData.source, false, viewCut) : null;
+      // Patas y colas: se quita lo que sobra alrededor. Grosor de las patas delanteras medido en el
+      // perfil; de las traseras, medido en la espalda (en el perfil van tapadas por las delanteras).
+      if (options.separateLimbs) {
+        const sinkOf = (p: { threadCut?: Uint8Array }) => {
+          if (!p.threadCut) p.threadCut = new Uint8Array(256 * 256);
+          return p.threadCut;
+        };
+        trimViewLegs(frontPrep.cutout, 256, sinkOf(frontPrep), frontPrep.rgb);
+        let hindWidth: number | null = null;
+        if (backData && rawBackPrep !== frontPrep) {
+          const legsBack = trimViewLegs(rawBackPrep.cutout, 256, sinkOf(rawBackPrep), rawBackPrep.rgb);
+          if (legsBack.length) {
+            const ws = legsBack.map((l) => l.width).sort((a, b) => a - b);
+            hindWidth = ws[Math.floor(ws.length / 2)];
+          }
+        }
+        if (sidePrep) {
+          const sideParts = detectSideViewParts(sidePrep.cutout, 256);
+          if (sideParts) trimSideLegs(sidePrep.cutout, 256, sinkOf(sidePrep), sideParts, hindWidth, sidePrep.rgb);
+        }
+      }
       // Patas y colas pinchadas en la imagen de detección: se limpian sus hilos antes de
       // derivar las máscaras, para que el molde ya salga sin ellos.
       const cleanReport: Array<{ view: 'front' | 'side'; x: number; y: number; removed: number }> = [];

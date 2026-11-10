@@ -621,3 +621,274 @@ export function detectSideViewParts(mask: Uint8Array, w: number): SideViewParts 
   const res = classifyLowerParts(mask, w, { top, bottom, axisX: widestMid[bellyY], crotchY: bellyY }, { sideView: true });
   return { ...res, top, bottom, bellyY };
 }
+
+/** Tramos de una fila: [inicio, fin] de los píxeles de la silueta. */
+function rowRuns(mask: Uint8Array, w: number, y: number): Array<[number, number]> {
+  const runs: Array<[number, number]> = [];
+  let a = -1;
+  for (let x = 0; x <= w; x++) {
+    const on = x < w && mask[y * w + x] === 1;
+    if (on && a < 0) a = x;
+    if (!on && a >= 0) {
+      runs.push([a, x - 1]);
+      a = -1;
+    }
+  }
+  return runs;
+}
+
+function median(v: number[]): number {
+  if (!v.length) return NaN;
+  const s = [...v].sort((p, q) => p - q);
+  const m = s.length >> 1;
+  return s.length % 2 ? s[m] : 0.5 * (s[m - 1] + s[m]);
+}
+
+/**
+ * Quita del recorte los píxeles casi blancos de las filas [y0, y1]: el fondo claro que la silueta
+ * arrastra alrededor de las patas pálidas. Así el ancho medido es el de la pata. Devuelve cuántos.
+ */
+export function removeBrightHalo(
+  mask: Uint8Array,
+  rgb: Float32Array,
+  w: number,
+  y0: number,
+  y1: number,
+  removed: Uint8Array,
+  thresh = 0.86
+): number {
+  let n = 0;
+  for (let y = Math.max(0, y0); y <= Math.min(w - 1, y1); y++) {
+    for (let x = 0; x < w; x++) {
+      const i = y * w + x;
+      if (mask[i] !== 1) continue;
+      const lum = 0.3 * rgb[i * 3] + 0.59 * rgb[i * 3 + 1] + 0.11 * rgb[i * 3 + 2];
+      if (lum > thresh) {
+        mask[i] = 0;
+        removed[i] = 1;
+        n++;
+      }
+    }
+  }
+  return n;
+}
+
+/** Una pata con su centro y su ancho, medidos en su franja media. */
+export interface LegMeasure {
+  cx: number;
+  width: number;
+}
+
+/**
+ * Patas de frente o de espalda: en la franja baja del cuerpo (entre la entrepierna y los pies)
+ * se miran los dos tramos más anchos de cada fila. Devuelve el centro y el ancho de cada pata.
+ * Si las dos patas van pegadas, devuelve una sola.
+ */
+export function measureLegsFromView(mask: Uint8Array, w: number): LegMeasure[] {
+  let top = -1;
+  let bottom = -1;
+  for (let y = 0; y < w; y++) {
+    if (rowRuns(mask, w, y).length) {
+      if (top < 0) top = y;
+      bottom = y;
+    }
+  }
+  if (top < 0 || bottom - top < 20) return [];
+  const h = bottom - top + 1;
+  const y0 = Math.round(bottom - 0.35 * h);
+  const y1 = Math.round(bottom - 0.1 * h);
+  const lefts: number[] = [];
+  const rights: number[] = [];
+  const widthsL: number[] = [];
+  const widthsR: number[] = [];
+  let split = 0;
+  let rows = 0;
+  for (let y = y0; y <= y1; y++) {
+    const runs = rowRuns(mask, w, y).filter(([a, b]) => b - a + 1 >= 3);
+    if (!runs.length) continue;
+    rows++;
+    runs.sort((p, q) => q[1] - q[0] - (p[1] - p[0]));
+    if (runs.length >= 2) {
+      split++;
+      const [r1, r2] = [runs[0], runs[1]].sort((p, q) => p[0] - q[0]);
+      lefts.push(0.5 * (r1[0] + r1[1]));
+      widthsL.push(r1[1] - r1[0] + 1);
+      rights.push(0.5 * (r2[0] + r2[1]));
+      widthsR.push(r2[1] - r2[0] + 1);
+    } else {
+      const [r1] = runs;
+      lefts.push(0.5 * (r1[0] + r1[1]));
+      widthsL.push(r1[1] - r1[0] + 1);
+    }
+  }
+  if (!rows) return [];
+  if (split >= 0.5 * rows && lefts.length) {
+    return [
+      { cx: median(lefts), width: median(widthsL) },
+      { cx: median(rights), width: median(widthsR) },
+    ];
+  }
+  return [{ cx: median(lefts), width: median(widthsL) }];
+}
+
+/**
+ * Deja solo la pata (o la cola) en las filas [y0, y1]: en cada fila se queda el tramo que contiene
+ * el centro `cx` y se recorta a `halfWidth` a cada lado. Con `requireSplit`, solo se toca la fila si
+ * hay dos o más tramos (así no se corta el tronco cuando las patas aún están unidas).
+ * Devuelve cuántos píxeles se han quitado.
+ */
+export function trimLegRows(
+  mask: Uint8Array,
+  w: number,
+  y0: number,
+  y1: number,
+  cx: number,
+  halfWidth: number,
+  opts: { requireSplit?: boolean; removed?: Uint8Array; xRange?: [number, number] } = {}
+): number {
+  let removed = 0;
+  for (let y = Math.max(0, y0); y <= Math.min(w - 1, y1); y++) {
+    const runs = rowRuns(mask, w, y);
+    if (!runs.length) continue;
+    if (opts.requireSplit && runs.length < 2) continue;
+    // Tramo que contiene el centro, o el más cercano a él
+    let best: [number, number] | null = null;
+    let bestD = Infinity;
+    for (const r of runs) {
+      const d = cx >= r[0] && cx <= r[1] ? 0 : Math.min(Math.abs(cx - r[0]), Math.abs(cx - r[1]));
+      if (d < bestD) {
+        bestD = d;
+        best = r;
+      }
+    }
+    if (!best || bestD > halfWidth) continue;
+    const lo = cx - halfWidth;
+    const hi = cx + halfWidth;
+    const [xa, xb] = opts.xRange ?? [0, w - 1];
+    for (let x = best[0]; x <= best[1]; x++) {
+      if (x >= lo && x <= hi) continue;
+      if (x < xa || x > xb) continue;
+      const i = y * w + x;
+      if (mask[i] === 1) {
+        mask[i] = 0;
+        removed++;
+        if (opts.removed) opts.removed[i] = 1;
+      }
+    }
+  }
+  return removed;
+}
+
+/** Centro y ancho de la pata en las filas [y0, y1]: el tramo más largo de cada fila, medido en [xMin, xMax]. */
+function measureRunsInRows(
+  mask: Uint8Array,
+  w: number,
+  y0: number,
+  y1: number,
+  xMin: number,
+  xMax: number
+): LegMeasure | null {
+  const cs: number[] = [];
+  const ws: number[] = [];
+  for (let y = Math.max(0, y0); y <= Math.min(w - 1, y1); y++) {
+    let best: [number, number] | null = null;
+    for (const r of rowRuns(mask, w, y)) {
+      if (r[1] < xMin || r[0] > xMax) continue;
+      if (!best || r[1] - r[0] > best[1] - best[0]) best = r;
+    }
+    if (!best) continue;
+    cs.push(0.5 * (best[0] + best[1]));
+    ws.push(best[1] - best[0] + 1);
+  }
+  if (!cs.length) return null;
+  return { cx: median(cs), width: median(ws) };
+}
+
+/**
+ * Quita lo que sobra alrededor de las patas en una vista de frente o de espalda: mide las dos patas
+ * en la franja baja y deja cada una a su ancho más `margin` píxeles a cada lado.
+ * Devuelve los anchos medidos (para usarlos como grosor de las patas traseras en el perfil).
+ */
+export function trimViewLegs(
+  mask: Uint8Array,
+  w: number,
+  removed: Uint8Array,
+  rgb: Float32Array,
+  margin = 2
+): LegMeasure[] {
+  {
+    let t = -1;
+    let b = -1;
+    for (let y = 0; y < w; y++) if (rowRuns(mask, w, y).length) { if (t < 0) t = y; b = y; }
+    if (t >= 0) removeBrightHalo(mask, rgb, w, Math.round(b - 0.45 * (b - t + 1)), b - 2, removed);
+  }
+  const legs = measureLegsFromView(mask, w);
+  if (!legs.length) return [];
+  let top = -1;
+  let bottom = -1;
+  for (let y = 0; y < w; y++) {
+    if (rowRuns(mask, w, y).length) {
+      if (top < 0) top = y;
+      bottom = y;
+    }
+  }
+  const h = bottom - top + 1;
+  for (const leg of legs) {
+    trimLegRows(mask, w, Math.round(bottom - 0.45 * h), bottom - 2, leg.cx, leg.width / 2 + margin, {
+      requireSplit: legs.length > 1,
+      removed,
+    });
+  }
+  return legs;
+}
+
+/**
+ * Quita lo que sobra alrededor de las patas y la cola en el perfil. La pata delantera (la de la
+ * derecha) se mide en su propio perfil; la trasera (la de la izquierda) usa el grosor de la espalda,
+ * `hindWidth`, porque en el perfil va tapada por la delantera. La cola se mide en su tramo.
+ * Devuelve cuántas patas y colas se han limpiado.
+ */
+export function trimSideLegs(
+  mask: Uint8Array,
+  w: number,
+  removed: Uint8Array,
+  parts: { parts: LowerPart[]; bottom: number; bellyY: number },
+  hindWidth: number | null,
+  rgb: Float32Array,
+  margin = 2
+): number {
+  const pats = parts.parts.filter((p) => p.kind === 'pata' && p.area > 0).sort((a, b) => a.minX - b.minX);
+  // Solo debajo del vientre: por encima está el tronco, que no se toca
+  const legTop = Math.round(parts.bellyY + 0.4 * (parts.bottom - parts.bellyY));
+  removeBrightHalo(mask, rgb, w, legTop, parts.bottom - 2, removed);
+  let done = 0;
+  pats.forEach((p, idx) => {
+    const y0 = Math.max(legTop, p.minY);
+    const own = measureRunsInRows(mask, w, y0, p.maxY - 2, p.minX - 4, p.maxX + 4);
+    if (!own) return;
+    const isHind = pats.length > 1 && idx === 0;
+    const width = isHind && hindWidth ? hindWidth : own.width;
+    // La pata en el perfil puede ir inclinada: el centro se sigue fila a fila (mediana de 5 filas)
+    const centers: number[] = [];
+    for (let y = y0; y <= p.maxY - 2; y++) {
+      const m = measureRunsInRows(mask, w, y, y, p.minX - 4, p.maxX + 4);
+      centers.push(m ? m.cx : own.cx);
+    }
+    for (let y = y0; y <= p.maxY - 2; y++) {
+      const k = y - y0;
+      const win = centers.slice(Math.max(0, k - 2), Math.min(centers.length, k + 3));
+      const cx = median(win);
+      trimLegRows(mask, w, y, y, cx, width / 2 + margin, { removed, xRange: [p.minX - 4, p.maxX + 4] });
+    }
+    done++;
+  });
+  for (const p of parts.parts.filter((q) => q.kind === 'rabo')) {
+    const h = p.maxY - p.minY + 1;
+    const own = measureRunsInRows(mask, w, p.minY, p.maxY, p.minX - 4, p.maxX + 4);
+    if (!own) continue;
+    trimLegRows(mask, w, p.minY, p.maxY, own.cx, own.width / 2 + margin, { removed, xRange: [p.minX - 2, p.maxX + 2] });
+    done++;
+    void h;
+  }
+  return done;
+}
