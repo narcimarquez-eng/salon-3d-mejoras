@@ -43,10 +43,15 @@ const URL = process.env.URL || 'http://127.0.0.1:5173/?visor-api=1';
   await page.waitForTimeout(8000);
   const body = await page.locator('body').innerText();
   const fallo = (body.match(/Fallo en Línea \d+[^\n]*|SyntaxError[^\n]{0,160}|Por qué falla:[^\n]{0,200}/g) || []).slice(0, 2).join(' || ');
-  if (await page.locator('text=Consola Python de Blender').count()) {
+  // Cerrar siempre el estudio Python: la app ya no muestra el texto "Consola Python de Blender"
+  // y, si el editor queda abierto, tapa la vista del modelo en todas las capturas.
+  const verObjeto = page.locator('button', { hasText: 'Ver Objeto en 3D' }).first();
+  if (await verObjeto.count()) {
+    await verObjeto.click();
+  } else {
     await page.keyboard.press('Escape');
-    await page.waitForTimeout(800);
   }
+  await page.waitForTimeout(800);
   if (await page.locator('button', { hasText: 'Ejes Visibles' }).count()) {
     await page.locator('button', { hasText: 'Ejes Visibles' }).first().click();
     await page.waitForTimeout(400);
