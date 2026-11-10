@@ -163,7 +163,7 @@ export function mirrorMaskX(mask: Uint8Array, w: number): Uint8Array {
  * máscara entera se estira y la escala sale mal: se acaba encajando "figura + basura"
  * contra "figura". El trozo más grande siempre es la figura.
  */
-function largestBlobBounds(mask: Uint8Array, w: number) {
+export function largestBlobBounds(mask: Uint8Array, w: number) {
   const n = w * w;
   const seen = new Uint8Array(n);
   const queue = new Int32Array(n);

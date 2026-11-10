@@ -53,6 +53,7 @@ import { createCreatureAnimationClips } from './creatureAnimations';
 import {
   averageSilhouettes,
   estimateOutlineThickness,
+  largestBlobBounds as figureBounds,
   maskIoU,
   mirrorMaskX,
   trimOutline,
@@ -704,6 +705,70 @@ export function buildHumanFromImages(
     notes.push(
       'Sin vista superior: el ancho solo puede medirse por altura, así que en criaturas horizontales (cuadrúpedos, dragones) el hocico y la cola saldrán tan anchos como el torso. Añade una quinta columna cenital a la hoja para corregirlo.'
     );
+  }
+
+  // 2c. CONCORDANCIA ENTRE LOS DOS PERFILES.
+  //     Cada vista se encuadra por su cuenta: se recorta a su contenido y se centra en el
+  //     cuadrado de 256. Si una celda arrastra algo al lado de la figura (un boceto, una cota),
+  //     esa figura se dibuja MÁS PEQUEÑA y, al centrarse, queda flotando a media altura
+  //     mientras la otra llega al suelo. Son el mismo bicho, así que su altura y su línea de
+  //     suelo tienen que coincidir: aquí se reencuadra una de las dos para que concuerden.
+  //     (Al frente no se le puede igualar el perfil: el perfil es mucho más largo que alto y,
+  //     estirado a la altura del frente, se saldría del lienzo. Esa diferencia la compensa el
+  //     molde con su propia escala.)
+  if (sideView && sideLeftView && sideMask && sideLeftMask) {
+    const bR = figureBounds(sideMask, TENSOR);
+    const bL = figureBounds(sideLeftMask, TENSOR);
+    if (!bR.empty && !bL.empty) {
+      const hR = bR.y1 - bR.y0 + 1;
+      const hL = bL.y1 - bL.y0 + 1;
+      const ratio = hR / Math.max(1, hL);
+      if (ratio < 0.97 || ratio > 1.03) {
+        const c = (TENSOR - 1) * 0.5;
+        // ¿Cabe la figura pequeña si se agranda hasta la grande? Si no, se encoge la grande.
+        const fits = (box: { x0: number; x1: number; y0: number; y1: number }, s: number) => {
+          const halfW = Math.max(Math.abs(box.x0 - c), Math.abs(box.x1 - c)) * s;
+          const halfH = Math.max(Math.abs(box.y0 - c), Math.abs(box.y1 - c)) * s;
+          return halfW <= c - 2 && halfH <= c - 2;
+        };
+        const growRight = hR < hL;
+        const sGrow = growRight ? hL / hR : hR / hL;
+        const canGrow =
+          sGrow <= 1.6 && fits(growRight ? bR : bL, sGrow);
+        // Vista que se mueve, su caja, y a qué altura debe quedar su línea de suelo.
+        const moveRight = canGrow ? growRight : !growRight;
+        const view = moveRight ? sideView : sideLeftView;
+        const layer = moveRight ? sideLayer : sideLeftLayer;
+        const box = moveRight ? bR : bL;
+        const refBox = moveRight ? bL : bR;
+        const scale = (refBox.y1 - refBox.y0 + 1) / Math.max(1, box.y1 - box.y0 + 1);
+        const clamped = Math.max(0.45, Math.min(2.2, scale));
+        const dy = refBox.y1 - c - (box.y1 - c) * clamped;
+        applyPhotoTransformToPreparedView(
+          view,
+          layer,
+          {
+            ...DEFAULT_PHOTO_TRANSFORM,
+            scaleX: clamped,
+            scaleY: clamped,
+            offsetY: (dy / TENSOR) * 100,
+          },
+          true,
+          false
+        );
+        const newMask = maskFromCutoutAndPaint(view.cutout, TENSOR, layer?.offset);
+        if (moveRight) {
+          sideMask = newMask;
+          if (sideProfileSeam) sideProfileSeam = { ...sideProfileSeam, inpainted: view.inpainted, cutout: newMask };
+        } else {
+          sideLeftMask = newMask;
+          if (sideLeftProfileSeam) sideLeftProfileSeam = { ...sideLeftProfileSeam, inpainted: view.inpainted, cutout: newMask };
+        }
+        notes.push(
+          `Los dos perfiles venían a escalas distintas (alto ${hR} vs ${hL} texels): se ha reencuadrado el ${moveRight ? 'derecho' : 'izquierdo'} (x${clamped.toFixed(2)}) para que coincidan en tamaño y línea de suelo.`
+        );
+      }
+    }
   }
 
   // 3. Mapas de capas pintados (opcionales)
