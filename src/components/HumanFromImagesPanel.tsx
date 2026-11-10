@@ -150,66 +150,6 @@ interface CutoutPreviewData {
 
 type RecuadroHandleId = 'move' | 'n' | 's' | 'w' | 'e' | 'nw' | 'ne' | 'sw' | 'se';
 
-/**
- * Recuadro de referencia (el de las guías Cabeza / Hombros / Cadera / Pies), guardado en
- * fracciones de la caja de la foto: 0..1 = la silueta detectada. Viaja con la foto cuando se
- * mueve la imagen, y con "Arrastrar: Recuadro" se mueve o se cambia de tamaño él solo, sin
- * tocar la foto. No cambia el modelo 3D: es la referencia para alinear las vistas.
- */
-interface RecuadroFrame {
-  u0: number;
-  v0: number;
-  u1: number;
-  v1: number;
-}
-const FULL_FRAME: RecuadroFrame = { u0: 0, v0: 0, u1: 1, v1: 1 };
-
-function frameBoxOf(img: PhotoRecuadroBox, fr?: RecuadroFrame): PhotoRecuadroBox {
-  const f = fr ?? FULL_FRAME;
-  const left = img.left + f.u0 * img.width;
-  const right = img.left + f.u1 * img.width;
-  const top = img.top + f.v0 * img.height;
-  const bottom = img.top + f.v1 * img.height;
-  return {
-    ...img,
-    left,
-    right,
-    top,
-    bottom,
-    width: right - left,
-    height: bottom - top,
-    centerX: 0.5 * (left + right),
-    centerY: 0.5 * (top + bottom),
-  };
-}
-
-/** Bordes de la caja de la foto que dejan el recuadro en (l, t, r, b) sin cambiar su encaje en la foto. */
-function imageEdgesFromFrameEdges(
-  l: number,
-  t: number,
-  r: number,
-  b: number,
-  fr?: RecuadroFrame
-): [number, number, number, number] {
-  const f = fr ?? FULL_FRAME;
-  const w = (r - l) / Math.max(0.02, f.u1 - f.u0);
-  const h = (b - t) / Math.max(0.02, f.v1 - f.v0);
-  const left = l - f.u0 * w;
-  const top = t - f.v0 * h;
-  return [left, top, left + w, top + h];
-}
-
-/** Recuadro (l, t, r, b) expresado en fracciones de la caja de la foto. */
-function frameFromEdges(l: number, t: number, r: number, b: number, img: PhotoRecuadroBox): RecuadroFrame {
-  const w = Math.max(1, img.width);
-  const h = Math.max(1, img.height);
-  return {
-    u0: (l - img.left) / w,
-    v0: (t - img.top) / h,
-    u1: (r - img.left) / w,
-    v1: (b - img.top) / h,
-  };
-}
 
 const cutoutPreviewCacheNormal = new WeakMap<HTMLImageElement, CutoutPreviewData>();
 const cutoutPreviewCacheMirror = new WeakMap<HTMLImageElement, CutoutPreviewData>();
@@ -351,8 +291,6 @@ export default function HumanFromImagesPanel({
     startTf: PhotoTransform;
     startBox: PhotoRecuadroBox;
     startImageBox: PhotoRecuadroBox;
-    startFrame?: RecuadroFrame;
-    target: 'image' | 'frame';
   } | null>(null);
   // Dedos/punteros activos sobre la cuadrícula, para el pellizco con dos dedos.
   const activePointersRef = useRef<Map<number, { x: number; y: number }>>(new Map());
@@ -363,12 +301,7 @@ export default function HumanFromImagesPanel({
     startTf: PhotoTransform;
     startBox: PhotoRecuadroBox;
     startImageBox: PhotoRecuadroBox;
-    startFrame?: RecuadroFrame;
-    target: 'image' | 'frame';
   } | null>(null);
-  // Recuadros de referencia por vista y qué mueve el arrastre (la foto o solo el recuadro)
-  const [frames, setFrames] = useState<Partial<Record<SlotId, RecuadroFrame>>>({});
-  const [dragTarget, setDragTarget] = useState<'image' | 'frame'>('image');
   // La rueda se engancha a mano como listener NO pasivo: el `onWheel` de React es pasivo,
   // así que su `preventDefault` no frenaba el scroll y la página se movía a la vez que el objeto.
   const wheelHandlerRef = useRef<((e: WheelEvent) => void) | null>(null);
@@ -564,8 +497,9 @@ export default function HumanFromImagesPanel({
       activeData.bounds
     );
     // Las fotos se dibujan con su caja; guías y tiradores, con el recuadro de referencia
-    const frontBox = frameBoxOf(frontImageBox, frames.front);
-    const activeBox = frameBoxOf(activeImageBox, frames[effectiveAlignSlot]);
+    // El recuadro es la base de la textura: la foto se ajusta a él (ver setActiveFrame)
+    const frontBox = frontImageBox;
+    const activeBox = activeImageBox;
 
     const drawRecuadroPreview = (
       data: CutoutPreviewData,
@@ -693,12 +627,29 @@ export default function HumanFromImagesPanel({
     const rcx = activeOriginX + activeBox.centerX;
     const rcy = activeBox.centerY;
 
-    const frameColor = dragTarget === 'frame' ? '#34d399' : '#fbbf24';
+    // Recuadro de textura: verde sólido, relleno suave y etiqueta. Se distingue de las líneas
+    // de guía (cian discontinuas) y del contorno de tinta de la foto.
+    const frameColor = '#34d399';
     ctx.save();
+    ctx.fillStyle = 'rgba(52, 211, 153, 0.10)';
+    ctx.fillRect(rx, ry, rw, rh);
     ctx.strokeStyle = frameColor;
-    ctx.lineWidth = 1.6;
-    ctx.setLineDash([5, 3]);
+    ctx.lineWidth = 2;
+    ctx.setLineDash([]);
     ctx.strokeRect(rx, ry, rw, rh);
+    // Esquinas en L, para leerlo como marco y no como contorno
+    const Lc = Math.min(14, rw / 3, rh / 3);
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(rx, ry + Lc); ctx.lineTo(rx, ry); ctx.lineTo(rx + Lc, ry);
+    ctx.moveTo(rx + rw - Lc, ry); ctx.lineTo(rx + rw, ry); ctx.lineTo(rx + rw, ry + Lc);
+    ctx.moveTo(rx, ry + rh - Lc); ctx.lineTo(rx, ry + rh); ctx.lineTo(rx + Lc, ry + rh);
+    ctx.moveTo(rx + rw - Lc, ry + rh); ctx.lineTo(rx + rw, ry + rh); ctx.lineTo(rx + rw, ry + rh - Lc);
+    ctx.stroke();
+    ctx.lineWidth = 2;
+    ctx.fillStyle = frameColor;
+    ctx.font = 'bold 9px monospace';
+    ctx.fillText('RECUADRO · TEXTURA', rx + 4, Math.max(10, ry - 4));
     ctx.setLineDash([]);
 
     // Cruz central del recuadro activo
@@ -739,7 +690,7 @@ export default function HumanFromImagesPanel({
       ctx.strokeRect(hx - 5, hy - 5, 10, 10);
     }
     ctx.restore();
-  }, [images, options.photoTransforms, effectiveAlignSlot, alignViewMode, alignOpacity, frames, dragTarget]);
+  }, [images, options.photoTransforms, effectiveAlignSlot, alignViewMode, alignOpacity]);
 
   const setFreeformMode = (enabled: boolean) => {
     const nextOpts: HumanBuildOptions = enabled
@@ -1405,48 +1356,32 @@ export default function HumanFromImagesPanel({
             );
             // frontBox / activeBox son los recuadros de referencia (pegados a la foto salvo que se
             // muevan con "Arrastrar: Recuadro"); las cajas *ImageBox son las de la propia foto.
-            const activeFrame = frames[effectiveAlignSlot];
-            const frontBox = frameBoxOf(frontImageBox, frames.front);
-            const activeBox = frameBoxOf(activeImageBox, activeFrame);
-            const moveFrame = dragTarget === 'frame';
-            const setActiveFrame = (l: number, t: number, r: number, b: number, img: PhotoRecuadroBox) => {
-              const fr = frameFromEdges(l, t, r, b, img);
-              setFrames((prev) => ({ ...prev, [effectiveAlignSlot]: fr }));
-            };
-            const resetActiveFrame = () => {
-              setFrames((prev) => {
-                const next = { ...prev };
-                delete next[effectiveAlignSlot];
-                return next;
-              });
-            };
-
+            const frontBox = frontImageBox;
+            const activeBox = activeImageBox;
             const activeLabel =
               SLOTS.find((s) => s.id === effectiveAlignSlot)?.label ?? effectiveAlignSlot;
             const availableSlots = SLOTS.filter((s) => Boolean(images[s.id]));
+            // Mover o escalar el recuadro cambia la textura: la foto se ajusta a sus bordes.
+            const setActiveFrame = (l: number, t: number, r: number, b: number, interactive = true) => {
+              const nextTf = photoTransformFromRecuadroBox(l, t, r, b, activeTf, activeImageBox);
+              updateSlotTransform(effectiveAlignSlot, nextTf, interactive);
+            };
 
             const applyRecuadroEdges = (
               newLeft: number,
               newTop: number,
               newRight: number,
               newBottom: number,
-              interactive: boolean,
-              forceImage = false
+              interactive: boolean
             ) => {
-              if (moveFrame && !forceImage) {
-                setActiveFrame(newLeft, newTop, newRight, newBottom, activeImageBox);
-                return;
-              }
-              const e = imageEdgesFromFrameEdges(newLeft, newTop, newRight, newBottom, activeFrame);
-              const nextTf = photoTransformFromRecuadroBox(e[0], e[1], e[2], e[3], activeTf, activeImageBox);
-              updateSlotTransform(effectiveAlignSlot, nextTf, interactive);
+              setActiveFrame(newLeft, newTop, newRight, newBottom, interactive);
             };
 
             // Escalar el OBJETO alrededor de su propio centro. El recuadro guarda centro + tamaño,
             // así que multiplicar la escala sin tocar el desplazamiento encoge o agranda la figura
             // en su sitio, sin que se vaya hacia el centro de la cuadrícula.
             const scaleActiveBy = (factor: number, interactive: boolean) => {
-              if (moveFrame) {
+              {
                 const hw = 0.5 * activeBox.width * factor;
                 const hh = 0.5 * activeBox.height * factor;
                 if (hw < 6 || hh < 6) return;
@@ -1454,8 +1389,7 @@ export default function HumanFromImagesPanel({
                   activeBox.centerX - hw,
                   activeBox.centerY - hh,
                   activeBox.centerX + hw,
-                  activeBox.centerY + hh,
-                  activeImageBox
+                  activeBox.centerY + hh
                 );
                 return;
               }
@@ -1503,7 +1437,6 @@ export default function HumanFromImagesPanel({
                   activeBox.right,
                   frontBox.bottom,
                   false,
-                  true
                 );
                 return;
               }
@@ -1514,21 +1447,17 @@ export default function HumanFromImagesPanel({
                   frontBox.right,
                   frontBox.bottom,
                   false,
-                  true
                 );
                 return;
               }
               // 'coupleToFront': iguala Cabeza (top) y Pies (bottom) al Frente, centra en X con el Frente
               // y mantiene la proporción natural de ancho del perfil (o iguala ancho en espalda).
-              const targetScaleY = frontBox.height / Math.max(1, activeBox.baseHeight);
               const isBack =
                 effectiveAlignSlot === 'back' || effectiveAlignSlot === 'backLayer';
               // Con un recuadro propio se conserva su proporción; sin él, la natural de la foto
               const targetW = isBack
                 ? frontBox.width
-                : activeFrame
-                ? (activeBox.width / Math.max(1, activeBox.height)) * frontBox.height
-                : activeBox.baseWidth * targetScaleY;
+                : (activeBox.width / Math.max(1, activeBox.height)) * frontBox.height;
               const halfW = targetW * 0.5;
               applyRecuadroEdges(
                 frontBox.centerX - halfW,
@@ -1536,7 +1465,6 @@ export default function HumanFromImagesPanel({
                 frontBox.centerX + halfW,
                 frontBox.bottom,
                 false,
-                true
               );
             };
 
@@ -1558,8 +1486,6 @@ export default function HumanFromImagesPanel({
                   startTf: { ...activeTf },
                   startBox: { ...activeBox },
                   startImageBox: { ...activeImageBox },
-                  startFrame: activeFrame ? { ...activeFrame } : undefined,
-                  target: dragTarget,
                 };
                 return;
               }
@@ -1598,8 +1524,6 @@ export default function HumanFromImagesPanel({
                 startTf: { ...activeTf },
                 startBox: { ...activeBox },
                 startImageBox: { ...activeImageBox },
-                startFrame: activeFrame ? { ...activeFrame } : undefined,
-                target: dragTarget,
               };
             };
 
@@ -1616,20 +1540,7 @@ export default function HumanFromImagesPanel({
                 const cy = sb.centerY + (m.midY - pinch.startMidY);
                 const halfW = 0.5 * sb.width * f;
                 const halfH = 0.5 * sb.height * f;
-                if (pinch.target === 'frame') {
-                  setActiveFrame(cx - halfW, cy - halfH, cx + halfW, cy + halfH, pinch.startImageBox);
-                  return;
-                }
-                const pe = imageEdgesFromFrameEdges(cx - halfW, cy - halfH, cx + halfW, cy + halfH, pinch.startFrame);
-                const nextTf = photoTransformFromRecuadroBox(
-                  pe[0],
-                  pe[1],
-                  pe[2],
-                  pe[3],
-                  pinch.startTf,
-                  pinch.startImageBox
-                );
-                updateSlotTransform(effectiveAlignSlot, nextTf, true);
+                setActiveFrame(cx - halfW, cy - halfH, cx + halfW, cy + halfH, true);
                 return;
               }
               const drag = dragStateRef.current;
@@ -1680,20 +1591,7 @@ export default function HumanFromImagesPanel({
                 }
               }
 
-              if (drag.target === 'frame') {
-                setActiveFrame(newLeft, newTop, newRight, newBottom, drag.startImageBox);
-                return;
-              }
-              const de = imageEdgesFromFrameEdges(newLeft, newTop, newRight, newBottom, drag.startFrame);
-              const nextTf = photoTransformFromRecuadroBox(
-                de[0],
-                de[1],
-                de[2],
-                de[3],
-                drag.startTf,
-                drag.startImageBox
-              );
-              updateSlotTransform(effectiveAlignSlot, nextTf, true);
+              setActiveFrame(newLeft, newTop, newRight, newBottom, true);
             };
 
             const handleCanvasPointerUp = (e: React.PointerEvent<HTMLCanvasElement>) => {
@@ -1706,22 +1604,19 @@ export default function HumanFromImagesPanel({
                 if (activePointersRef.current.size < 2) {
                   // Al levantar un dedo termina el pellizco; el que queda no arrastra, para que
                   // el objeto no dé un salto al soltar.
-                  const wasFrame = pinchStateRef.current.target === 'frame';
                   pinchStateRef.current = null;
                   dragStateRef.current = null;
-                  if (!wasFrame) commitTransform(options, false);
+                  commitTransform(options, false);
                 }
                 return;
               }
               if (!dragStateRef.current) return;
-              const wasFrameDrag = dragStateRef.current.target === 'frame';
               dragStateRef.current = null;
               const canvas = alignCanvasRef.current;
               if (canvas && canvas.hasPointerCapture(e.pointerId)) {
                 canvas.releasePointerCapture(e.pointerId);
               }
-              // Mover solo el recuadro no cambia el modelo: no hace falta reconstruir
-              if (!wasFrameDrag) commitTransform(options, false);
+              commitTransform(options, false);
             };
 
             const handleCanvasWheel = (e: WheelEvent) => {
@@ -1794,45 +1689,6 @@ export default function HumanFromImagesPanel({
                   </button>
                 </div>
 
-                {/* Qué mueve el arrastre: la foto (con su recuadro) o solo el recuadro de referencia */}
-                <div className="flex items-center gap-1.5">
-                  <span className="text-[9.5px] text-slate-400 shrink-0">Arrastrar:</span>
-                  <div className="flex flex-1 rounded border border-slate-700 overflow-hidden text-[10px]">
-                    <button
-                      type="button"
-                      data-testid="drag-target-image"
-                      onClick={() => setDragTarget('image')}
-                      title="Mover y cambiar el tamaño de la foto (el recuadro va con ella)"
-                      className={`flex-1 px-2 py-1 cursor-pointer ${
-                        !moveFrame ? 'bg-amber-400 text-slate-950 font-semibold' : 'bg-slate-900 text-slate-300 hover:bg-slate-800'
-                      }`}
-                    >
-                      Imagen
-                    </button>
-                    <button
-                      type="button"
-                      data-testid="drag-target-frame"
-                      onClick={() => setDragTarget('frame')}
-                      title="Mover y cambiar el tamaño solo del recuadro de líneas, sin mover la foto"
-                      className={`flex-1 px-2 py-1 cursor-pointer ${
-                        moveFrame ? 'bg-emerald-400 text-slate-950 font-semibold' : 'bg-slate-900 text-slate-300 hover:bg-slate-800'
-                      }`}
-                    >
-                      Recuadro
-                    </button>
-                  </div>
-                  <button
-                    type="button"
-                    data-testid="reset-frame"
-                    onClick={resetActiveFrame}
-                    disabled={!activeFrame}
-                    title="Volver a ajustar el recuadro a la silueta detectada en la foto"
-                    className="px-2 py-1 rounded text-[9.5px] border border-slate-700 bg-slate-900 text-slate-300 hover:bg-slate-800 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
-                  >
-                    Ajustar a la foto
-                  </button>
-                </div>
-
                 {/* Lienzo Interactivo con Recuadro de 8 tiradores (4 lados azules + 4 esquinas amarillas) */}
                 <div className="relative rounded-lg overflow-hidden border border-slate-700 bg-slate-950 flex flex-col items-center">
                   <canvas
@@ -1851,7 +1707,7 @@ export default function HumanFromImagesPanel({
                       Recuadro: <strong className="text-amber-300">{activeLabel}</strong>
                     </span>
                     <span className="text-sky-300 font-mono">
-                      {moveFrame ? 'Moviendo solo el recuadro' : 'Arrastrar = mover · 2 dedos o rueda = tamaño'}
+                      Recuadro = textura · arrastrar = mover · 2 dedos o rueda = tamaño
                     </span>
                   </div>
                   {/* Tamaño del objeto dentro de la cuadrícula: botones grandes, válidos en móvil */}
