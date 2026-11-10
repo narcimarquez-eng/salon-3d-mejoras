@@ -30,6 +30,10 @@ import {
 } from './blenderAnimation';
 import {
   applyBoxProjectedUv,
+  applyPhotoViewsUv,
+  ensureColorMapLoaded,
+  isColorMapLoaded,
+  PhotoView,
   getColorMapSet,
   preloadColorMapImages,
   slugifyTextureId,
@@ -1434,6 +1438,10 @@ export interface ExtendedPBRMaterialProps {
   colorMapId?: string | null;
   /** Metros que ocupa una repetición de la imagen */
   colorMapTileMeters?: number;
+  /** Vistas de una hoja de fotos que se proyectan sobre la malla (en vez de repetir la imagen) */
+  colorMapViews?: PhotoView[] | null;
+  /** El script usa Z hacia arriba (las vistas van en metros del script) */
+  colorMapZUp?: boolean;
   metallic?: number;
   roughness?: number;
   emissionColor?: THREE.Color | null;
@@ -1708,11 +1716,30 @@ function applyMaterialToThreeMesh(
     mesh.userData.originalNormalMap = imageSet?.normal ?? null;
     mesh.userData.originalRoughnessMap = imageSet?.roughness ?? null;
     mesh.updateMatrix();
-    applyBoxProjectedUv(
-      mesh.geometry as THREE.BufferGeometry,
-      mesh.matrix,
-      extraPbr?.colorMapTileMeters ?? 3
-    );
+    const views = extraPbr?.colorMapViews;
+    const img = imageColorMap.image as { width?: number; height?: number } | undefined;
+    if (views && views.length > 0 && img?.width && img?.height) {
+      // Fotos de una hoja de vistas: cada triángulo toma la vista que mejor lo ve
+      const newGeo = applyPhotoViewsUv(
+        mesh.geometry as THREE.BufferGeometry,
+        mesh.matrix,
+        views,
+        img.width,
+        img.height,
+        Boolean(extraPbr?.colorMapZUp)
+      );
+      if (newGeo !== mesh.geometry) {
+        mesh.geometry = newGeo;
+        if (mesh.userData.outlineMesh) (mesh.userData.outlineMesh as THREE.Mesh).geometry = newGeo;
+        mesh.userData.initialPositions = new Float32Array(newGeo.attributes.position.array);
+      }
+    } else {
+      applyBoxProjectedUv(
+        mesh.geometry as THREE.BufferGeometry,
+        mesh.matrix,
+        extraPbr?.colorMapTileMeters ?? 3
+      );
+    }
   } else if (hadImageMap) {
     // El script quitó el mapa de imagen: vuelve al procedural (o al color base)
     mesh.userData.hasPerMeshTexture = Boolean(texPattern);
@@ -1839,7 +1866,12 @@ function applyMaterialToThreeMesh(
     eeveeMat.transparent = isTransparent;
     eeveeMat.opacity = isTransparent ? Math.min(alphaVal, 1.0 - transVal * 0.55) : 1.0;
     eeveeMat.side = sideMode;
-    if (procColorMap) {
+    if (imageColorMap) {
+      // Imagen (o fotos proyectadas): el color sale de la imagen, sin teñir
+      eeveeMat.map = imageColorMap;
+      eeveeMat.color.set(0xffffff);
+      eeveeMat.normalMap = imageSet?.normal ?? null;
+    } else if (procColorMap) {
       eeveeMat.map = procColorMap;
     }
     if (procBumpMap) {
@@ -1875,7 +1907,12 @@ function applyMaterialToThreeMesh(
     cyclesMat.transparent = isTransparent;
     cyclesMat.opacity = isTransparent ? Math.min(alphaVal, 1.0 - transVal * 0.5) : 1.0;
     cyclesMat.side = sideMode;
-    if (procColorMap) {
+    if (imageColorMap) {
+      // Imagen (o fotos proyectadas): el color sale de la imagen, sin teñir
+      cyclesMat.map = imageColorMap;
+      cyclesMat.color.set(0xffffff);
+      cyclesMat.normalMap = imageSet?.normal ?? null;
+    } else if (procColorMap) {
       cyclesMat.map = procColorMap;
     }
     if (procBumpMap) {
@@ -1898,7 +1935,11 @@ function applyMaterialToThreeMesh(
     if (extraPbr?.customGradientMap) {
       toonMat.gradientMap = extraPbr.customGradientMap;
     }
-    if (procColorMap) {
+    if (imageColorMap) {
+      // Imagen (o fotos proyectadas): el color sale de la imagen, sin teñir
+      toonMat.map = imageColorMap;
+      toonMat.color.set(0xffffff);
+    } else if (procColorMap) {
       toonMat.map = procColorMap;
     }
     if (procBumpMap) {
@@ -3593,7 +3634,7 @@ export async function executeBlenderPythonScript(
 ): Promise<ScriptExecutionResult> {
   ensurePythonArrayMethods();
   // Las imágenes de mapa de color deben estar en memoria para resolver mat.color_map de forma síncrona
-  await preloadColorMapImages();
+  await preloadColorMapImages(script);
   startBlenderRun();
 
   const startTime = performance.now();
@@ -3873,6 +3914,7 @@ export async function executeBlenderPythonScript(
     texture?: string;
     _colorMapId: string | null;
     _colorMapTile: number;
+    _colorMapViews: PhotoView[] | null;
     _baseColor: THREE.Color;
     _emissionColor: THREE.Color | null;
     _emissionStrength: number;
@@ -3998,6 +4040,7 @@ export async function executeBlenderPythonScript(
       _textureNaturalColor: false,
       _colorMapId: null,
       _colorMapTile: 3,
+      _colorMapViews: null,
       _linkedMeshes: new Set<THREE.Mesh>(),
       _sync() {
         const extraPbr: ExtendedPBRMaterialProps = {
@@ -4018,6 +4061,8 @@ export async function executeBlenderPythonScript(
           textureNaturalColor: this._textureNaturalColor,
           colorMapId: this._colorMapId,
           colorMapTileMeters: this._colorMapTile,
+          colorMapViews: this._colorMapViews,
+          colorMapZUp: isZUp,
         };
         this._linkedMeshes.forEach((m) => {
           applyMaterialToThreeMesh(
@@ -4376,6 +4421,21 @@ export async function executeBlenderPythonScript(
         // Mapa de color con imagen: mat.color_map = "cal_blanca" (o un nombre de "Mis texturas")
         if (prop === 'color_map' || prop === 'textura_imagen' || prop === 'imagen') {
           target._colorMapId = value == null || value === '' ? null : slugifyTextureId(String(value));
+          target._sync();
+          // Si no se precargó (nombre en una variable), se carga ahora y se vuelve a aplicar
+          const pendingId = target._colorMapId;
+          if (pendingId && !isColorMapLoaded(pendingId)) {
+            void ensureColorMapLoaded(pendingId).then((ok) => {
+              if (ok && target._colorMapId === pendingId) target._sync();
+            });
+          }
+          return true;
+        }
+        // Fotos proyectadas: mat.color_map_views = [["x", 0, u0, v0, u1, v1, h0, h1, w0, w1], ...]
+        if (prop === 'color_map_views' || prop === 'vistas_foto') {
+          target._colorMapViews = Array.isArray(value)
+            ? (value as unknown[][]).map((v) => Array.from(v as ArrayLike<unknown>) as unknown as PhotoView)
+            : null;
           target._sync();
           return true;
         }

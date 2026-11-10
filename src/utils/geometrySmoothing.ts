@@ -32,7 +32,9 @@ export function applyNormalSmoothingToModel(
     if ((child as Mesh).isMesh) {
       const mesh = child as Mesh;
       if (mesh.geometry) {
-        mesh.geometry.computeVertexNormals();
+        // Las mallas con fotos proyectadas traen sus normales suaves ya calculadas: al estar
+        // separadas en triángulos sueltos, recalcularlas las dejaría facetadas.
+        if (!mesh.geometry.userData?.normalesFijas) mesh.geometry.computeVertexNormals();
         if (factor > 0) {
           (Array.isArray(mesh.material) ? mesh.material : [mesh.material]).forEach((m) => {
             if (m && 'flatShading' in m) {

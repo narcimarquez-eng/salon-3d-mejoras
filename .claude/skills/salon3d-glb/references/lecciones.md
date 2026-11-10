@@ -129,3 +129,16 @@ Mira el script más parecido antes de empezar uno nuevo:
 | `ayuntamiento/` | Fachada con texturas CC0 (`mat.color_map`) y optimización del GLB |
 | `puestos/` | Props ligeros de estilo Lineage 2 (pocos lados, materiales compartidos) |
 | `orco/` | Personaje con manos, pies y armadura hecho con primitivas |
+
+## Tiburón con patas (desde una hoja de vistas)
+
+- Las imágenes de `mat.color_map` no se cargaban (la biblioteca de texturas estaba vacía): ahora
+  se precargan las que nombra el script, también con el nombre en una variable (`HOJA = "..."`).
+- El visor usa el material EEVEE (o Cycles/Cel) según el modo, no el PBR base: un mapa de imagen
+  hay que ponérselo a todos o sale blanco.
+- Patas: mídelas en la hoja. Hechas el doble de gruesas que en la foto cogían el fondo y salían
+  con rayas claras. Para unirlas al cuerpo sin que parezcan clavadas, el tubo nace estrecho muy
+  dentro del cuerpo y se abre al cruzar la piel; con la misma foto en cuerpo y patas no hay
+  salto de color.
+- Proyección: con todas las vistas al mismo peso, la costura perfil/cenital salía en dientes de
+  sierra a media altura del costado; peso 1.7 al perfil la sube al lomo.

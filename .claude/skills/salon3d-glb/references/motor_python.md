@@ -81,8 +81,21 @@ Entradas que entiende el BSDF: `Base Color`, `Metallic`, `Roughness`, `Coat Weig
 - **Pocos materiales**: la exportación Completo junta en una sola pieza todo lo que comparte
   material. Diez o quince materiales bien elegidos dan un GLB ligero.
 - Atajos: `mat.texture = "stone_ashlar"` pone un patrón procedural; `mat.color_map = "cal_blanca"`
-  usa una imagen (texturas CC0 `cal_blanca`, `teja_arcilla` o una de "Mis texturas") y
-  `mat.color_map_scale = 2.5` fija los metros por repetición.
+  usa una imagen (texturas CC0 `cal_blanca`, `teja_arcilla`, una de "Mis texturas" o cualquier
+  `public/textures/<id>.jpg|png`) y `mat.color_map_scale = 2.5` fija los metros por repetición.
+- **Fotos proyectadas** (para modelar a partir de una hoja de vistas y que la piel sea la foto):
+  `mat.color_map = "<hoja>"` y `mat.color_map_views = [[eje, lado, u0, v0, u1, v1, h0, h1, w0, w1, peso], ...]`.
+  Cada vista dice por qué eje mira (`"x"` perfil: horizontal Y, vertical Z; `"y"` frente/espalda:
+  horizontal X, vertical Z; `"z"` cenital: horizontal Y, vertical X), el lado (+1, -1 o 0 = los
+  dos), el rectángulo en píxeles de la hoja (origen arriba a la izquierda) y lo que mide en
+  metros del script. Cada triángulo toma la vista que mejor lo ve; el peso (opcional) da más
+  terreno a una vista (1.7 en el perfil deja la costura con la cenital arriba del lomo). Mide
+  bien la hoja y haz el modelo con esas medidas: si el modelo es más ancho que la foto, coge el
+  fondo. Antes, estira el color de cada figura unos píxeles por fuera de su contorno (ejemplo
+  y script en `tiburon_patas/`).
+- `bpy.ops.object.shade_smooth()` suaviza de verdad la pieza activa (une vértices y comparte
+  normales). Llámalo tras `objects.link(obj)` en las mallas de `from_pydata`, que si no salen
+  facetadas.
 
 ## 5. Texturas procedurales
 
