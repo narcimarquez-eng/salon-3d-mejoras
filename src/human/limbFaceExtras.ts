@@ -266,6 +266,7 @@ export function applyLimbAndFaceExtras(input: LimbFaceInput): LimbFaceResult {
                 tail: sideParts.tail,
                 cut: input.sideView.threadCut ?? null,
                 bellyY: sideParts.bellyY,
+                parts: sideParts.parts,
               }
             : null
         )
@@ -284,7 +285,14 @@ function drawDetectionPreview(
   tail: Uint8Array | null,
   cut: Uint8Array | null,
   face: FaceLayout | null,
-  side: { rgb: Float32Array; mask: Uint8Array; tail: Uint8Array; cut: Uint8Array | null; bellyY: number } | null
+  side: {
+    rgb: Float32Array;
+    mask: Uint8Array;
+    tail: Uint8Array;
+    cut: Uint8Array | null;
+    bellyY: number;
+    parts?: Array<{ kind: string; minX: number; maxX: number; minY: number; maxY: number }>;
+  } | null
 ): string | undefined {
   const S = 2;
   const panels = side ? 2 : 1;
@@ -345,6 +353,24 @@ function drawDetectionPreview(
     ctx.lineTo(x0 + W * S, (side.bellyY + 0.5) * S);
     ctx.stroke();
     ctx.setLineDash([]);
+    // Cada pata y rabo detectados, con recuadro y número, para saber dónde pinchar
+    let nPata = 0;
+    let nRabo = 0;
+    for (const p of side.parts ?? []) {
+      if (p.kind !== 'pata' && p.kind !== 'rabo') continue;
+      const label = p.kind === 'pata' ? `Pata ${++nPata}` : `Cola ${++nRabo}`;
+      const color = p.kind === 'pata' ? '#a3e635' : '#fb923c';
+      const bx = x0 + p.minX * S;
+      const by = p.minY * S;
+      const bw = (p.maxX - p.minX + 1) * S;
+      const bh = (p.maxY - p.minY + 1) * S;
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 2;
+      ctx.strokeRect(bx, by, bw, bh);
+      ctx.fillStyle = color;
+      ctx.font = 'bold 13px sans-serif';
+      ctx.fillText(label, bx + 2, Math.max(12, by - 3));
+    }
   }
   return canvas.toDataURL('image/png');
 }

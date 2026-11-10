@@ -748,7 +748,7 @@ nodo.data.materials.append(mat)`);
       for (const c of options.cleanPoints ?? []) {
         const target = c.view === 'front' ? frontPrep : sidePrep;
         const removed = target
-          ? cutThreadsNear(target, c.x, c.y, 26, Math.max(2, (options.threadWidth ?? 3) * 2))
+          ? cutThreadsNear(target, c.x, c.y, 26, Math.max(6, (options.threadWidth ?? 3) * 4))
           : 0;
         cleanReport.push({ view: c.view, x: c.x, y: c.y, removed });
       }
