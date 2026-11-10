@@ -97,7 +97,20 @@ Panel **"Posición y Tamaño Translúcido (Junto al Frente)"** → **Abrir edito
 - Para un personaje, usa siempre el botón del propio panel: el exportador general pierde el
   esqueleto.
 
-## 7. Estudio Python (Blender Python)
+## 7. Animar como cuadrúpedo
+
+- Recuadro verde **"Animar como cuadrúpedo"**, en la pestaña Blender Python (bajo "Bajar escena
+  actual en .GLB") y en Monstruos & GLB. Pone al modelo del visor (un script o un .glb cargado)
+  un esqueleto de 30 huesos y 11 animaciones: Idle, Walk, Trot, Run, Pounce, Attack, Bite, Hit,
+  Death, Sit y RestPose.
+- **"La cabeza mira a"**: Delante para los modelos de los scripts (hocico hacia -Y del script);
+  para un .glb que mire a otro lado, elige su dirección.
+- Tras pulsar **Animar**, la app pasa a Monstruos & GLB con la lista de animaciones; el .glb con
+  huesos y animaciones se baja con Completo / High / Medium / Low.
+- La boca no se abre (la cabeza es una pieza): Bite y Attack mueven la cabeza entera. Sit hace
+  que se alce sobre las patas de atrás.
+
+## 8. Estudio Python (Blender Python)
 
 - Pestaña **Blender Python** → **Estudio Completo** abre el editor grande.
 - Pega o escribe un script, pulsa **Ejecutar** (o Ctrl+Enter) y mira el visor.
@@ -106,7 +119,7 @@ Panel **"Posición y Tamaño Translúcido (Junto al Frente)"** → **Abrir edito
 - El visor tiene el contorno apagado y PBR por defecto; el grosor del contorno del motor se
   ajusta solo al tamaño de cada pieza.
 
-## 8. Problemas típicos
+## 9. Problemas típicos
 
 - **"No cambia el modelo al mover la foto":** estás en Manual. Pulsa **Ver cambios**, o pasa a
   Tiempo real.

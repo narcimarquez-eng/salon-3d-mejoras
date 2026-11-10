@@ -88,6 +88,7 @@ import {
 } from './human/humanBodyTemplate';
 import type { HumanBuildOptions, HumanImageSet } from './human/buildHuman';
 import { createCreatureAnimationClips } from './human/creatureAnimations';
+import { rigQuadrupedFromObject, QuadrupedFacing } from './human/animateQuadruped';
 import {
   averageSilhouettes,
   estimateOutlineThickness,
@@ -211,6 +212,10 @@ export default function App() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [activeGlbSource, setActiveGlbSource] = useState<GlbSource | null>(null);
   const [loadedAnimations, setLoadedAnimations] = useState<{ id: string; label: string }[]>([]);
+  // Animar como cuadrúpedo: hacia dónde mira la cabeza del modelo, si está trabajando y su resultado
+  const [quadFacing, setQuadFacing] = useState<QuadrupedFacing>(0);
+  const [quadBusy, setQuadBusy] = useState(false);
+  const [quadInfo, setQuadInfo] = useState<string | null>(null);
   const [exportedGlb, setExportedGlb] = useState<{
     url: string;
     blob: Blob;
@@ -1170,6 +1175,33 @@ nodo.data.materials.append(mat)`);
     }
   };
 
+  /** Pone esqueleto de cuadrúpedo y animaciones al modelo del visor y lo vuelve a cargar animado */
+  const handleAnimateQuadruped = async () => {
+    const group = currentModelGroupRef.current;
+    if (!group || group.children.length === 0) {
+      setQuadInfo('No hay ningún modelo en el visor. Ejecuta un script o carga un .glb primero.');
+      return;
+    }
+    setQuadBusy(true);
+    setQuadInfo(null);
+    try {
+      const res = await rigQuadrupedFromObject(group, quadFacing);
+      await loadGlbBytesIntoScene(res.bytes, 'cuadrupedo_animado.glb', true);
+      const walk = res.clipNames.includes('Walk') ? 'Walk' : res.clipNames[0];
+      if (walk) handleAnimationChange(walk);
+      setActiveTab('monsters');
+      setQuadInfo(
+        `Animado: ${res.boneCount} huesos, ${res.clipNames.length} animaciones (${res.clipNames.join(', ')}). ` +
+          'Bájalo con los botones Completo / High / Medium / Low.'
+      );
+    } catch (err) {
+      console.error('Error al animar como cuadrúpedo:', err);
+      setQuadInfo(`No se pudo animar: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setQuadBusy(false);
+    }
+  };
+
   const handleAnimationChange = (id: string) => {
     setActiveAnimation(id);
     if (!mixerRef.current) return;
@@ -1717,6 +1749,39 @@ nodo.data.materials.append(mat)`);
                 </button>
               </div>
 
+              {/* Animar como cuadrúpedo: esqueleto automático y 11 animaciones */}
+              <div className="p-2.5 rounded-lg bg-slate-900/90 border border-emerald-800/60 space-y-1.5">
+                <div className="text-[10px] font-semibold text-emerald-300">
+                  Animar como cuadrúpedo (esqueleto y animaciones automáticos)
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <label className="text-[10px] text-slate-400 shrink-0" htmlFor="quad-facing-glb">
+                    La cabeza mira a
+                  </label>
+                  <select
+                    id="quad-facing-glb"
+                    value={quadFacing}
+                    onChange={(e) => setQuadFacing(Number(e.target.value) as QuadrupedFacing)}
+                    className="flex-1 bg-slate-950 border border-slate-700 rounded text-[10px] text-slate-200 px-1 py-0.5"
+                  >
+                    <option value={0}>Delante (como los scripts)</option>
+                    <option value={180}>Detrás</option>
+                    <option value={90}>Derecha</option>
+                    <option value={270}>Izquierda</option>
+                  </select>
+                  <button
+                    type="button"
+                    data-testid="animar-cuadrupedo-glb"
+                    disabled={quadBusy || polyStats.verts === 0}
+                    onClick={handleAnimateQuadruped}
+                    className="px-2.5 py-1 rounded bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-[10px] font-bold cursor-pointer disabled:opacity-40 shrink-0"
+                  >
+                    {quadBusy ? 'Animando...' : 'Animar'}
+                  </button>
+                </div>
+                {quadInfo && <div className="text-[10px] text-emerald-200/90">{quadInfo}</div>}
+              </div>
+
               {/* Selector de animaciones si el GLB/Monstruo cargado tiene clips */}
               {loadedAnimations.length > 0 && (
                 <div className="p-2.5 rounded-lg bg-slate-900/80 border border-slate-800 space-y-1.5">
@@ -1937,6 +2002,39 @@ nodo.data.materials.append(mat)`);
                 </div>
               </div>
 
+
+              {/* Animar como cuadrúpedo: esqueleto automático y 11 animaciones */}
+              <div className="p-2.5 rounded-lg bg-slate-900/90 border border-emerald-800/60 space-y-1.5">
+                <div className="text-[10px] font-semibold text-emerald-300">
+                  Animar como cuadrúpedo (esqueleto y animaciones automáticos)
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <label className="text-[10px] text-slate-400 shrink-0" htmlFor="quad-facing-py">
+                    La cabeza mira a
+                  </label>
+                  <select
+                    id="quad-facing-py"
+                    value={quadFacing}
+                    onChange={(e) => setQuadFacing(Number(e.target.value) as QuadrupedFacing)}
+                    className="flex-1 bg-slate-950 border border-slate-700 rounded text-[10px] text-slate-200 px-1 py-0.5"
+                  >
+                    <option value={0}>Delante (como los scripts)</option>
+                    <option value={180}>Detrás</option>
+                    <option value={90}>Derecha</option>
+                    <option value={270}>Izquierda</option>
+                  </select>
+                  <button
+                    type="button"
+                    data-testid="animar-cuadrupedo-py"
+                    disabled={quadBusy || polyStats.verts === 0}
+                    onClick={handleAnimateQuadruped}
+                    className="px-2.5 py-1 rounded bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-[10px] font-bold cursor-pointer disabled:opacity-40 shrink-0"
+                  >
+                    {quadBusy ? 'Animando...' : 'Animar'}
+                  </button>
+                </div>
+                {quadInfo && <div className="text-[10px] text-emerald-200/90">{quadInfo}</div>}
+              </div>
               {bpyError && (
                 <div className="p-2 rounded bg-rose-950/80 border border-rose-500/50 text-[11px] text-rose-200">
                   {bpyError}

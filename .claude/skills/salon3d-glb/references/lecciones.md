@@ -154,3 +154,14 @@ Mira el script más parecido antes de empezar uno nuevo:
   tomaba por figura. Con umbral 150 cuentan como fondo y se rellenan con el color de al lado.
 - La cola o la barriga que llegan justo al borde de la silueta cogen el fondo: mételas unos
   píxeles dentro (la barriga del monstruo, 8 px; la cola del poni iba 20 px desplazada).
+
+## Animar como cuadrúpedo (`src/human/animateQuadruped.ts`)
+
+- Junta las piezas en el mundo, pone los pies en el suelo, coloca el esqueleto de
+  `creatureRig.ts` (cabeza hacia +Z de three, es decir -Y del script) y genera los clips de
+  `creatureAnimations.ts`.
+- Fallo visto: la malla salía estirada en reposo porque `new THREE.Skeleton(bones)` calcula la
+  pose de reposo al crearse, antes de colocar los huesos, y `bind(skeleton, matriz)` no la
+  recalcula. Hay que llamar a `skeleton.calculateInverses()` tras `updateMatrixWorld`.
+- Las piezas con el mismo material se juntan en una sola malla: el monstruo pasó de 52 mallas
+  (y 52 esqueletos en el .glb) a 2.
