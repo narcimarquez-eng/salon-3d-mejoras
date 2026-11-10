@@ -50,6 +50,8 @@ import {
 } from './humanWeapons';
 import { LAYER_CLASSES } from './layerMap';
 import { createCreatureAnimationClips } from './creatureAnimations';
+import { applyLimbAndFaceExtras } from './limbFaceExtras';
+import { syncFaceDuplicates, type FacePartId } from './faceTexture';
 import {
   averageSilhouettes,
   estimateOutlineThickness,
@@ -232,6 +234,18 @@ export interface HumanBuildOptions {
   weapon: HumanWeaponId;
   /** Escudo / mano izquierda secundaria 3D de Enemigo-rpg. */
   offhand: HumanOffhandId;
+  /**
+   * Modo patas y rabos: corta los hilos finos que unen dos partes en cada
+   * silueta antes de rellenar huecos, y detecta patas y rabos. No cambia cómo
+   * se crea el molde: solo limpia lo que recibe.
+   */
+  separateLimbs?: boolean;
+  /** Grosor máximo de un hilo, en píxeles del tensor de 256. */
+  threadWidth?: number;
+  /** Partes de la cara sacadas de la foto de frente en alta resolución (vacío = ninguna). */
+  faceParts?: FacePartId[];
+  /** Sin foto de espalda, quitar de la nuca los ojos y la boca del frente espejado. */
+  clearNape?: boolean;
   cutout?: CutoutSettings;
   /** Transformaciones interactivas de posición, tamaño, giro y espejo por vista. */
   photoTransforms?: PhotoTransformsMap;
@@ -437,6 +451,10 @@ export const FACTORY_HUMAN_OPTIONS: HumanBuildOptions = {
   normalStrength: 0.6,
   weapon: 'none',
   offhand: 'none',
+  separateLimbs: false,
+  threadWidth: 3,
+  faceParts: [],
+  clearNape: true,
 };
 
 const SAVED_DEFAULT_HUMAN_OPTIONS_KEY = 'celshade_human_default_options_v1';
@@ -504,6 +522,10 @@ export interface HumanBuildResult {
   rebindData?: HumanRebindData;
   /** Avisos para el usuario (sin espalda, sin mapa de capas...). */
   notes: string[];
+  /** Resumen de lo detectado (patas, rabos, hilos, cara), una línea por cosa. */
+  detection: string[];
+  /** Imagen (data URL) con lo detectado sobre la foto de frente (y el perfil). */
+  detectionPreview?: string;
 }
 
 /** Dibuja una imagen en el tensor de 256 y devuelve sus píxeles y el recorte. */
@@ -614,7 +636,12 @@ export function buildHumanFromImages(
   optionsIn: Partial<HumanBuildOptions> = {}
 ): HumanBuildResult {
   const options: HumanBuildOptions = { ...DEFAULT_HUMAN_OPTIONS, ...optionsIn };
-  const cut = options.cutout ?? DEFAULT_CUTOUT;
+  const baseCut = options.cutout ?? DEFAULT_CUTOUT;
+  // Patas y rabos: el corte de hilos va en el recorte de cada silueta. El
+  // molde sigue igual; solo recibe siluetas sin membranas entre las partes.
+  const cut: CutoutSettings = options.separateLimbs
+    ? { ...baseCut, separateThreads: true, threadWidth: Math.max(1, Math.min(10, options.threadWidth ?? 3)) }
+    : baseCut;
   const notes: string[] = [];
 
   // 1. Fotos -> tensores
@@ -1001,6 +1028,32 @@ export function buildHumanFromImages(
     );
   }
 
+  // 5b. Patas, rabos y cara (no cambian el molde).
+  const extras = applyLimbAndFaceExtras({
+    geometry,
+    atlas,
+    frontMask,
+    frontView,
+    frontImage: images.front,
+    frontCrop: front.crop,
+    frontTransformed: isPhotoTransformModified(options.photoTransforms?.front),
+    layerTexture: options.textureSource === 'layerMap',
+    hasBack: !!backView,
+    views: [
+      ['frente', frontView],
+      ['espalda', backView],
+      ['perfil', sideView],
+      ['2.º perfil', sideLeftView !== sideView ? sideLeftView : null],
+      ['cenital', topPrepared?.view ?? null],
+    ],
+    sideMask,
+    sideView,
+    landmarks: stats.landmarks,
+    rigKind: stats.rigKind,
+    options,
+  });
+  notes.push(...extras.notes);
+
   // 6. Material: el mismo montaje que el visor de Vortex3D
   const albedoTex = makeAtlasTexture(atlas.albedo, THREE.SRGBColorSpace);
   const roughMetalTex = makeAtlasTexture(atlas.roughMetal, THREE.NoColorSpace);
@@ -1075,12 +1128,15 @@ export function buildHumanFromImages(
     root,
     mesh,
     clips,
-    vertexCount: stats.vertexCount,
+    // La cara en alta resolución duplica los vértices del borde del parche.
+    vertexCount: geometry.getAttribute('position').count,
     triangleCount: stats.triangleCount,
     landmarks: stats.landmarks,
     rig: stats.rig,
     rebindData: stats.rebindData,
     notes,
+    detection: extras.detection,
+    detectionPreview: extras.detectionPreview,
   };
 }
 
@@ -1106,6 +1162,8 @@ export function rebuildHumanSkinAndClips(
 
   // Recalcular skinIndex y skinWeight sobre la geometría existente
   rebindHumanGeometry(targetSkinned.geometry, newRig, rebindData);
+  // Los vértices duplicados por la cara copian los pesos de su original.
+  syncFaceDuplicates(targetSkinned.geometry);
   const si = targetSkinned.geometry.getAttribute('skinIndex');
   const sw = targetSkinned.geometry.getAttribute('skinWeight');
   if (si) si.needsUpdate = true;

@@ -139,6 +139,23 @@ humano cerrado con profundidad por partes, le busca la cara, le pone botas, un e
   línea de tinta alrededor de cada placa deja sus bordes sin clasificar. Verde = piel/cuerpo,
   rojo = armadura, azul = tela, amarillo = pelo, magenta = pinchos, cian = huecos, marrón o
   gris medio = cuero/correas.
+- **Patas y rabos unidos por hilos** (casilla "Separar patas y rabos unidos por hilos"): corta
+  los hilos finos (cuerdas, pelos sueltos, cadenas, sombras) que unen dos partes en cada
+  silueta **antes** de rellenar huecos; si no, el hilo encierra el hueco y sale una membrana
+  entre la mano y el muslo o entre las patas. Una raya dentro del dibujo (la boca, bigotes)
+  no se corta: solo cuenta si al cortarla queda abierta al fondo de fuera. Después dice
+  cuántas patas y rabos ve (de frente en un bípedo, en el perfil en un cuadrúpedo) y los
+  marca en la imagen de detección. **No cambia cómo se crea el molde.** Código en
+  `limbParts.ts` y en `prepareView` (`imagePrep.ts`).
+- **Cara desde la foto de frente** (botones Ojos y cejas, Nariz, Boca, Orejas, Toda la cara):
+  busca la cara en la foto de frente y pinta las partes elegidas, sacadas de la foto original
+  a más resolución, en el hueco libre más grande del atlas. Los triángulos de la cara se
+  eligen por su posición 3D (los que se ven desde delante), así que sirve también en los
+  cuadrúpedos, cuya cabeza se texturiza con los perfiles y salía sin ojos ni boca de frente.
+  El fondo del parche reproduce la textura que esos triángulos ya tenían, para que no haya
+  costura. "Nuca sin cara" quita los ojos y la boca de la nuca cuando no hay foto de espalda.
+  No toca la forma de la cabeza. Código en `faceTexture.ts` y `limbFaceExtras.ts`, que llaman
+  `App.handleBuildHuman` (el camino que usa el panel) y `buildHumanFromImages`.
 - Código en `src/human/`: `imagePrep.ts` (recorte, silueta, relieve, atlas),
   `humanBodyTemplate.ts` y `humanRig.ts` (copiados de Vortex3D, no los cambies sin mirar
   allí), `buildHuman.ts` (orquesta y monta el material), `sheetSlicer.ts` (parte la hoja),

@@ -1,4 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { applyLimbAndFaceExtras } from './human/limbFaceExtras';
+import { syncFaceDuplicates } from './human/faceTexture';
 import {
   ACESFilmicToneMapping,
   AmbientLight,
@@ -717,19 +719,28 @@ nodo.data.materials.append(mat)`);
     setHumanBusy(true);
     setHumanError(null);
     try {
+      // Patas y rabos: los hilos que unen dos partes se cortan en el recorte de
+      // cada silueta. El molde no cambia; solo recibe siluetas sin membranas.
+      const viewCut = options.separateLimbs
+        ? {
+            ...DEFAULT_CUTOUT,
+            separateThreads: true,
+            threadWidth: Math.max(1, Math.min(10, options.threadWidth ?? 3)),
+          }
+        : DEFAULT_CUTOUT;
       const frontData = imageToSourceAndCrop(images.front);
-      const frontPrep = prepareView(frontData.source, false, DEFAULT_CUTOUT);
+      const frontPrep = prepareView(frontData.source, false, viewCut);
       const backData = images.back ? imageToSourceAndCrop(images.back) : null;
-      const rawBackPrep = backData ? prepareView(backData.source, true, DEFAULT_CUTOUT) : frontPrep;
+      const rawBackPrep = backData ? prepareView(backData.source, true, viewCut) : frontPrep;
       const sideData = images.side ? imageToSourceAndCrop(images.side) : null;
-      const sidePrep = sideData ? prepareView(sideData.source, false, DEFAULT_CUTOUT) : null;
+      const sidePrep = sideData ? prepareView(sideData.source, false, viewCut) : null;
       const sideLeftData = images.sideLeft ? imageToSourceAndCrop(images.sideLeft) : null;
       const sideLeftPrep = sideLeftData
-        ? prepareView(sideLeftData.source, false, DEFAULT_CUTOUT)
+        ? prepareView(sideLeftData.source, false, viewCut)
         : null;
       // Vista superior (cenital): tercer plano ortografico del casco visual.
       const topData = images.top ? imageToSourceAndCrop(images.top) : null;
-      const topPrep = topData ? prepareView(topData.source, false, DEFAULT_CUTOUT) : null;
+      const topPrep = topData ? prepareView(topData.source, false, viewCut) : null;
 
       const frontLayer = images.frontLayer ? loadLayerMap(images.frontLayer, frontData.crop) : null;
       const rawBackLayer = images.backLayer
@@ -933,6 +944,32 @@ nodo.data.materials.append(mat)`);
       currentHumanStatsRef.current = stats;
       applyNormalSmoothingToModel(new Mesh(geometry));
 
+      // Patas, rabos y cara: resumen de lo detectado, rasgos de la foto de frente
+      // en un hueco libre del atlas y nuca sin cara. No cambia el molde.
+      const extras = applyLimbAndFaceExtras({
+        geometry,
+        atlas,
+        frontMask,
+        frontView: frontPrep,
+        frontImage: images.front,
+        frontCrop: frontData.crop,
+        frontTransformed: isPhotoTransformModified(pTransforms?.front),
+        layerTexture: useLayerTexture,
+        hasBack: Boolean(backData),
+        views: [
+          ['frente', frontPrep],
+          ['espalda', backData ? rawBackPrep : null],
+          ['perfil', sidePrep],
+          ['2.º perfil', sideLeftPrep],
+          ['cenital', topPrep],
+        ],
+        sideMask: sideMask ?? sideLeftMask,
+        sideView: sidePrep ?? sideLeftPrep,
+        landmarks: stats.landmarks,
+        rigKind: stats.rigKind,
+        options,
+      });
+
       const atlasCanvas = document.createElement('canvas');
       atlasCanvas.width = 512;
       atlasCanvas.height = 512;
@@ -1045,7 +1082,8 @@ nodo.data.materials.append(mat)`);
       const profileTexPct = Math.round(options.profileTexturePct ?? 0);
 
       setHumanResult({
-        vertexCount: stats.vertexCount,
+        // La cara en alta resolución duplica los vértices del borde del parche.
+        vertexCount: geometry.getAttribute('position').count,
         triangleCount: stats.triangleCount,
         hasRig: Boolean(stats.rig),
         animations:
@@ -1057,7 +1095,10 @@ nodo.data.materials.append(mat)`);
                 { id: 'run', label: 'Correr (Run)' },
                 { id: 'attack', label: 'Ataque Espada' },
               ],
+        detection: extras.detection,
+        detectionPreview: extras.detectionPreview,
         notes: [
+          ...extras.notes,
           `Molde 3D generado con ${stats.vertexCount.toLocaleString()} vértices`,
           `Plano XY (Frente) + Plano ZY (Perfil gradual al ${sideImportancePct}%)`,
           profileTexPct > 0
@@ -1192,6 +1233,8 @@ nodo.data.materials.append(mat)`);
       group.traverse((child) => {
         if ((child as SkinnedMesh).isSkinnedMesh) {
           rebindHumanGeometry((child as SkinnedMesh).geometry, newRig, rebindData);
+          // Los vértices duplicados por la cara copian los pesos de su original.
+          syncFaceDuplicates((child as SkinnedMesh).geometry);
         }
       });
     }

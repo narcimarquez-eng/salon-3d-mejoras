@@ -21,6 +21,7 @@
 // parte baja de frecuencia que aportaba Poisson se descartaba de todos modos.
 // ============================================================================
 
+import { cutThinBridges, keepSignificantComponents } from './limbParts';
 import { layerMapToOffsets, LAYER_CLASSES } from './layerMap';
 
 export const TENSOR = 256;
@@ -67,6 +68,10 @@ export interface ViewTensors {
   /** Color de fondo detectado (0..1). */
   bg: [number, number, number];
   bgHex: string;
+  /** Píxeles quitados por ser hilos que unían dos partes (modo patas y rabos). */
+  threadCut?: Uint8Array;
+  /** Cuántos hilos se han cortado. */
+  threadCount?: number;
 }
 
 export interface CutoutSettings {
@@ -79,6 +84,14 @@ export interface CutoutSettings {
   matchByHueTone: boolean;
   closeInternalHoles: boolean;
   holeFillRadius: number;
+  /**
+   * Modo patas y rabos: corta los hilos finos que unen dos partes antes de
+   * rellenar huecos, y no cierra los espacios entre patas, rabo y brazos.
+   * No cambia cómo se crea el molde: solo limpia la silueta que recibe.
+   */
+  separateThreads?: boolean;
+  /** Grosor máximo (en píxeles del tensor de 256) de lo que cuenta como hilo. */
+  threadWidth?: number;
 }
 
 export const DEFAULT_CUTOUT: CutoutSettings = {
@@ -351,6 +364,37 @@ function mirrorImageDataX(src: Uint8ClampedArray): Uint8ClampedArray {
   return out;
 }
 
+/** Grupos de píxeles marcados (8 vecinos): cuántos hilos quedan cortados. */
+function countGroups(mark: Uint8Array, w: number): number {
+  const seen = new Uint8Array(mark.length);
+  const stack: number[] = [];
+  let groups = 0;
+  for (let s = 0; s < mark.length; s++) {
+    if (!mark[s] || seen[s]) continue;
+    groups++;
+    seen[s] = 1;
+    stack.push(s);
+    while (stack.length) {
+      const i = stack.pop()!;
+      const x = i % w;
+      const y = (i / w) | 0;
+      for (let dy = -1; dy <= 1; dy++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          const xx = x + dx;
+          const yy = y + dy;
+          if (xx < 0 || yy < 0 || xx >= w || yy >= w) continue;
+          const j = yy * w + xx;
+          if (mark[j] && !seen[j]) {
+            seen[j] = 1;
+            stack.push(j);
+          }
+        }
+      }
+    }
+  }
+  return groups;
+}
+
 /**
  * De los píxeles de una vista (256x256 ya recortada) a todo lo que el molde
  * humano necesita: color, silueta, relieve, normales y color sin fondo.
@@ -385,6 +429,8 @@ export function prepareView(
   const frontInpaintedRgb = new Float32Array(TENSOR_LEN * 3);
   const nearestFgTexelIdx = new Int32Array(TENSOR_LEN);
   const zone = new Uint8Array(TENSOR_LEN);
+  const threadCut = new Uint8Array(TENSOR_LEN);
+  let threadCount = 0;
   // El bloque portado escribe aquí el color de fondo que detecta.
   const buffers = {
     autoDetectedBgR: 0.047,
@@ -778,9 +824,30 @@ export function prepareView(
     }
   }
 
+  // Modo patas y rabos: los hilos que unen dos partes se cortan AQUÍ, antes de
+  // rellenar huecos. Si no, el hilo encierra el espacio entre la mano y el
+  // muslo (o entre las dos patas) y el relleno lo convierte en una membrana.
+  if (cut.separateThreads && mode !== CUTOUT_NONE) {
+    const fg = new Uint8Array(TENSOR_LEN);
+    for (let i = 0; i < TENSOR_LEN; i++) fg[i] = candidateBgMask[i] === 0 ? 1 : 0;
+    const res = cutThinBridges(fg, w, Math.max(1, cut.threadWidth ?? 3));
+    threadCount = res.count;
+    for (let i = 0; i < TENSOR_LEN; i++) {
+      if (!res.cut[i]) continue;
+      threadCut[i] = 1;
+      candidateBgMask[i] = 1;
+      texelCutoutMask[i] = 0;
+    }
+  }
+
   // Step 2: Close Internal Holes & Bridge Separated Zones (Zero-GC)
   const closeInternal = params.closeInternalHoles !== false;
-  const fillRadius = Math.max(0, Math.min(12, Math.round(params.holeFillRadius ?? 4)));
+  // Con patas y rabos separados, el cierre morfológico no puede pasar de 1 px:
+  // con 4 px rellenaría el espacio entre una pata y el rabo y los volvería a unir.
+  const fillRadius = Math.max(
+    0,
+    Math.min(cut.separateThreads ? 1 : 12, Math.round(params.holeFillRadius ?? 4))
+  );
 
   if (mode !== CUTOUT_NONE && closeInternal) {
     // 2A. Flood-fill background ONLY from the outer border through candidateBgMask === 1
@@ -893,6 +960,17 @@ export function prepareView(
     for (let i = 0; i < TENSOR_LEN; i++) {
       texelCutoutMask[i] = floodVisited[i] === 1 ? 0 : 1;
     }
+    // Un "hilo" que no da al fondo de fuera era una raya dentro del dibujo
+    // (la boca, los bigotes entre zonas claras del hocico): se devuelve.
+    if (threadCount > 0) {
+      for (let i = 0; i < TENSOR_LEN; i++) {
+        if (threadCut[i] && floodVisited[i] !== 1) {
+          threadCut[i] = 0;
+          texelCutoutMask[i] = 1;
+        }
+      }
+      threadCount = countGroups(threadCut, w);
+    }
   }
 
   // 2B. Morphological Closing (Dilation + Interior Fill + Erosion) to fuse separated zones & eliminate gaps
@@ -973,8 +1051,13 @@ export function prepareView(
       }
     }
 
+    if (cut.separateThreads) {
+      // Una pata o un rabo que se ha quedado suelto al cortar sus hilos es
+      // parte del personaje: se guarda todo lo que tenga tamaño de verdad.
+      for (let i = 0; i < TENSOR_LEN; i++) if (threadCut[i]) texelCutoutMask[i] = 0;
+      keepSignificantComponents(texelCutoutMask, w, 0.02, 25);
+    } else if (closeInternal) {
     // Keep only the main connected foreground subject (removes stray disconnected background scraps in corners)
-    if (closeInternal) {
       floodVisited.fill(0);
       let qHead = 0;
       let qTail = 0;
@@ -1306,6 +1389,8 @@ export function prepareView(
     zone,
     bg: [buffers.autoDetectedBgR, buffers.autoDetectedBgG, buffers.autoDetectedBgB],
     bgHex: buffers.autoDetectedBgHex,
+    threadCut,
+    threadCount,
   };
 }
 

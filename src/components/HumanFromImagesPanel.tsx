@@ -18,7 +18,10 @@ import {
   FlipHorizontal2,
   Maximize2,
   Layers,
+  Scissors,
+  Smile,
 } from 'lucide-react';
+import { FACE_PARTS, type FacePartId } from '../human/faceTexture';
 import { LAYER_CLASSES } from '../human/layerMap';
 import { sliceCompositeSheet } from '../human/sheetSlicer';
 import {
@@ -74,6 +77,10 @@ export interface HumanPanelResult {
   notes: string[];
   hasRig: boolean;
   animations: { id: string; label: string }[];
+  /** Resumen de lo detectado (patas, rabos, hilos, cara). */
+  detection?: string[];
+  /** Imagen con lo detectado dibujado encima de la foto de frente (y el perfil). */
+  detectionPreview?: string;
 }
 
 interface Props {
@@ -2394,6 +2401,102 @@ export default function HumanFromImagesPanel({
         )}
       </div>
 
+      {/* Patas y rabos */}
+      <div className="space-y-1.5 p-2 rounded bg-slate-950/60 border border-slate-800">
+        <label
+          className="flex items-center gap-1.5 cursor-pointer"
+          title="Corta los hilos finos (cuerdas, pelos, cadenas, sombras) que unen dos partes en cada silueta y detecta patas y rabos. No cambia cómo se crea el molde."
+        >
+          <input
+            type="checkbox"
+            data-testid="human-separate-limbs"
+            checked={Boolean(options.separateLimbs)}
+            onChange={(e) => setOptions((p) => ({ ...p, separateLimbs: e.target.checked }))}
+            className="accent-amber-400 cursor-pointer"
+          />
+          <Scissors className="w-3 h-3 text-amber-400" />
+          <span className="text-slate-200 font-semibold">Separar patas y rabos unidos por hilos</span>
+        </label>
+        {options.separateLimbs && (
+          <>
+            <p className="text-[10px] text-slate-400 leading-snug">
+              Antes de rellenar huecos se cortan los hilos que unen una pata, la
+              cola o una mano con otra parte, así no salen membranas. Después dice
+              cuántas patas y rabos ve y los marca en la imagen de detección.
+            </p>
+            <div title="Lo más grueso que se corta como hilo (en píxeles de la imagen reducida a 256). Súbelo si quedan uniones; bájalo si se corta algo fino que querías, como un dedo.">
+              <div className="flex items-center justify-between text-[10px]">
+                <span className="text-slate-400">Grosor de hilo</span>
+                <span className="font-mono text-amber-300">{(options.threadWidth ?? 3).toFixed(1)} px</span>
+              </div>
+              <input
+                type="range"
+                data-testid="human-thread-width"
+                min={1}
+                max={8}
+                step={0.5}
+                value={options.threadWidth ?? 3}
+                onChange={(e) => setOptions((p) => ({ ...p, threadWidth: parseFloat(e.target.value) }))}
+                className="w-full accent-amber-400 cursor-pointer"
+              />
+            </div>
+          </>
+        )}
+      </div>
+
+      {/* Cara desde la foto de frente */}
+      <div className="space-y-1.5 p-2 rounded bg-slate-950/60 border border-slate-800">
+        <div className="flex items-center gap-1.5">
+          <Smile className="w-3 h-3 text-cyan-400" />
+          <span className="text-slate-200 font-semibold">Cara desde la foto de frente</span>
+        </div>
+        <p className="text-[10px] text-slate-400 leading-snug">
+          Busca la cara y coloca las partes que marques sacadas de la foto original,
+          con más detalle. Lo que no marques sigue con la textura normal. No cambia
+          la forma de la cabeza.
+        </p>
+        <div className="flex flex-wrap gap-1" data-testid="human-face-parts">
+          {FACE_PARTS.map((part) => {
+            const on = (options.faceParts ?? []).includes(part.id);
+            return (
+              <button
+                key={part.id}
+                type="button"
+                title={part.hint}
+                onClick={() =>
+                  setOptions((p) => {
+                    const cur = p.faceParts ?? [];
+                    return {
+                      ...p,
+                      faceParts: cur.includes(part.id) ? cur.filter((x) => x !== part.id) : [...cur, part.id as FacePartId],
+                    };
+                  })
+                }
+                className={`px-1.5 py-0.5 rounded border text-[10px] cursor-pointer transition-colors ${
+                  on
+                    ? 'bg-cyan-400/25 border-cyan-400/60 text-cyan-100'
+                    : 'bg-slate-900 border-slate-700 text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                {part.label}
+              </button>
+            );
+          })}
+        </div>
+        <label
+          className="flex items-center gap-1 cursor-pointer"
+          title="Sin foto de espalda, la nuca reutiliza el frente espejado: esto le quita los ojos, la nariz y la boca."
+        >
+          <input
+            type="checkbox"
+            checked={options.clearNape !== false}
+            onChange={(e) => setOptions((p) => ({ ...p, clearNape: e.target.checked }))}
+            className="accent-amber-400 cursor-pointer"
+          />
+          <span className="text-slate-300">Nuca sin cara (si no hay foto de espalda)</span>
+        </label>
+      </div>
+
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
         <label className="flex items-center gap-1 cursor-pointer" title="19 huesos, pesos de piel y las 11 animaciones de Enemigo-rpg.">
           <input
@@ -3186,6 +3289,31 @@ export default function HumanFromImagesPanel({
             </span>
             {result.hasRig && <span className="text-emerald-300">19 huesos · 11 clips</span>}
           </div>
+
+          {result.detection && result.detection.length > 0 && (
+            <div className="space-y-0.5" data-testid="human-detection">
+              {result.detection.map((d) => (
+                <p key={d} className="text-[10px] text-cyan-200/90 leading-snug">
+                  · {d}
+                </p>
+              ))}
+            </div>
+          )}
+          {result.detectionPreview && (
+            <div>
+              <img
+                src={result.detectionPreview}
+                alt="Lo detectado sobre la foto de frente"
+                className="w-full rounded border border-slate-800"
+                style={{ imageRendering: 'pixelated' }}
+              />
+              <p className="text-[9px] text-slate-500 leading-snug mt-0.5">
+                Azul: cuerpo · naranja: rabo · rojo: hilos cortados · óvalos: ojos
+                (cian), nariz (amarillo), boca (rosa), orejas (verde). En un
+                cuadrúpedo, a la derecha el perfil con la línea de la barriga.
+              </p>
+            </div>
+          )}
 
           {result.notes.map((n) => (
             <p key={n} className="text-[10px] text-amber-200/80 leading-snug">
