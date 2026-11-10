@@ -54,6 +54,32 @@ const URL = process.env.URL || 'http://127.0.0.1:5173/?visor-api=1';
   const etiqueta = await page.locator('text=/Tris|triángulos/').first().innerText().catch(() => '');
   console.log(`ERROR: ${fallo || 'ninguno'} | ${etiqueta.slice(0, 80)} | ${Math.round((Date.now() - t0) / 1000)} s | errores de página: ${JSON.stringify(pageErrors.slice(0, 3))}`);
 
+  // Vista limpia para revisar el modelo: sin contorno de cómic (las líneas negras que engordan
+  // el modelo en Cel), sin pedestal y con sombreado PBR. El GLB exportado no lleva nada de esto.
+  // Desactívalo con LIMPIA=0 para ver la vista original de la app.
+  if (process.env.LIMPIA !== '0') {
+    await page.locator('button[title="PBR Físico estándar"]').first().click().catch(() => {});
+    await page.waitForTimeout(300);
+    const contornoBtn = page.locator('button', { hasText: 'Contorno' }).first();
+    if (await contornoBtn.count()) {
+      // outlineEnabled empieza en true: un clic lo apaga
+      await contornoBtn.click().catch(() => {});
+      await page.waitForTimeout(200);
+    }
+    const pedestal = page.locator('button', { hasText: 'Pedestal: ON' }).first();
+    if (await pedestal.count()) await pedestal.click().catch(() => {});
+    await page.waitForTimeout(600);
+  }
+
+  // Alejar la cámara: la app deja la vista pegada al modelo tras ejecutar el script.
+  // ZOOM = número de pasos de rueda (por defecto 6; 0 para no alejar).
+  const zoom = Number(process.env.ZOOM ?? 6);
+  await page.mouse.move(500, 500);
+  for (let i = 0; i < zoom; i++) {
+    await page.mouse.wheel(0, 400);
+    await page.waitForTimeout(120);
+  }
+  await page.waitForTimeout(800);
   // Vistas de la app: los botones Frente / Perfil / Espalda (title "Vista ...") de la barra superior.
   // La vista general (3/4) es la que deja la app tras ejecutar el script.
   const vistaBoton = async (archivo, titulo) => {

@@ -70,7 +70,7 @@ def tubo(nombre, a, b, ra, rb, mat):
 # 1. MATERIALES (pocos y compartidos)
 # ==========================================
 m_pelaje = material("LEO_Pelaje_Dorado", (0.52, 0.34, 0.17, 1.0), 0.75)
-m_melena = material("LEO_Melena_Castana", (0.12, 0.06, 0.025, 1.0), 0.85)
+m_melena = material("LEO_Melena_Castana", (0.26, 0.13, 0.05, 1.0), 0.85)
 m_claro = material("LEO_Vientre_Hocico", (0.66, 0.52, 0.32, 1.0), 0.75)
 m_oscuro = material("LEO_Nariz_Punta", (0.03, 0.018, 0.012, 1.0), 0.5)
 m_ojo = material("LEO_Ojo_Ambar", (0.75, 0.42, 0.06, 1.0), 0.25)
