@@ -206,3 +206,5 @@ humano cerrado con profundidad por partes, le busca la cara, le pone botas, un e
 - `scripts/capturar_y_exportar.cjs` — ejecuta un script en la app, captura vistas y exporta el GLB.
 - `scripts/inspeccionar_glb.py` — resumen de un GLB (triángulos, piezas, materiales, transparencias).
 - `scripts/hoja_contactos.py` — junta capturas en una sola imagen.
+- `scripts/preparar_hoja_fotos.py` — prepara una hoja de vistas para proyectarla como piel
+  (`mat.color_map_views`). Ejemplos: `tiburon_patas/`, `monstruo_cuadrupedo/`, `pony/`.

@@ -142,3 +142,15 @@ Mira el script más parecido antes de empezar uno nuevo:
   salto de color.
 - Proyección: con todas las vistas al mismo peso, la costura perfil/cenital salía en dientes de
   sierra a media altura del costado; peso 1.7 al perfil la sube al lomo.
+
+## Monstruo y poni (mismo método que el tiburón)
+
+- Cuerpo de una sola pieza del hocico a la grupa (cabeza, cuello y tronco): en el perfil cada
+  columna tiene una sola parte del cuerpo, así que basta una tabla [px, arriba, abajo] y otra de
+  medio ancho en la cenital. Patas, cola, orejas y púas aparte.
+- Hoja con dos perfiles mirando al mismo lado: se usa uno (el que enseña la cola) con lado 0,
+  que lo pone en los dos costados (el otro sale volteado).
+- Manchas blancas en crin, cola y tupé: eran los huecos claros entre pelos, que el preparador
+  tomaba por figura. Con umbral 150 cuentan como fondo y se rellenan con el color de al lado.
+- La cola o la barriga que llegan justo al borde de la silueta cogen el fondo: mételas unos
+  píxeles dentro (la barriga del monstruo, 8 px; la cola del poni iba 20 px desplazada).
