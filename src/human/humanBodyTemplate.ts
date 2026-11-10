@@ -4626,7 +4626,8 @@ function buildProfileDriven3DMoldGeometry(
     m: Uint8Array,
     distField: Float32Array,
     txIn: number,
-    tyIn: number
+    tyIn: number,
+    nearMap?: Int32Array
   ): [number, number] => {
     let x = Math.max(1, Math.min(w - 2, txIn));
     let y = Math.max(1, Math.min(w - 2, tyIn));
@@ -4658,6 +4659,43 @@ function buildProfileDriven3DMoldGeometry(
         }
       }
       if (foundGood) break;
+    }
+    if (bestScore <= -1e8 && nearMap) {
+      // El punto está MUY fuera del dibujo (p. ej. la barriga del molde cuelga por debajo de la
+      // del dibujo, o la pata rellena el hueco que el dibujo deja entre las patas). Se va al
+      // punto del dibujo más cercano -da el color de la pieza vecina- en lugar de quedarse con
+      // el relleno gris del fondo, que es lo que pintaba de gris la mitad baja del modelo.
+      const qi = nearMap[ry * w + rx];
+      if (qi >= 0) {
+        let nx = qi % w;
+        let ny = (qi / w) | 0;
+        // Un paso hacia dentro para no caer justo en la línea de contorno del dibujo.
+        for (let step = 0; step < 3; step++) {
+          let bx = nx;
+          let by = ny;
+          let bd = distField[ny * w + nx];
+          for (let dy = -1; dy <= 1; dy++) {
+            for (let dx = -1; dx <= 1; dx++) {
+              const xx = nx + dx;
+              const yy = ny + dy;
+              if (xx < 1 || xx >= w - 1 || yy < 1 || yy >= w - 1) continue;
+              const di = yy * w + xx;
+              if (m[di] !== 1) continue;
+              if (distField[di] > bd) {
+                bd = distField[di];
+                bx = xx;
+                by = yy;
+              }
+            }
+          }
+          if (bx === nx && by === ny) break;
+          nx = bx;
+          ny = by;
+        }
+        bestX = nx;
+        bestY = ny;
+        bestScore = 0;
+      }
     }
     if (bestScore <= -1e8) {
       // Si el punto está en una cola o morro proyectados fuera del ancho X del frente/espalda,
@@ -4692,13 +4730,69 @@ function buildProfileDriven3DMoldGeometry(
     return [x, y];
   };
 
+  // Para cada texel FUERA de la silueta, el índice del texel de dentro más cercano.
+  // Transformada de rasgo (dos pasadas tipo chamfer). Sirve para que ningún vértice del
+  // modelo acabe muestreando el fondo: si cae fuera del dibujo, se le da el color del
+  // trozo de dibujo más cercano en vez del relleno gris de alrededor.
+  const buildNearestInsideMap = (m: Uint8Array): Int32Array => {
+    const near = new Int32Array(w * w).fill(-1);
+    const best = new Float64Array(w * w).fill(Infinity);
+    for (let i = 0; i < w * w; i++) {
+      if (m[i] === 1) {
+        near[i] = i;
+        best[i] = 0;
+      }
+    }
+    const relax = (i: number, j: number) => {
+      const nj = near[j];
+      if (nj < 0) return;
+      const fx = nj % w;
+      const fy = (nj / w) | 0;
+      const x = i % w;
+      const y = (i / w) | 0;
+      const dx = x - fx;
+      const dy = y - fy;
+      const d = dx * dx + dy * dy;
+      if (d < best[i]) {
+        best[i] = d;
+        near[i] = nj;
+      }
+    };
+    for (let y = 0; y < w; y++) {
+      for (let x = 0; x < w; x++) {
+        const i = y * w + x;
+        if (x > 0) relax(i, i - 1);
+        if (y > 0) relax(i, i - w);
+        if (y > 0 && x > 0) relax(i, i - w - 1);
+        if (y > 0 && x < w - 1) relax(i, i - w + 1);
+      }
+    }
+    for (let y = w - 1; y >= 0; y--) {
+      for (let x = w - 1; x >= 0; x--) {
+        const i = y * w + x;
+        if (x < w - 1) relax(i, i + 1);
+        if (y < w - 1) relax(i, i + w);
+        if (y < w - 1 && x < w - 1) relax(i, i + w + 1);
+        if (y < w - 1 && x > 0) relax(i, i + w - 1);
+      }
+    }
+    return near;
+  };
+
+  // Para recortar las UV hay que usar la silueta de la FOTO que se va a muestrear, no la que
+  // se usó para tallar el volumen. No son la misma: la de tallar puede venir promediada entre
+  // los dos perfiles o recortada de contorno, y entonces el modelo acaba muestreando por fuera
+  // del dibujo -el gris del fondo- aunque geométricamente esté "dentro".
+  const sTexMask = inputs.atlas?.sideProfile?.cutout ?? sMaskPrimary;
+  const sTexMaskLeft = inputs.atlas?.sideLeftProfile?.cutout ?? sMaskLeft;
+
   const sFullDistR = new Float32Array(w * w);
   const sFullRadR = new Float32Array(w * w);
-  distanceAndRadius(sMaskPrimary, w, sFullDistR, sFullRadR);
+  distanceAndRadius(sTexMask, w, sFullDistR, sFullRadR);
 
   const sFullDistL = new Float32Array(w * w);
   const sFullRadL = new Float32Array(w * w);
-  distanceAndRadius(sMaskLeft, w, sFullDistL, sFullRadL);
+  distanceAndRadius(sTexMaskLeft, w, sFullDistL, sFullRadL);
 
   const fFullDist = new Float32Array(w * w);
   const fFullRad = new Float32Array(w * w);
@@ -4707,6 +4801,11 @@ function buildProfileDriven3DMoldGeometry(
   const bFullDist = new Float32Array(w * w);
   const bFullRad = new Float32Array(w * w);
   distanceAndRadius(rawBackMask, w, bFullDist, bFullRad);
+
+  const sNearR = buildNearestInsideMap(sTexMask);
+  const sNearL = buildNearestInsideMap(sTexMaskLeft);
+  const fNear = buildNearestInsideMap(frontMask);
+  const bNear = buildNearestInsideMap(rawBackMask);
 
   const vertQuadMap = new Int32Array(nBaseVerts * 4).fill(-1);
   const outPos: number[] = [];
@@ -4732,7 +4831,7 @@ function buildProfileDriven3DMoldGeometry(
 
     if (quadId === 0) {
       // Cuadrante 0 (arriba-izquierda): Frente (`frontMask`)
-      const [cx, cy] = clampInsideMask(frontMask, fFullDist, tx, ty);
+      const [cx, cy] = clampInsideMask(frontMask, fFullDist, tx, ty, fNear);
       const uLoc = Math.max(0, Math.min(1, cx / (w - 1)));
       const vLoc = Math.max(0, Math.min(1, cy / (w - 1)));
       u = 0.002 + uLoc * 0.495;
@@ -4744,7 +4843,7 @@ function buildProfileDriven3DMoldGeometry(
       const by = bTop + tYB * (Hb - 1);
       const xRelB = fAxisX + (tx - dxBackTex - fAxisX) / scaleBackX;
       const bx = bAxisX + (xRelB - fAxisX) * (Hb / Hf);
-      const [cx, cy] = clampInsideMask(rawBackMask, bFullDist, bx, by);
+      const [cx, cy] = clampInsideMask(rawBackMask, bFullDist, bx, by, bNear);
       const uLoc = Math.max(0, Math.min(1, cx / (w - 1)));
       const vLoc = Math.max(0, Math.min(1, cy / (w - 1)));
       u = 0.502 + uLoc * 0.495;
@@ -4753,7 +4852,7 @@ function buildProfileDriven3DMoldGeometry(
       // Cuadrante 2 (abajo-izquierda): Perfil Derecho (`sMaskPrimary`)
       const sy = syBodyV;
       const sx = sSpineX + (facingRight ? 1 : -1) * ((zTex - dzSideTex) / kScaleEff);
-      const [cx, cy] = clampInsideMask(sMaskPrimary, sFullDistR, sx, sy);
+      const [cx, cy] = clampInsideMask(sTexMask, sFullDistR, sx, sy, sNearR);
       const uLoc = Math.max(0, Math.min(1, cx / (w - 1)));
       const vLoc = Math.max(0, Math.min(1, cy / (w - 1)));
       u = 0.002 + uLoc * 0.495;
@@ -4768,7 +4867,7 @@ function buildProfileDriven3DMoldGeometry(
         ? sideContoursLeft.sideAxis[Math.round(sTopLeft + HsLeft * 0.3)]
         : sSpineX;
       const sxL = sSpineXL + (facingRightLeft ? 1 : -1) * ((zTex - dzSideLeftTex) / kScaleL);
-      const [cx, cy] = clampInsideMask(sMaskLeft, sFullDistL, sxL, syL);
+      const [cx, cy] = clampInsideMask(sTexMaskLeft, sFullDistL, sxL, syL, sNearL);
       const uLoc = Math.max(0, Math.min(1, cx / (w - 1)));
       const vLoc = Math.max(0, Math.min(1, cy / (w - 1)));
       u = 0.502 + uLoc * 0.495;

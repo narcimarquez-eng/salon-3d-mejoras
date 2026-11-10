@@ -201,6 +201,18 @@ export function averageSilhouettes(
     }
   }
 
+  // Si tras encajarlas siguen sin parecerse, no son la misma pose (o una de las dos vistas
+  // trae basura en su recorte): promediarlas estropearía la silueta, así que se deja `a`.
+  let inter = 0;
+  let union = 0;
+  for (let i = 0; i < w * w; i++) {
+    const x = a[i] === 1;
+    const y = fitted[i] === 1;
+    if (x && y) inter++;
+    if (x || y) union++;
+  }
+  if (union === 0 || inter / union < 0.82) return a;
+
   const sa = signedDistance(a, w);
   const sb = signedDistance(fitted, w);
   const kb = Math.max(0, Math.min(1, weightB));
