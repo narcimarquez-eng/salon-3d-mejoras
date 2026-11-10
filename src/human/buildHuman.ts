@@ -456,9 +456,9 @@ export const FACTORY_HUMAN_OPTIONS: HumanBuildOptions = {
   normalStrength: 0.6,
   weapon: 'none',
   offhand: 'none',
-  separateLimbs: false,
+  separateLimbs: true,
   threadWidth: 3,
-  faceParts: [],
+  faceParts: ["eyes", "nose", "mouth", "ears"],
   clearNape: true,
 };
 
