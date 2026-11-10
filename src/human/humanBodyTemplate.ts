@@ -4850,6 +4850,64 @@ function buildProfileDriven3DMoldGeometry(
   const fNear = buildNearestInsideMap(frontMask);
   const bNear = buildNearestInsideMap(rawBackMask);
 
+  // COBERTURA LATERAL POR FILAS. El perfil se mapeaba con una escala global (la de la altura del
+  // cuerpo), así que en cada fila la profundidad de la malla no coincidía con el ancho del dibujo
+  // de esa fila: lo que sobraba se fijaba al borde del dibujo y salían franjas horizontales en
+  // las patas y el vientre. Ahora, en cada fila, la profundidad de la malla (de la grupa al
+  // hocico) se estira exactamente al ancho del dibujo de perfil de esa fila.
+  const rowExtent = (m: Uint8Array): [Float32Array, Float32Array] => {
+    const L = new Float32Array(w).fill(-1);
+    const R = new Float32Array(w).fill(-1);
+    for (let y = 0; y < w; y++) {
+      for (let x = 0; x < w; x++) {
+        if (m[y * w + x] === 1) {
+          if (L[y] < 0) L[y] = x;
+          R[y] = x;
+        }
+      }
+    }
+    return [L, R];
+  };
+  const meshZMinRow = new Float32Array(w).fill(Infinity);
+  const meshZMaxRow = new Float32Array(w).fill(-Infinity);
+  for (let v = 0; v < nBaseVerts; v++) {
+    const yi = Math.max(0, Math.min(w - 1, Math.round(baseY[v])));
+    if (baseZ[v] < meshZMinRow[yi]) meshZMinRow[yi] = baseZ[v];
+    if (baseZ[v] > meshZMaxRow[yi]) meshZMaxRow[yi] = baseZ[v];
+  }
+  /** Profundidad de la malla en la fila `yi`, mirando 2 filas a cada lado para no depender de pocos vértices. */
+  const meshZSpanAt = (yi: number): [number, number] => {
+    let zmin = Infinity;
+    let zmax = -Infinity;
+    for (let k = -2; k <= 2; k++) {
+      const j = yi + k;
+      if (j < 0 || j >= w) continue;
+      if (meshZMinRow[j] < zmin) zmin = meshZMinRow[j];
+      if (meshZMaxRow[j] > zmax) zmax = meshZMaxRow[j];
+    }
+    return [zmin, zmax];
+  };
+  const [rowLeftR, rowRightR] = rowExtent(sTexMask);
+  const [rowLeftL, rowRightL] = rowExtent(sTexMaskLeft);
+  /** Columna del dibujo de perfil para el vértice con profundidad `z` en la fila de malla `ty`. Null si la fila no tiene dibujo. */
+  const fitSideColumn = (
+    ty: number,
+    sy: number,
+    rowL: Float32Array,
+    rowR: Float32Array,
+    z: number,
+    facing: boolean
+  ): number | null => {
+    const ry = Math.max(0, Math.min(w - 1, Math.round(sy)));
+    const xl = rowL[ry];
+    const xr = rowR[ry];
+    if (xl < 0 || xr < 0) return null;
+    const [zmin, zmax] = meshZSpanAt(Math.max(0, Math.min(w - 1, Math.round(ty))));
+    if (!Number.isFinite(zmin) || !Number.isFinite(zmax) || zmax - zmin < 1e-6) return null;
+    const t = Math.max(0, Math.min(1, (z - zmin) / (zmax - zmin)));
+    return facing ? xl + t * (xr - xl) : xr - t * (xr - xl);
+  };
+
   const vertQuadMap = new Int32Array(nBaseVerts * 4).fill(-1);
   const outPos: number[] = [];
   const outNor: number[] = [];
@@ -4894,7 +4952,8 @@ function buildProfileDriven3DMoldGeometry(
     } else if (quadId === 2) {
       // Cuadrante 2 (abajo-izquierda): Perfil Derecho (`sMaskPrimary`)
       const sy = anchoredSideRow(ty, texTopR, texBotR);
-      const sx = sSpineX + (facingRight ? 1 : -1) * ((zTex - dzSideTex) / kScaleEff);
+      const sxFit = fitSideColumn(ty, sy, rowLeftR, rowRightR, zTex, facingRight);
+      const sx = sxFit ?? sSpineX + (facingRight ? 1 : -1) * ((zTex - dzSideTex) / kScaleEff);
       const [cx, cy] = clampInsideMask(sTexMask, sFullDistR, sx, sy, sNearR);
       const uLoc = Math.max(0, Math.min(1, cx / (w - 1)));
       const vLoc = Math.max(0, Math.min(1, cy / (w - 1)));
@@ -4907,7 +4966,8 @@ function buildProfileDriven3DMoldGeometry(
       const sSpineXL = sideContoursLeft
         ? sideContoursLeft.sideAxis[Math.round(sTopLeft + HsLeft * 0.3)]
         : sSpineX;
-      const sxL = sSpineXL + (facingRightLeft ? 1 : -1) * ((zTex - dzSideLeftTex) / kScaleL);
+      const sxLFit = fitSideColumn(ty, syL, rowLeftL, rowRightL, zTex, facingRightLeft);
+      const sxL = sxLFit ?? sSpineXL + (facingRightLeft ? 1 : -1) * ((zTex - dzSideLeftTex) / kScaleL);
       const [cx, cy] = clampInsideMask(sTexMaskLeft, sFullDistL, sxL, syL, sNearL);
       const uLoc = Math.max(0, Math.min(1, cx / (w - 1)));
       const vLoc = Math.max(0, Math.min(1, cy / (w - 1)));
