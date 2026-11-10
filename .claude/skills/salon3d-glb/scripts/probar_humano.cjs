@@ -44,6 +44,12 @@ const ANIM = process.env.ANIM || '';
   const container = page.getByTestId('human-panel');
   await container.waitFor({ timeout: 30000 });
 
+  // FREEFORM=1: "✨ Construcción Libre" (molde generado solo desde las fotos, sin molde humano)
+  if (process.env.FREEFORM === '1') {
+    await container.getByTestId('mode-freeform-photos-btn').click();
+    await page.waitForTimeout(400);
+  }
+
   const inputs = container.locator('input[type="file"]');
   const nInputs = await inputs.count();
   if (nInputs < 1) throw new Error('No se ha encontrado el panel "Humano desde imágenes".');
