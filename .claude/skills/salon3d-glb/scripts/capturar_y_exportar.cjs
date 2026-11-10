@@ -54,18 +54,11 @@ const URL = process.env.URL || 'http://127.0.0.1:5173/?visor-api=1';
   const etiqueta = await page.locator('text=/Tris|triángulos/').first().innerText().catch(() => '');
   console.log(`ERROR: ${fallo || 'ninguno'} | ${etiqueta.slice(0, 80)} | ${Math.round((Date.now() - t0) / 1000)} s | errores de página: ${JSON.stringify(pageErrors.slice(0, 3))}`);
 
-  // Vista limpia para revisar el modelo: sin contorno de cómic (las líneas negras que engordan
-  // el modelo en Cel), sin pedestal y con sombreado PBR. El GLB exportado no lleva nada de esto.
-  // Desactívalo con LIMPIA=0 para ver la vista original de la app.
+  // Vista limpia para revisar el modelo: sombreado PBR y sin pedestal (el contorno ya viene apagado
+  // por defecto en la app). El GLB exportado no lleva nada de esto. LIMPIA=0 no toca nada.
   if (process.env.LIMPIA !== '0') {
     await page.locator('button[title="PBR Físico estándar"]').first().click().catch(() => {});
     await page.waitForTimeout(300);
-    const contornoBtn = page.locator('button', { hasText: 'Contorno' }).first();
-    if (await contornoBtn.count()) {
-      // outlineEnabled empieza en true: un clic lo apaga
-      await contornoBtn.click().catch(() => {});
-      await page.waitForTimeout(200);
-    }
     const pedestal = page.locator('button', { hasText: 'Pedestal: ON' }).first();
     if (await pedestal.count()) await pedestal.click().catch(() => {});
     await page.waitForTimeout(600);

@@ -185,9 +185,11 @@ export default function App() {
 
   const [activeTab, setActiveTab] = useState<'human' | 'monsters' | 'bpy'>('human');
   const [shadingMode, setShadingMode] = useState<'cel' | 'pbr' | 'matcap' | 'normals' | 'wireframe'>(
-    'cel'
+    'pbr'
   );
-  const [outlineEnabled, setOutlineEnabled] = useState(true);
+  const [outlineEnabled, setOutlineEnabled] = useState(false);
+  // Sube cada vez que el motor Python construye la escena: los contornos nuevos se ajustan al estado
+  const [sceneRevision, setSceneRevision] = useState(0);
   const [outlineThickness] = useState(0.005);
   const [matcapPreset] = useState<MatcapPresetId>('clay');
   const [showPedestal, setShowPedestal] = useState(true);
@@ -507,7 +509,7 @@ nodo.data.materials.append(mat)`);
         }
       }
     });
-  }, [shadingMode, outlineEnabled, outlineThickness, matcapPreset]);
+  }, [shadingMode, outlineEnabled, outlineThickness, matcapPreset, sceneRevision]);
 
   useEffect(() => {
     const markerGroup = featureMarkerGroupRef.current;
@@ -1248,6 +1250,7 @@ nodo.data.materials.append(mat)`);
         error: msg,
       };
     } finally {
+      setSceneRevision((r) => r + 1);
       setBpyRunning(false);
     }
   };
