@@ -751,17 +751,45 @@ nodo.data.materials.append(mat)`);
         cleanReport.push({ view: c.view, x: c.x, y: c.y, removed });
       }
 
-      const frontLayer = images.frontLayer ? loadLayerMap(images.frontLayer, frontData.crop) : null;
-      const rawBackLayer = images.backLayer
-        ? loadLayerMap(images.backLayer, backData?.crop ?? frontData.crop)
-        : null;
-      const sideLayer = images.sideLayer
-        ? loadLayerMap(images.sideLayer, sideData?.crop ?? null)
-        : null;
-      const sideLeftLayer = useSideLeft && images.sideLeftLayer
-        ? loadLayerMap(images.sideLeftLayer, sideLeftData?.crop ?? null)
-        : null;
-      const topLayer = images.topLayer ? loadLayerMap(images.topLayer, topData?.crop ?? null) : null;
+      // Un mapa de capas que cubre mucho menos que la foto de su vista no es un mapa: es ruido o
+      // un trozo de la figura mal cortado de la hoja. Usarlo dejaría la silueta casi vacía.
+      const usableLayer = (
+        layer: ReturnType<typeof loadLayerMap> | null,
+        view: { cutout: Uint8Array } | null
+      ) => {
+        if (!layer) return null;
+        let painted = 0;
+        for (let k = 0; k < layer.offset.length; k++) if (Number.isFinite(layer.offset[k])) painted++;
+        let photo = 0;
+        if (view) for (let k = 0; k < view.cutout.length; k++) if (view.cutout[k] === 1) photo++;
+        if (painted < 200 || (photo > 0 && painted < photo * 0.25)) {
+          console.warn('Mapa de capas ignorado: cubre muy poco de la figura', { painted, photo });
+          return null;
+        }
+        return layer;
+      };
+      const frontLayer = usableLayer(
+        images.frontLayer ? loadLayerMap(images.frontLayer, frontData.crop) : null,
+        frontPrep
+      );
+      const rawBackLayer = usableLayer(
+        images.backLayer ? loadLayerMap(images.backLayer, backData?.crop ?? frontData.crop) : null,
+        backData ? rawBackPrep : frontPrep
+      );
+      const sideLayer = usableLayer(
+        images.sideLayer ? loadLayerMap(images.sideLayer, sideData?.crop ?? null) : null,
+        sidePrep
+      );
+      const sideLeftLayer = usableLayer(
+        useSideLeft && images.sideLeftLayer
+          ? loadLayerMap(images.sideLeftLayer, sideLeftData?.crop ?? null)
+          : null,
+        sideLeftPrep
+      );
+      const topLayer = usableLayer(
+        images.topLayer ? loadLayerMap(images.topLayer, topData?.crop ?? null) : null,
+        topPrep
+      );
 
       const pTransforms = options.photoTransforms;
       // Aplicar rotación y espejo en los tensores de 256x256; la posición X/Y y la escala del recuadro
@@ -863,7 +891,7 @@ nodo.data.materials.append(mat)`);
       // Origen de textura difusa (albedo):
       // Por defecto ('original'), la textura se toma 100% de las fotos originales (Fila 0).
       const useLayerTexture =
-        options.textureSource === 'layerMap' && Boolean(images.frontLayer);
+        options.textureSource === 'layerMap' && Boolean(images.frontLayer && frontLayer);
 
       const diffuseFrontPrep = useLayerTexture && images.frontLayer
         ? (() => {
@@ -872,7 +900,7 @@ nodo.data.materials.append(mat)`);
             return p;
           })()
         : frontPrep;
-      const diffuseBackPrep = useLayerTexture && images.backLayer
+      const diffuseBackPrep = useLayerTexture && images.backLayer && rawBackLayer
         ? (() => {
             const p = prepareView(imageToSourceAndCrop(images.backLayer).source, true, DEFAULT_CUTOUT);
             if (pTransforms?.back) applyPhotoTransformToPreparedView(p, null, pTransforms.back, false, false);
@@ -882,14 +910,14 @@ nodo.data.materials.append(mat)`);
             return p;
           })()
         : backPrep;
-      const diffuseSidePrep = useLayerTexture && images.sideLayer
+      const diffuseSidePrep = useLayerTexture && images.sideLayer && sideLayer
         ? (() => {
             const p = prepareView(imageToSourceAndCrop(images.sideLayer).source, false, DEFAULT_CUTOUT);
             if (pTransforms?.side) applyPhotoTransformToPreparedView(p, null, pTransforms.side, false, false);
             return p;
           })()
         : sidePrep;
-      const diffuseSideLeftPrep = useLayerTexture && useSideLeft && images.sideLeftLayer
+      const diffuseSideLeftPrep = useLayerTexture && useSideLeft && images.sideLeftLayer && sideLeftLayer
         ? (() => {
             const p = prepareView(imageToSourceAndCrop(images.sideLeftLayer).source, false, DEFAULT_CUTOUT);
             if (pTransforms?.sideLeft) applyPhotoTransformToPreparedView(p, null, pTransforms.sideLeft, false, false);
@@ -962,6 +990,11 @@ nodo.data.materials.append(mat)`);
           ? { ...options, profileTexturePct: 100 }
           : options;
       const stats = buildHumanBodyTemplateGeometry(geometry, inputs, moldOptions);
+      if (!geometry.getAttribute('position') || stats.vertexCount === 0) {
+        throw new Error(
+          'No se encontró la figura en la foto de frente: la silueta quedó vacía. Revisa que la hoja tenga fondo liso y que la vista de frente esté en la primera columna.'
+        );
+      }
       currentHumanStatsRef.current = stats;
       applyNormalSmoothingToModel(new Mesh(geometry));
 

@@ -200,29 +200,29 @@ export async function sliceCompositeSheet(
   let rowMaxCount = 0;
   for (let y = 0; y < sh; y++) if (smoothRow[y] > rowMaxCount) rowMaxCount = smoothRow[y];
 
+  // Se busca el hueco en la franja central y se mide la tinta A CADA LADO DE ESE HUECO, no de la
+  // mitad de la imagen. Una sola fila de figuras centrada con mucho margen blanco arriba y abajo
+  // (p. ej. un tiburón con patas en una hoja 2:1) tiene fondo vacío justo bajo los pies; antes eso
+  // se tomaba por el hueco entre filas y los pies acababan como "mapas de capas" casi vacíos.
   const midY0 = Math.round(sh * 0.38);
   const midY1 = Math.round(sh * 0.62);
-  let midMin = Infinity;
-  for (let y = midY0; y <= midY1; y++) if (smoothRow[y] < midMin) midMin = smoothRow[y];
-  // Ambas mitades deben tener figuras de verdad, y la franja central estar prácticamente vacía.
-  let topHalfInk = 0;
-  let botHalfInk = 0;
+  const splitCandidate = findBestValley(smoothRow, midY0, midY1);
+  let topInk = 0;
+  let botInk = 0;
   for (let y = 0; y < sh; y++) {
-    if (y < sh * 0.5) topHalfInk += rowCounts[y];
-    else botHalfInk += rowCounts[y];
+    if (y < splitCandidate) topInk += rowCounts[y];
+    else botInk += rowCounts[y];
   }
+  // Ambas filas deben tener figuras de verdad, y el hueco estar prácticamente vacío.
   const hasTwoRows =
     ratio > 1.15 &&
     rowMaxCount > 0 &&
-    midMin < rowMaxCount * 0.07 &&
-    topHalfInk > 0 &&
-    botHalfInk > 0 &&
-    Math.min(topHalfInk, botHalfInk) / Math.max(topHalfInk, botHalfInk) > 0.25;
+    smoothRow[splitCandidate] < rowMaxCount * 0.07 &&
+    topInk > 0 &&
+    botInk > 0 &&
+    Math.min(topInk, botInk) / Math.max(topInk, botInk) > 0.25;
 
-  let splitYSmall = sh;
-  if (hasTwoRows) {
-    splitYSmall = findBestValley(smoothRow, Math.round(sh * 0.41), Math.round(sh * 0.59));
-  }
+  const splitYSmall = hasTwoRows ? splitCandidate : sh;
 
   const rowSh = hasTwoRows ? splitYSmall : sh;
 

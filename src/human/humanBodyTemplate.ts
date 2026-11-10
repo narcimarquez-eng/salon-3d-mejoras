@@ -5079,8 +5079,17 @@ function buildProfileDriven3DMoldGeometry(
     // vale: su columna es vertical y solo tiene dos piernas, así que al animarlo
     // despedaza al animal. `looksLikeQuadruped` lo decide con la malla ya hecha.
     const kindOption = options.rigKind ?? 'auto';
+    // El panel reenvía el esqueleto de la construcción anterior como `customRig`. Solo vale si
+    // es humanoide y no se ha pedido Cuadrúpedo; si no, un esqueleto viejo de criatura acababa
+    // con animaciones de humano (y error), o uno humano viejo anulaba el botón Cuadrúpedo.
+    const custom = options.customRig;
+    const customIsHumanoid = Boolean(
+      custom &&
+        ['Hips', 'Head', 'RightFoot', 'LeftFoot'].every((n) => custom.bones.some((b) => b.name === n))
+    );
+    const usableCustomRig = customIsHumanoid && kindOption !== 'creature' ? custom : null;
     const useCreature =
-      !options.customRig &&
+      !usableCustomRig &&
       (kindOption === 'creature' || (kindOption === 'auto' && looksLikeQuadruped(P)));
 
     if (useCreature) {
@@ -5094,9 +5103,9 @@ function buildProfileDriven3DMoldGeometry(
       geometry.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(skin.index, 4));
       geometry.setAttribute('skinWeight', new THREE.Float32BufferAttribute(skin.weight, 4));
     } else {
-      rig = options.customRig
+      rig = usableCustomRig
         ? {
-            bones: options.customRig.bones.map((b) => ({
+            bones: usableCustomRig.bones.map((b) => ({
               name: b.name,
               parent: b.parent,
               head: [...b.head] as [number, number, number],
@@ -5779,9 +5788,15 @@ export function buildHumanBodyTemplateGeometry(
   // Skeleton + skin weights (optional).
   let rig: HumanRig | undefined;
   if (options.rig) {
-    rig = options.customRig
+    // Un esqueleto anterior de criatura no sirve para este molde humanoide.
+    const custom = options.customRig;
+    const usableCustomRig =
+      custom && ['Hips', 'Head', 'RightFoot', 'LeftFoot'].every((n) => custom.bones.some((b) => b.name === n))
+        ? custom
+        : null;
+    rig = usableCustomRig
       ? {
-          bones: options.customRig.bones.map((b) => ({
+          bones: usableCustomRig.bones.map((b) => ({
             name: b.name,
             parent: b.parent,
             head: [...b.head] as [number, number, number],
