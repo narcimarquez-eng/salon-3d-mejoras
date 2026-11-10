@@ -3737,7 +3737,12 @@ function buildProfileDriven3DMoldGeometry(
   const spanY = Math.max(16, y1Tex - y0Tex);
   const spanZ = Math.max(16, z1Tex - z0Tex);
 
-  const userRows = Math.max(40, Math.min(1000, Math.round(options.rows ?? 160)));
+  // Suelo de resolución de la rejilla volumétrica. Con menos de ~180 filas los vóxeles son
+  // tan gruesos que los huecos estrechos del perfil -el que hay entre la cola colgante y la
+  // pata trasera- dejan de resolverse y se rellenan de un bloque macizo. Medido en una hoja
+  // de león: con 170 filas la silueta lateral del modelo coincidía un 0,709 con el dibujo, y
+  // con 180 un 0,845, sin tocar nada más. El deslizador de filas sigue mandando por encima.
+  const userRows = Math.max(200, Math.min(1000, Math.round(options.rows ?? 160)));
   const sideStrength = Math.max(0, Math.min(1, options.sideStrength ?? 1));
   const rowScale = Math.max(0.4, Math.min(5.0, userRows / 160));
   const baseStep = Math.max(
