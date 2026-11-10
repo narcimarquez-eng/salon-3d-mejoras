@@ -4786,6 +4786,44 @@ function buildProfileDriven3DMoldGeometry(
   const sTexMask = inputs.atlas?.sideProfile?.cutout ?? sMaskPrimary;
   const sTexMaskLeft = inputs.atlas?.sideLeftProfile?.cutout ?? sMaskLeft;
 
+  // ANCLAJE VERTICAL DE LA TEXTURA DE PERFIL.
+  // El mapeo vertical venía de las filas del dibujo del FRENTE, no del dibujo que se va a
+  // muestrear, así que la textura del perfil podía quedar unas filas por encima de donde le
+  // toca y dejar una banda sin pintar abajo. Aquí se anclan los extremos: lo más alto de la
+  // MALLA cae en lo más alto del dibujo de perfil y lo más bajo en lo más bajo. Es decir, se
+  // baja (o se sube) la textura hasta que acopla, sin tocar el volumen.
+  let meshTopTy = Infinity;
+  let meshBotTy = -Infinity;
+  for (let v = 0; v < nBaseVerts; v++) {
+    const y = baseY[v];
+    if (y < meshTopTy) meshTopTy = y;
+    if (y > meshBotTy) meshBotTy = y;
+  }
+  const maskRowRange = (m: Uint8Array): [number, number] => {
+    let y0 = -1;
+    let y1 = -1;
+    for (let y = 0; y < w; y++) {
+      let any = false;
+      for (let x = 0; x < w; x++) {
+        if (m[y * w + x] === 1) { any = true; break; }
+      }
+      if (any) {
+        if (y0 < 0) y0 = y;
+        y1 = y;
+      }
+    }
+    return [y0, y1];
+  };
+  const [texTopR, texBotR] = maskRowRange(sTexMask);
+  const [texTopL, texBotL] = maskRowRange(sTexMaskLeft);
+  const meshSpanTy = Math.max(1, meshBotTy - meshTopTy);
+  /** Fila del dibujo de perfil que le corresponde a la altura `ty` de la malla. */
+  const anchoredSideRow = (ty: number, top: number, bot: number): number => {
+    if (top < 0 || bot <= top) return ty;
+    const t = (ty - meshTopTy) / meshSpanTy;
+    return top + t * (bot - top);
+  };
+
   const sFullDistR = new Float32Array(w * w);
   const sFullRadR = new Float32Array(w * w);
   distanceAndRadius(sTexMask, w, sFullDistR, sFullRadR);
@@ -4850,7 +4888,7 @@ function buildProfileDriven3DMoldGeometry(
       vCoord = 0.002 + vLoc * 0.495;
     } else if (quadId === 2) {
       // Cuadrante 2 (abajo-izquierda): Perfil Derecho (`sMaskPrimary`)
-      const sy = syBodyV;
+      const sy = anchoredSideRow(ty, texTopR, texBotR);
       const sx = sSpineX + (facingRight ? 1 : -1) * ((zTex - dzSideTex) / kScaleEff);
       const [cx, cy] = clampInsideMask(sTexMask, sFullDistR, sx, sy, sNearR);
       const uLoc = Math.max(0, Math.min(1, cx / (w - 1)));
@@ -4859,9 +4897,7 @@ function buildProfileDriven3DMoldGeometry(
       vCoord = 0.502 + vLoc * 0.495;
     } else {
       // Cuadrante 3 (abajo-derecha): Perfil Izquierdo (`sMaskLeft`)
-      const tyRelL = fMidY + (ty - dySideLeftTex - fMidY) / scaleSideLeftY;
-      const tBodySL = Math.max(0, Math.min(1, (tyRelL - fTop) / Math.max(1, Hf - 1)));
-      const syL = sTopLeft + tBodySL * (HsLeft - 1);
+      const syL = anchoredSideRow(ty, texTopL, texBotL);
       const kScaleL = (Hf / HsLeft) * scaleSideLeftX;
       const sSpineXL = sideContoursLeft
         ? sideContoursLeft.sideAxis[Math.round(sTopLeft + HsLeft * 0.3)]
