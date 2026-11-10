@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ImagePlus,
   Trash2,
@@ -278,7 +278,9 @@ export default function HumanFromImagesPanel({
   const [alignSlot, setAlignSlot] = useState<SlotId>('side');
   const [alignViewMode, setAlignViewMode] = useState<'overlay' | 'sideBySide'>('overlay');
   const [alignOpacity, setAlignOpacity] = useState<number>(0.62);
-  const [uniformPhotoScale, setUniformPhotoScale] = useState<boolean>(false);
+  // Proporción activada por defecto: con ella apagada el deslizador de "Tamaño" solo
+  // estrechaba el ancho, así que en vez de hacer el objeto más pequeño lo aplastaba.
+  const [uniformPhotoScale, setUniformPhotoScale] = useState<boolean>(true);
   const [syncLayerTransform, setSyncLayerTransform] = useState<boolean>(true);
   const alignCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const dragStateRef = useRef<{
@@ -288,6 +290,29 @@ export default function HumanFromImagesPanel({
     startTf: PhotoTransform;
     startBox: PhotoRecuadroBox;
   } | null>(null);
+  // Dedos/punteros activos sobre la cuadrícula, para el pellizco con dos dedos.
+  const activePointersRef = useRef<Map<number, { x: number; y: number }>>(new Map());
+  const pinchStateRef = useRef<{
+    startDist: number;
+    startMidX: number;
+    startMidY: number;
+    startTf: PhotoTransform;
+    startBox: PhotoRecuadroBox;
+  } | null>(null);
+  // La rueda se engancha a mano como listener NO pasivo: el `onWheel` de React es pasivo,
+  // así que su `preventDefault` no frenaba el scroll y la página se movía a la vez que el objeto.
+  const wheelHandlerRef = useRef<((e: WheelEvent) => void) | null>(null);
+  const wheelListenerRef = useRef<((e: WheelEvent) => void) | null>(null);
+  const setAlignCanvas = useCallback((el: HTMLCanvasElement | null) => {
+    const prev = alignCanvasRef.current;
+    if (prev && wheelListenerRef.current) prev.removeEventListener('wheel', wheelListenerRef.current);
+    alignCanvasRef.current = el;
+    if (el) {
+      const listener = (e: WheelEvent) => wheelHandlerRef.current?.(e);
+      wheelListenerRef.current = listener;
+      el.addEventListener('wheel', listener, { passive: false });
+    }
+  }, []);
   const liveBuildTimerRef = useRef<number | null>(null);
 
   const inputs = useRef<Record<SlotId, HTMLInputElement | null>>({
@@ -1246,6 +1271,46 @@ export default function HumanFromImagesPanel({
               updateSlotTransform(effectiveAlignSlot, nextTf, interactive);
             };
 
+            // Escalar el OBJETO alrededor de su propio centro. El recuadro guarda centro + tamaño,
+            // así que multiplicar la escala sin tocar el desplazamiento encoge o agranda la figura
+            // en su sitio, sin que se vaya hacia el centro de la cuadrícula.
+            const scaleActiveBy = (factor: number, interactive: boolean) => {
+              const minF = Math.max(0.2 / activeTf.scaleX, 0.2 / activeTf.scaleY);
+              const maxF = Math.min(3.0 / activeTf.scaleX, 3.0 / activeTf.scaleY);
+              const f = Math.max(minF, Math.min(maxF, factor));
+              if (Math.abs(f - 1) < 1e-4) return;
+              updateSlotTransform(
+                effectiveAlignSlot,
+                {
+                  scaleX: Math.round(activeTf.scaleX * f * 1000) / 1000,
+                  scaleY: Math.round(activeTf.scaleY * f * 1000) / 1000,
+                },
+                interactive
+              );
+            };
+
+            /** Posición de un puntero en unidades de la cuadrícula (0..256 por vista). */
+            const pointerToGrid = (e: { clientX: number; clientY: number }) => {
+              const canvas = alignCanvasRef.current;
+              if (!canvas) return { x: 0, y: 0 };
+              const rect = canvas.getBoundingClientRect();
+              const singleWidthPx = alignViewMode === 'sideBySide' ? rect.width * 0.5 : rect.width;
+              return {
+                x: ((e.clientX - rect.left) / Math.max(40, singleWidthPx)) * 256,
+                y: ((e.clientY - rect.top) / Math.max(40, rect.height)) * 256,
+              };
+            };
+
+            const pinchMetrics = () => {
+              const pts = Array.from(activePointersRef.current.values());
+              const [a, b] = pts;
+              return {
+                dist: Math.hypot(b.x - a.x, b.y - a.y),
+                midX: 0.5 * (a.x + b.x),
+                midY: 0.5 * (a.y + b.y),
+              };
+            };
+
             const handleCouplingPreset = (mode: 'coupleToFront' | 'matchHeight' | 'matchAll4') => {
               if (mode === 'matchHeight') {
                 applyRecuadroEdges(
@@ -1289,6 +1354,21 @@ export default function HumanFromImagesPanel({
               const canvas = alignCanvasRef.current;
               if (!canvas) return;
               canvas.setPointerCapture(e.pointerId);
+              activePointersRef.current.set(e.pointerId, pointerToGrid(e));
+              if (activePointersRef.current.size >= 2) {
+                // Segundo dedo: pellizco. Se cancela el arrastre del primero y se escala el
+                // objeto alrededor de su centro; mover los dos dedos a la vez también lo desplaza.
+                dragStateRef.current = null;
+                const m = pinchMetrics();
+                pinchStateRef.current = {
+                  startDist: Math.max(4, m.dist),
+                  startMidX: m.midX,
+                  startMidY: m.midY,
+                  startTf: { ...activeTf },
+                  startBox: { ...activeBox },
+                };
+                return;
+              }
               const rect = canvas.getBoundingClientRect();
               const isSideBySide = alignViewMode === 'sideBySide';
               const W = isSideBySide ? 512 : 256;
@@ -1327,6 +1407,29 @@ export default function HumanFromImagesPanel({
             };
 
             const handleCanvasPointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
+              if (activePointersRef.current.has(e.pointerId)) {
+                activePointersRef.current.set(e.pointerId, pointerToGrid(e));
+              }
+              const pinch = pinchStateRef.current;
+              if (pinch && activePointersRef.current.size >= 2) {
+                const m = pinchMetrics();
+                const f = Math.max(0.2, Math.min(5, m.dist / pinch.startDist));
+                const sb = pinch.startBox;
+                const cx = sb.centerX + (m.midX - pinch.startMidX);
+                const cy = sb.centerY + (m.midY - pinch.startMidY);
+                const halfW = 0.5 * sb.width * f;
+                const halfH = 0.5 * sb.height * f;
+                const nextTf = photoTransformFromRecuadroBox(
+                  cx - halfW,
+                  cy - halfH,
+                  cx + halfW,
+                  cy + halfH,
+                  pinch.startTf,
+                  sb
+                );
+                updateSlotTransform(effectiveAlignSlot, nextTf, true);
+                return;
+              }
               const drag = dragStateRef.current;
               const canvas = alignCanvasRef.current;
               if (!drag || !canvas) return;
@@ -1387,6 +1490,21 @@ export default function HumanFromImagesPanel({
             };
 
             const handleCanvasPointerUp = (e: React.PointerEvent<HTMLCanvasElement>) => {
+              activePointersRef.current.delete(e.pointerId);
+              if (pinchStateRef.current) {
+                const canvas = alignCanvasRef.current;
+                if (canvas && canvas.hasPointerCapture(e.pointerId)) {
+                  canvas.releasePointerCapture(e.pointerId);
+                }
+                if (activePointersRef.current.size < 2) {
+                  // Al levantar un dedo termina el pellizco; el que queda no arrastra, para que
+                  // el objeto no dé un salto al soltar.
+                  pinchStateRef.current = null;
+                  dragStateRef.current = null;
+                  triggerBuildIfReady(options, false);
+                }
+                return;
+              }
               if (!dragStateRef.current) return;
               dragStateRef.current = null;
               const canvas = alignCanvasRef.current;
@@ -1396,15 +1514,11 @@ export default function HumanFromImagesPanel({
               triggerBuildIfReady(options, false);
             };
 
-            const handleCanvasWheel = (e: React.WheelEvent<HTMLCanvasElement>) => {
+            const handleCanvasWheel = (e: WheelEvent) => {
               e.preventDefault();
-              const step = e.deltaY < 0 ? 0.04 : -0.04;
-              const nextSX = Math.round(Math.max(0.2, Math.min(3.0, activeTf.scaleX + step)) * 100) / 100;
-              const nextSY = uniformPhotoScale
-                ? nextSX
-                : Math.round(Math.max(0.2, Math.min(3.0, activeTf.scaleY + step)) * 100) / 100;
-              updateSlotTransform(effectiveAlignSlot, { scaleX: nextSX, scaleY: nextSY }, false);
+              scaleActiveBy(e.deltaY < 0 ? 1.05 : 1 / 1.05, false);
             };
+            wheelHandlerRef.current = handleCanvasWheel;
 
             return (
               <div className="space-y-2">
@@ -1472,13 +1586,12 @@ export default function HumanFromImagesPanel({
                 {/* Lienzo Interactivo con Recuadro de 8 tiradores (4 lados azules + 4 esquinas amarillas) */}
                 <div className="relative rounded-lg overflow-hidden border border-slate-700 bg-slate-950 flex flex-col items-center">
                   <canvas
-                    ref={alignCanvasRef}
+                    ref={setAlignCanvas}
                     data-testid="translucent-align-canvas"
                     onPointerDown={handleCanvasPointerDown}
                     onPointerMove={handleCanvasPointerMove}
                     onPointerUp={handleCanvasPointerUp}
                     onPointerCancel={handleCanvasPointerUp}
-                    onWheel={handleCanvasWheel}
                     className={`w-full ${
                       alignViewMode === 'sideBySide' ? 'aspect-[2/1]' : 'aspect-square max-w-[260px]'
                     } cursor-move touch-none select-none`}
@@ -1488,8 +1601,48 @@ export default function HumanFromImagesPanel({
                       Recuadro: <strong className="text-amber-300">{activeLabel}</strong>
                     </span>
                     <span className="text-sky-300 font-mono">
-                      Centro = mover · 4 Lados/Esquinas = encajar
+                      Arrastrar = mover · 2 dedos o rueda = tamaño
                     </span>
+                  </div>
+                  {/* Tamaño del objeto dentro de la cuadrícula: botones grandes, válidos en móvil */}
+                  <div className="w-full px-2 py-1.5 bg-slate-900 border-t border-slate-800 flex items-center gap-1.5">
+                    <span className="text-[9.5px] text-slate-400 shrink-0">Tamaño:</span>
+                    <button
+                      type="button"
+                      data-testid="photo-scale-down"
+                      onClick={() => scaleActiveBy(1 / 1.08, false)}
+                      title="Hacer el objeto más pequeño dentro de la cuadrícula, sin moverlo de sitio"
+                      className="w-8 h-7 rounded bg-slate-800 hover:bg-slate-700 text-amber-300 text-base font-bold leading-none"
+                    >
+                      −
+                    </button>
+                    <span
+                      data-testid="photo-scale-readout"
+                      className="flex-1 text-center font-mono text-[11px] text-amber-300"
+                    >
+                      {Math.round(Math.sqrt(activeTf.scaleX * activeTf.scaleY) * 100)}%
+                    </span>
+                    <button
+                      type="button"
+                      data-testid="photo-scale-up"
+                      onClick={() => scaleActiveBy(1.08, false)}
+                      title="Hacer el objeto más grande dentro de la cuadrícula, sin moverlo de sitio"
+                      className="w-8 h-7 rounded bg-slate-800 hover:bg-slate-700 text-amber-300 text-base font-bold leading-none"
+                    >
+                      +
+                    </button>
+                    <button
+                      type="button"
+                      data-testid="photo-scale-reset"
+                      onClick={() => {
+                        const s0 = Math.sqrt(activeTf.scaleX * activeTf.scaleY);
+                        scaleActiveBy(1 / Math.max(0.01, s0), false);
+                      }}
+                      title="Volver al tamaño original (100%) sin mover el objeto"
+                      className="px-2 h-7 rounded bg-slate-800 hover:bg-slate-700 text-[9.5px] text-slate-300"
+                    >
+                      100%
+                    </button>
                   </div>
                 </div>
 
