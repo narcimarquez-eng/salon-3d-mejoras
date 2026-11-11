@@ -1233,6 +1233,12 @@ nodo.data.materials.append(mat)`);
     setExportError(null);
     try {
       const targetObj = group.children.length === 1 ? group.children[0] : group;
+      // Con una animación en marcha, el esqueleto vuelve a su pose de reposo antes de
+      // guardar: si no, el .glb guarda el fotograma del momento (p. ej. caído en Death)
+      targetObj.traverse((o) => {
+        const sk = (o as SkinnedMesh).skeleton;
+        if (sk) sk.pose();
+      });
       const rawBytes = await exportHumanToGLBBytes(targetObj, currentClipsRef.current);
 
       let finalBytes = rawBytes;

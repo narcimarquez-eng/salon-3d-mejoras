@@ -257,13 +257,34 @@ brazo_d = [q(196, 660, 202), q(175, 662, 240), q(152, 662, 280), q(128, 660, 318
 tubo("AR_Brazo_D", brazo_d, [0.03, 0.022, 0.022, 0.03, 0.022, 0.02, 0.03, 0.012], m_cuerpo, n=10)
 brazo_i = [q(352, 660, 205), q(378, 662, 245), q(395, 662, 285), q(420, 660, 318), q(446, 658, 350), q(471, 656, 382), q(496, 654, 420), q(516, 654, 460)]
 tubo("AR_Brazo_I", brazo_i, [0.04, 0.03, 0.028, 0.045, 0.045, 0.035, 0.03, 0.012], m_cuerpo, n=10)
+# Dedos: cuatro falanges largas y el pulgar en cada mano (frente: la mano derecha acaba en la
+# columna 30, la izquierda en la 516, hacia la fila 460). En profundidad se abren en abanico.
+def mano(pref, palma, punta, lado):
+    for d in range(4):
+        f = (d - 1.5) / 1.5
+        base = [palma[0], palma[1] + f * 0.022, palma[2]]
+        fin = [punta[0] - lado * abs(f) * 0.008, punta[1] + f * 0.03, punta[2] + abs(f) * 0.012]
+        medio = [(base[0] + fin[0]) / 2 + lado * 0.006, (base[1] + fin[1]) / 2, (base[2] + fin[2]) / 2]
+        tubo(pref + "_Dedo_" + str(d), [base, medio, fin], [0.0075, 0.0065, 0.004], m_cuerpo, n=6)
+    pul = [palma[0] + lado * 0.005, palma[1] - 0.028, palma[2] + 0.01]
+    tubo(pref + "_Pulgar", [pul, [pul[0] - lado * 0.012, pul[1] - 0.02, pul[2] - 0.025]], [0.008, 0.004], m_cuerpo, n=6)
+
+mano("AR_Mano_D", q(56, 654, 418), q(32, 654, 462), -1)
+mano("AR_Mano_I", q(492, 654, 418), q(514, 654, 462), 1)
+
 for lado in [-1, 1]:
     fx = 220
     if lado > 0:
         fx = 331
     pierna = [q(fx, 668, 520), q(fx, 667, 560), q(fx, 666, 605), q(fx, 670, 650), q(fx, 674, 700), q(fx, 676, 745), q(fx, 676, 772)]
     tubo("AR_Pierna_" + str(lado), pierna, [0.04, 0.032, 0.04, 0.03, 0.028, 0.026, 0.03], m_cuerpo, n=10)
-    esfera("AR_Pie_" + str(lado), q(fx + lado * 4, 648, 788), 0.5, m_cuerpo, escala=(0.085, 0.24, 0.04))
+    # pie: talón y empeine, y cinco dedos hacia delante (perfil: el pie va de la columna 700 a la 595)
+    esfera("AR_Pie_" + str(lado), q(fx + lado * 4, 660, 788), 0.5, m_cuerpo, escala=(0.075, 0.15, 0.035))
+    for d in range(5):
+        f = (d - 2) / 2.0
+        base = q(fx + lado * 4 + f * 9, 628, 790)
+        fin = q(fx + lado * 4 + f * 13, 597, 795)
+        tubo("AR_Pie_" + str(lado) + "_Dedo_" + str(d), [base, fin], [0.009 - abs(f) * 0.002, 0.006], m_cuerpo, n=6)
 
 # ==========================================
 # 5. CARCAJ A LA ESPALDA Y ARCO EN LA MANO DERECHA

@@ -205,3 +205,17 @@ Mira el script más parecido antes de empezar uno nuevo:
 - Esqueleto humanoide por proporciones (cadera 0,5 H, hombros 0,79 H...) y por la forma
   (pies = lo más bajo de cada lado; manos = lo más alejado a cada lado). Resultado: 0,54 MB
   animado con 3.000 triángulos.
+
+## Arquero: disparo, flecha y pose inclinada
+
+- Personaje inclinado al cargar el .glb animado: se exportó con una animación en marcha (la
+  última, Death) y los clips que no tocan la cadera la dejaban como estaba. Ahora la
+  exportación pone el esqueleto en reposo (`skeleton.pose()`) y cada clip lleva pista de
+  todos los huesos (`fillMissingBoneTracks`). Re-exportados todos los animados.
+- El Attack de arquero de Enemigo-rpg no vale para este esqueleto (la mano que tensa se iba
+  arriba y afuera): `createBowShotClip` lo resuelve por objetivos con IK de dos huesos
+  (arco al frente a la altura del hombro, cuerda a la cara con el codo alto).
+- Arco con hueso propio (Bow, hijo de la mano derecha) cuyo giro se calcula para seguir recto
+  respecto al cuerpo; flecha con hueso propio (Arrow, hijo de la cadera) montada entre la mano
+  que tensa y el arco, que sale recta hacia delante y desaparece hasta el siguiente disparo.
+- Dedos: cuatro falanges y pulgar por mano, cinco dedos por pie (tubos finos con la foto).
