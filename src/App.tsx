@@ -42,6 +42,8 @@ import {
 } from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
+import { compressGlbWithDraco } from './utils/dracoCompress';
 import {
   Boxes,
   CodeXml,
@@ -200,6 +202,28 @@ export default function App() {
   const [humanResult, setHumanResult] = useState<HumanPanelResult | null>(null);
   const [humanError, setHumanError] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
+  // Comprimir la geometría del .glb con Draco al exportar (para juegos; recordado en el navegador)
+  const [useDraco, setUseDraco] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('exportar-draco') === '1';
+    } catch {
+      return false;
+    }
+  });
+  const toggleDraco = (v: boolean) => {
+    setUseDraco(v);
+    try {
+      localStorage.setItem('exportar-draco', v ? '1' : '0');
+    } catch {
+      /* sin almacenamiento: solo esta sesión */
+    }
+  };
+  /** Aplica Draco si la casilla está marcada; devuelve los bytes y una nota para el tamaño. */
+  const maybeDraco = async (bytes: Uint8Array): Promise<{ bytes: Uint8Array; nota: string }> => {
+    if (!useDraco) return { bytes, nota: '' };
+    const r = await compressGlbWithDraco(bytes);
+    return { bytes: r.bytes, nota: `, Draco: ${(r.before / 1048576).toFixed(2)} → ${(r.after / 1048576).toFixed(2)} MB` };
+  };
   const [exportTier, setExportTier] = useState<MonsterTier>('completo');
   const [lastExportSize, setLastExportSize] = useState<string | null>(null);
   const [activeAnimation, setActiveAnimation] = useState('idle');
@@ -623,6 +647,10 @@ nodo.data.materials.append(mat)`);
     updateGlbPanel = true
   ) => {
     const loader = new GLTFLoader();
+    // Para abrir .glb comprimidos con Draco (los que exporta la propia app con la casilla)
+    const draco = new DRACOLoader();
+    draco.setDecoderPath(`${import.meta.env.BASE_URL}draco/`);
+    loader.setDRACOLoader(draco);
     const copy = new Uint8Array(bytes.byteLength);
     copy.set(bytes);
     const gltf = await loader.parseAsync(copy.buffer, '');
@@ -1259,15 +1287,17 @@ nodo.data.materials.append(mat)`);
         finalBytes = opt.bytes;
       }
 
+      const dr = await maybeDraco(finalBytes);
+      finalBytes = dr.bytes;
       const filename =
         tierToUse === 'completo'
-          ? 'celshade_personaje_completo.glb'
-          : `celshade_personaje_${tierToUse}.glb`;
+          ? `celshade_personaje_completo${useDraco ? '_draco' : ''}.glb`
+          : `celshade_personaje_${tierToUse}${useDraco ? '_draco' : ''}.glb`;
       const blob = uint8ToBlob(finalBytes, 'model/gltf-binary');
       triggerBlobDownload(blob, filename);
       const url = URL.createObjectURL(blob);
       const mb = (finalBytes.byteLength / 1048576).toFixed(2);
-      const sizeStr = `${mb} MB (${spec.shortLabel})`;
+      const sizeStr = `${mb} MB (${spec.shortLabel}${dr.nota})`;
       setLastExportSize(sizeStr);
       setExportedGlb({
         url,
@@ -1292,9 +1322,10 @@ nodo.data.materials.append(mat)`);
     setExporting(true);
     setExportError(null);
     try {
-      const { bytes, meshCount } = await exportStaticMergedGLB(group);
-      handleDownloadOptimizedBytes(bytes, 'modelo_juego.glb');
-      setLastExportSize(`${(bytes.byteLength / 1048576).toFixed(2)} MB (Juego, ${meshCount} mallas)`);
+      const { bytes: raw, meshCount } = await exportStaticMergedGLB(group);
+      const dr = await maybeDraco(raw);
+      handleDownloadOptimizedBytes(dr.bytes, useDraco ? 'modelo_juego_draco.glb' : 'modelo_juego.glb');
+      setLastExportSize(`${(dr.bytes.byteLength / 1048576).toFixed(2)} MB (Juego, ${meshCount} mallas${dr.nota})`);
     } catch (err) {
       setExportError(err instanceof Error ? err.message : 'Error al generar el GLB para juego');
     } finally {
@@ -2047,6 +2078,18 @@ nodo.data.materials.append(mat)`);
                     Juego
                   </button>
                 </div>
+                <label
+                  className="flex items-center gap-1.5 text-[10px] text-slate-300 cursor-pointer"
+                  title="Comprime la geometría con Draco: el .glb pesa bastante menos. El juego debe saber leerlo (three.js: DRACOLoader; Unity glTFast y Babylon lo leen; Godot no)."
+                >
+                  <input
+                    type="checkbox"
+                    data-testid="export-draco"
+                    checked={useDraco}
+                    onChange={(e) => toggleDraco(e.target.checked)}
+                  />
+                  <span>Comprimir con Draco (más ligero; el juego debe leer Draco)</span>
+                </label>
               </div>
 
 

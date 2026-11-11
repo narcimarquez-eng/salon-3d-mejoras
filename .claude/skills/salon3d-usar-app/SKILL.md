@@ -90,6 +90,11 @@ Panel **"Posición y Tamaño Translúcido (Junto al Frente)"** → **Abrir edito
 
 ## 6. Exportar
 
+- Casilla **"Comprimir con Draco"** (bajo los botones de "Bajar escena actual en .GLB"): al
+  exportar (Completo/High/.../Juego) comprime la geometría. Coche: 0,53 → 0,20 MB; orco animado:
+  0,87 → 0,65 MB (la textura no cambia). El juego debe leer Draco (three.js con DRACOLoader,
+  Unity glTFast, Babylon); Godot no lo lee. La app abre esos .glb (decodificador en public/draco).
+
 - **Descargar .GLB Completo (100 %)** en el panel del personaje: incluye esqueleto y animaciones.
 - Debajo: **High / Medium / Low / Min** con menos triángulos (Low y Min para juego en navegador).
 - En el estudio Python, **Completo** en "Bajar escena actual en .GLB" exporta la escena que has

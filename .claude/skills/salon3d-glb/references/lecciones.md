@@ -252,3 +252,12 @@ Mira el script más parecido antes de empezar uno nuevo:
 - Arreglo en la app de paso: el esqueleto humanoide tomaba como mano el punto más alejado
   (un pincho del brazal, o la pierna). Ahora: el punto más lejano al hombro por fuera del
   ancho de las piernas.
+
+## Draco en la app
+
+- three.js lee Draco pero no lo escribe: `src/utils/dracoCompress.ts` comprime el .glb ya
+  exportado con glTF-Transform + el codificador oficial `draco3d` (wasm; el archivo "nodejs"
+  funciona en el navegador con `locateFile`). Conserva huesos, animaciones y texturas.
+- El visor abre .glb con Draco (DRACOLoader con el decodificador en public/draco).
+- Gana mucho en geometría (coche 0,53 → 0,20 MB) y poco cuando manda la textura (orco
+  animado 0,87 → 0,65 MB): para eso, bajar la textura (High/Medium) o un atlas más pequeño.
