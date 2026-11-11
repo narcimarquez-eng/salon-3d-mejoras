@@ -616,3 +616,21 @@ function createBowShotClip(rig: HumanRig): THREE.AnimationClip {
   tracks.push(new THREE.VectorKeyframeTrack('Hips.position', [0, duration], [...hips, ...hips]));
   return new THREE.AnimationClip('Attack', duration, tracks);
 }
+
+/**
+ * .glb para juego de un modelo sin animar: junta en una sola malla todas las piezas que
+ * comparten material (un modelo de 146 piezas pasa a una por material) y deja fuera el
+ * suelo. Pies en el suelo y centrado, como al animar.
+ */
+export async function exportStaticMergedGLB(root: THREE.Object3D): Promise<{ bytes: Uint8Array; meshCount: number }> {
+  const { parts } = collectParts(root, 0);
+  const group = new THREE.Group();
+  group.name = 'Modelo_Juego';
+  for (const p of parts) {
+    const mesh = new THREE.Mesh(p.geo, p.mat);
+    mesh.name = p.name;
+    group.add(mesh);
+  }
+  const bytes = await exportHumanToGLBBytes(group, []);
+  return { bytes, meshCount: parts.length };
+}

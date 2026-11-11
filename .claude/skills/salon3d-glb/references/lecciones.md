@@ -219,3 +219,13 @@ Mira el script más parecido antes de empezar uno nuevo:
   respecto al cuerpo; flecha con hueso propio (Arrow, hijo de la cadera) montada entre la mano
   que tensa y el arco, que sale recta hacia delante y desaparece hasta el siguiente disparo.
 - Dedos: cuatro falanges y pulgar por mano, cinco dedos por pie (tubos finos con la foto).
+
+## Coche solar de madera (desde fotos reales, no una hoja de vistas)
+
+- Fotos con perspectiva: no se proyectan enteras. Medidas de la vista de lado y texturas por
+  recortes (madera repetida con color_map_scale, cara con ojos y lateral de la cabeza como
+  calcomanías finas delante de la pieza de madera, llanta con máscara circular).
+- Neumático: goma negra con tacos; la foto de la llanta solo en un disco fino por fuera (en el
+  cilindro entero, la banda de rodadura salía con rayas plateadas).
+- Botón "Juego" (pestaña Blender Python): junta las piezas que comparten material y quita el
+  suelo. Coche: de 146 piezas a 13 y de 0,51 a 0,32 MB.

@@ -88,7 +88,7 @@ import {
 } from './human/humanBodyTemplate';
 import type { HumanBuildOptions, HumanImageSet } from './human/buildHuman';
 import { createCreatureAnimationClips } from './human/creatureAnimations';
-import { rigQuadrupedFromObject, rigHumanoidFromObject, QuadrupedFacing } from './human/animateQuadruped';
+import { rigQuadrupedFromObject, rigHumanoidFromObject, exportStaticMergedGLB, QuadrupedFacing } from './human/animateQuadruped';
 import {
   averageSilhouettes,
   estimateOutlineThickness,
@@ -1285,6 +1285,23 @@ nodo.data.materials.append(mat)`);
     }
   };
 
+  /** .glb para juego: junta las piezas por material (pocas mallas) y quita el suelo */
+  const handleExportGameGLB = async () => {
+    const group = currentModelGroupRef.current;
+    if (!group || group.children.length === 0) return;
+    setExporting(true);
+    setExportError(null);
+    try {
+      const { bytes, meshCount } = await exportStaticMergedGLB(group);
+      handleDownloadOptimizedBytes(bytes, 'modelo_juego.glb');
+      setLastExportSize(`${(bytes.byteLength / 1048576).toFixed(2)} MB (Juego, ${meshCount} mallas)`);
+    } catch (err) {
+      setExportError(err instanceof Error ? err.message : 'Error al generar el GLB para juego');
+    } finally {
+      setExporting(false);
+    }
+  };
+
   /** Registra y descarga bytes GLB ya optimizados desde el panel por zonas */
   const handleDownloadOptimizedBytes = (bytes: Uint8Array, filename: string) => {
     const blob = uint8ToBlob(bytes, 'model/gltf-binary');
@@ -2007,7 +2024,7 @@ nodo.data.materials.append(mat)`);
                 <div className="text-[10px] font-semibold text-slate-300">
                   Bajar escena actual en .GLB por nivel de optimización:
                 </div>
-                <div className="grid grid-cols-5 gap-1">
+                <div className="grid grid-cols-6 gap-1">
                   {(['completo', 'high', 'medium', 'low', 'minimum'] as MonsterTier[]).map((t) => (
                     <button
                       key={t}
@@ -2019,6 +2036,16 @@ nodo.data.materials.append(mat)`);
                       {EXPORT_TIER_SPECS[t].shortLabel}
                     </button>
                   ))}
+                  <button
+                    type="button"
+                    data-testid="export-juego"
+                    disabled={exporting || polyStats.verts === 0}
+                    onClick={handleExportGameGLB}
+                    title="Para juegos: junta las piezas que comparten material en una sola malla y quita el suelo"
+                    className="py-1 px-1 rounded bg-emerald-950 hover:bg-emerald-500/20 border border-emerald-700 hover:border-emerald-400 text-[10px] text-emerald-200 font-semibold text-center cursor-pointer disabled:opacity-40"
+                  >
+                    Juego
+                  </button>
                 </div>
               </div>
 
