@@ -165,3 +165,16 @@ Mira el script más parecido antes de empezar uno nuevo:
   recalcula. Hay que llamar a `skeleton.calculateInverses()` tras `updateMatrixWorld`.
 - Las piezas con el mismo material se juntan en una sola malla: el monstruo pasó de 52 mallas
   (y 52 esqueletos en el .glb) a 2.
+
+## Dragón (hoja de 2 filas, alas abiertas)
+
+- Cada vista de la hoja estaba a una escala distinta (frente más cerca, espalda más lejos):
+  mídela cruzando cabeza, patas y cola entre vistas, no des por hecho la misma escala.
+- Cenital con la cabeza arriba en la foto: vista `"zr"` (horizontal = X, vertical = Y).
+- Alas: contorno sacado de la cenital (borde de delante y de detrás por columna), levantadas
+  hacia fuera y con los dedos caídos hacia atrás. Su piel es solo la cenital (en el perfil
+  están plegadas, no coinciden).
+- Animar con alas: el esqueleto no las veía porque medía el tronco con las alas incluidas.
+  Ahora las piezas con "Ala"/"Wing" en el nombre no cuentan para el ancho del tronco (llama
+  así a las alas). En el suelo las alas se quedan abiertas: plegarlas con los ángulos de los
+  dragones de la app enrollaba la membrana.

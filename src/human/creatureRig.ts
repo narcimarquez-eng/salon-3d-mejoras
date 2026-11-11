@@ -42,6 +42,8 @@ export interface CreatureMetrics {
   hipZ: number;
   chestZ: number;
   hasWings: boolean;
+  /** Alas abiertas en los clips de suelo (en vez de plegadas contra el lomo). */
+  wingsOpenOnGround?: boolean;
 }
 
 type V3 = [number, number, number];
@@ -190,7 +192,15 @@ function clusterLegs(
  * Devuelve huesos en el mismo formato que `humanRig`, así que
  * `createSkeletonBones` y la exportación a .glb funcionan sin cambios.
  */
-export function computeCreatureRig(positions: Float32Array): CreatureRigResult {
+export interface CreatureRigOptions {
+  /**
+   * Medio ancho del tronco, si se conoce. Con las alas abiertas el ancho de cada tramo es el
+   * de las alas, y entonces el tronco parecía enorme y las alas no se detectaban.
+   */
+  bodyHalfWidth?: number;
+}
+
+export function computeCreatureRig(positions: Float32Array, opts: CreatureRigOptions = {}): CreatureRigResult {
   const n = positions.length / 3;
   let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
   for (let i = 0; i < n; i++) {
@@ -245,7 +255,12 @@ export function computeCreatureRig(positions: Float32Array): CreatureRigResult {
     if (bins.xMax[b] > -Infinity) halves.push(0.5 * (bins.xMax[b] - bins.xMin[b]));
   }
   halves.sort((a, b) => a - b);
-  const bodyHalfWidth = halves.length ? halves[halves.length >> 1] : 0.1 * H;
+  const bodyHalfWidth =
+    opts.bodyHalfWidth && opts.bodyHalfWidth > 0
+      ? opts.bodyHalfWidth
+      : halves.length
+      ? halves[halves.length >> 1]
+      : 0.1 * H;
 
   // --- Columna -------------------------------------------------------------
   // Altura del espinazo en cada Z: entre el vientre y el lomo, tirando hacia arriba.

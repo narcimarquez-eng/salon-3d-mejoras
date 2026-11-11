@@ -107,8 +107,17 @@ function wingPose(pose: Pose, rig: HumanRig, fn: (side: 1 | -1) => { root: Euler
   }
 }
 
-/** Alas plegadas contra el lomo: pose base de todos los clips terrestres. */
-function wingsFolded(pose: Pose, rig: HumanRig) {
+/**
+ * Alas plegadas contra el lomo: pose base de todos los clips terrestres. Con
+ * `wingsOpenOnGround` (alas grandes de membrana, como las de un modelo hecho desde una
+ * hoja de vistas) se quedan abiertas como en reposo: plegarlas con estos ángulos enrolla
+ * la membrana sobre sí misma.
+ */
+function wingsFolded(pose: Pose, rig: HumanRig, m?: CreatureMetrics) {
+  if (m?.wingsOpenOnGround) {
+    wingPose(pose, rig, () => ({ root: [0, 0, 0], hum: [0, 0, 0], rad: [0, 0, 0], hand: [0, 0, 0], fin: [0, 0, 0] }));
+    return;
+  }
   wingPose(pose, rig, (side) => ({
     root: [0, 0, side * -1.05],
     hum: [0, side * 0.5, side * -0.55],
@@ -152,7 +161,7 @@ function buildClipDefs(rig: HumanRig, m: CreatureMetrics): ClipDef[] {
         pose[`${leg.prefix}UpperLeg`] = [0.012 * br, 0, 0];
         pose[`${leg.prefix}LowerLeg`] = [(leg.front ? 1 : -1) * 0.02 * br, 0, 0];
       }
-      wingsFolded(pose, rig);
+      wingsFolded(pose, rig, m);
       return pose;
     },
     root: (u) => [0, 0.004 * H * Math.sin(TAU * u), 0],
@@ -180,7 +189,7 @@ function buildClipDefs(rig: HumanRig, m: CreatureMetrics): ClipDef[] {
         tailPose(pose, u, tailAmp, 1, -0.03);
         pose.Neck = [0.03 * Math.sin(2 * TAU * u), 0.03 * Math.sin(TAU * u), 0];
         pose.Head = [-0.04 * Math.sin(2 * TAU * u), 0, 0];
-        wingsFolded(pose, rig);
+        wingsFolded(pose, rig, m);
         return pose;
       },
       root: (u) => [0, bob * H * -Math.cos(2 * TAU * u), 0],
@@ -212,7 +221,7 @@ function buildClipDefs(rig: HumanRig, m: CreatureMetrics): ClipDef[] {
       tailPose(pose, u, 0.05, 1, -0.3 * crouch + 0.35 * leap);
       pose.Neck = [0.12 * crouch - 0.18 * leap, 0, 0];
       pose.Head = [0.1 * crouch - 0.1 * leap, 0, 0];
-      wingsFolded(pose, rig);
+      wingsFolded(pose, rig, m);
       return pose;
     },
     root: (u) => [
@@ -246,7 +255,7 @@ function buildClipDefs(rig: HumanRig, m: CreatureMetrics): ClipDef[] {
       tailPose(pose, u, 0.22, 2, -0.2 * rear);
       pose.Neck = [0.16 * rear, -0.18 * swipe, 0];
       pose.Head = [0.1 * rear, -0.2 * swipe, 0];
-      wingsFolded(pose, rig);
+      wingsFolded(pose, rig, m);
       return pose;
     },
     root: (u) => [0, H * 0.06 * bump(u, 0, 0.55), m.length * 0.05 * bump(u, 0.3, 0.8)],
@@ -269,7 +278,7 @@ function buildClipDefs(rig: HumanRig, m: CreatureMetrics): ClipDef[] {
         pose[`${leg.prefix}UpperLeg`] = [0.1 * lunge * (leg.front ? -1 : 1), 0, 0];
         pose[`${leg.prefix}LowerLeg`] = [(leg.front ? 1 : -1) * 0.14 * lunge, 0, 0];
       }
-      wingsFolded(pose, rig);
+      wingsFolded(pose, rig, m);
       return pose;
     },
     root: (u) => [0, 0, m.length * 0.07 * bump(u, 0.3, 0.9)],
@@ -291,7 +300,7 @@ function buildClipDefs(rig: HumanRig, m: CreatureMetrics): ClipDef[] {
         pose[`${leg.prefix}UpperLeg`] = [0.3 * k * (leg.front ? 1 : -1), 0, 0];
         pose[`${leg.prefix}LowerLeg`] = [(leg.front ? 1 : -1) * 0.4 * k, 0, 0];
       }
-      wingsFolded(pose, rig);
+      wingsFolded(pose, rig, m);
       return pose;
     },
     root: (u) => [0, -H * 0.03 * bump(u, 0, 1), -m.length * 0.05 * bump(u, 0, 0.8)],
@@ -316,7 +325,7 @@ function buildClipDefs(rig: HumanRig, m: CreatureMetrics): ClipDef[] {
         pose[`${leg.prefix}LowerLeg`] = [(leg.front ? 1 : -1) * 1.0 * fall, 0, 0];
         pose[`${leg.prefix}Foot`] = [-(leg.front ? 1 : -1) * 0.5 * fall, 0, 0];
       }
-      wingsFolded(pose, rig);
+      wingsFolded(pose, rig, m);
       return pose;
     },
     root: (u) => [0, -H * 0.42 * ramp(u, 0.1, 0.72), 0],
@@ -344,7 +353,7 @@ function buildClipDefs(rig: HumanRig, m: CreatureMetrics): ClipDef[] {
       }
       tailPose(pose, u, 0.12, 0.6, 0.35 * k);
       pose.Neck = [-0.12 * k, 0, 0];
-      wingsFolded(pose, rig);
+      wingsFolded(pose, rig, m);
       return pose;
     },
     root: (u) => [0, -H * 0.17 * ramp(u, 0.05, 0.62), -m.length * 0.04 * ramp(u, 0.05, 0.62)],

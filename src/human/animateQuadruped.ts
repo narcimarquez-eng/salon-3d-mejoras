@@ -27,6 +27,8 @@ export interface QuadrupedRigResult {
 }
 
 const IGNORED = /suelo|floor|ground|pedestal|grid|helper/i;
+/** Piezas que son alas (por su nombre): no cuentan para medir el tronco. */
+const WING = /(^|[^a-z])(ala|alas|wing|wings)([^a-z]|$)|_ala_|_ala$/i;
 
 function pickMaterial(mesh: THREE.Mesh): THREE.Material | THREE.Material[] {
   // Los modelos del estudio Python guardan su material PBR "de verdad" aparte del que se ve
@@ -47,7 +49,7 @@ export async function rigQuadrupedFromObject(
   const turn = new THREE.Matrix4().makeRotationY(THREE.MathUtils.degToRad(facing));
 
   // 1. Piezas en el espacio del mundo (sin suelo, contornos ni mallas ya animadas)
-  const parts: { geo: THREE.BufferGeometry; mat: THREE.Material | THREE.Material[]; name: string }[] = [];
+  const parts: { geo: THREE.BufferGeometry; mat: THREE.Material | THREE.Material[]; name: string; wing?: boolean }[] = [];
   root.traverse((child) => {
     const m = child as THREE.Mesh;
     if (!m.isMesh || !m.visible) return;
@@ -60,7 +62,8 @@ export async function rigQuadrupedFromObject(
       if (!['position', 'normal', 'uv', 'color'].includes(key)) geo.deleteAttribute(key);
     }
     geo.applyMatrix4(new THREE.Matrix4().multiplyMatrices(turn, m.matrixWorld));
-    parts.push({ geo, mat: pickMaterial(m), name: m.name || `Pieza_${parts.length}` });
+    const name = m.name || `Pieza_${parts.length}`;
+    parts.push({ geo, mat: pickMaterial(m), name, wing: WING.test(name) });
   });
   if (parts.length === 0) throw new Error('No hay ninguna malla en el visor para animar.');
 
@@ -98,7 +101,7 @@ export async function rigQuadrupedFromObject(
       return g;
     });
     const one = mergeGeometries(geos, false);
-    if (one) merged.push({ geo: one, mat: list[0].mat, name: list[0].name });
+    if (one) merged.push({ geo: one, mat: list[0].mat, name: list[0].name, wing: list.every((p) => p.wing) });
     else merged.push(...list);
   }
   parts.length = 0;
@@ -121,6 +124,21 @@ export async function rigQuadrupedFromObject(
     total += p.geo.attributes.position.count;
   }
 
+  // Si hay alas (piezas con "Ala"/"Wing" en el nombre), el tronco se mide sin ellas
+  let bodyHalfWidth: number | undefined;
+  if (parts.some((p) => p.wing)) {
+    const H = box.max.y - box.min.y;
+    const belly = 0.44 * H;
+    const xs: number[] = [];
+    for (const p of parts) {
+      if (p.wing) continue;
+      const a = p.geo.attributes.position.array as Float32Array;
+      for (let i = 0; i < a.length; i += 3) if (a[i + 1] > belly) xs.push(Math.abs(a[i]));
+    }
+    xs.sort((a, b) => a - b);
+    if (xs.length) bodyHalfWidth = xs[Math.floor(xs.length * 0.9)];
+  }
+
   // 3. Esqueleto a partir de todos los vértices juntos
   const all = new Float32Array(total * 3);
   let o = 0;
@@ -128,7 +146,7 @@ export async function rigQuadrupedFromObject(
     all.set(p.geo.attributes.position.array as Float32Array, o);
     o += p.geo.attributes.position.count * 3;
   }
-  const built = computeCreatureRig(all);
+  const built = computeCreatureRig(all, { bodyHalfWidth });
   const height = Math.max(1e-6, box.max.y - box.min.y);
 
   const { root: rootBone, bones } = createSkeletonBones(built.rig);
@@ -156,7 +174,8 @@ export async function rigQuadrupedFromObject(
   }
 
   // 5. Animaciones de criatura y exportación
-  const clips = createCreatureAnimationClips(built.rig, built.metrics);
+  // Alas de membrana grandes: en el suelo se quedan abiertas (plegarlas las enrolla)
+  const clips = createCreatureAnimationClips(built.rig, { ...built.metrics, wingsOpenOnGround: true });
   const bytes = await exportHumanToGLBBytes(model, clips);
   return {
     bytes,

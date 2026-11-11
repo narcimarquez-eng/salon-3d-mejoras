@@ -234,6 +234,7 @@ export function applyBoxProjectedUv(
  *   eje 'x' (perfil): horizontal = Y, vertical = Z
  *   eje 'y' (frente o espalda): horizontal = X, vertical = Z
  *   eje 'z' (cenital): horizontal = Y, vertical = X
+ *   eje 'zr' (cenital girada, con la cabeza arriba en la foto): horizontal = X, vertical = Y
  * Un 11.º valor opcional es el peso de la vista (1 por defecto): con 1.6 en el perfil, la
  * cenital solo gana en el lomo de verdad y la costura entre ambas sube a donde no se ve.
  */
@@ -272,6 +273,7 @@ export function applyPhotoViewsUv(
   const n = new Vector3();
   const toScript = (v: Vector3): [number, number, number] => (zUp ? [v.x, -v.z, v.y] : [v.x, v.y, v.z]);
   const axisIndex = (a: string) => (a === 'x' ? 0 : a === 'y' ? 1 : 2);
+  const rotatedTop = (a: string) => a === 'zr';
   for (let tri = 0; tri + 2 < count; tri += 3) {
     const avg = new Vector3();
     for (let k = 0; k < 3; k++) avg.add(n.fromBufferAttribute(nor, tri + k).applyMatrix4(nm));
@@ -297,11 +299,16 @@ export function applyPhotoViewsUv(
     }
     const view = views[best >= 0 ? best : anyBest];
     const ai = axisIndex(String(view[0]));
+    const rot = rotatedTop(String(view[0]));
     const [, , u0, v0, u1, v1, h0, h1, w0, w1] = (view as unknown[]).map(Number);
     for (let k = 0; k < 3; k++) {
       const s = toScript(p.fromBufferAttribute(pos, tri + k).applyMatrix4(matrix));
-      const h = ai === 0 ? s[1] : ai === 1 ? s[0] : s[1];
-      const w = ai === 2 ? s[0] : s[2];
+      let h = ai === 0 ? s[1] : ai === 1 ? s[0] : s[1];
+      let w = ai === 2 ? s[0] : s[2];
+      if (rot) {
+        h = s[0];
+        w = s[1];
+      }
       const px = u0 + ((h - h0) / (h1 - h0 || 1)) * (u1 - u0);
       const py = v0 + ((w - w0) / (w1 - w0 || 1)) * (v1 - v0);
       uvs[(tri + k) * 2] = px / imageWidth;
