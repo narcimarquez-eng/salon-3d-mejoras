@@ -256,12 +256,23 @@ function computeHumanoidRig(parts: Part[], H: number, topY: number): HumanRig {
     });
     return n ? { x: sx / n, z: sz / n, toeZ } : { x: s * 0.1 * H, z: 0, toeZ: 0.08 * H };
   };
-  // Mano: el punto más alejado hacia ese lado, entre la cadera y los hombros
+  // Mano: la punta del brazo = el punto de ese lado más lejano al hombro (en pose A o T).
+  // Antes era el punto más hacia fuera, y unos pinchos en el brazal ganaban a la mano.
+  // Solo cuenta lo que queda por fuera del ancho de piernas y falda (medido a la altura de
+  // las rodillas y los pies): si no, la pierna, más lejos del hombro, ganaba a la mano.
+  let anchoPiernas = 0;
+  each((x, y) => {
+    if (y < 0.3 * H) anchoPiernas = Math.max(anchoPiernas, Math.abs(x));
+  });
+  const fuera = Math.max(0.15 * H, anchoPiernas + 0.03 * H);
   const hand = (s: number): V3 => {
+    const sh: V3 = [s * 0.1 * H, 0.79 * H, 0];
     let best = -Infinity;
     let p: V3 = [s * 0.4 * H, 0.5 * H, 0];
     each((x, y, z) => {
-      if (y > 0.3 * H && y < 0.85 * H && x * s > best) { best = x * s; p = [x, y, z]; }
+      if (x * s < fuera || y < 0.25 * H || y > 0.9 * H) return;
+      const d = (x - sh[0]) ** 2 + (y - sh[1]) ** 2;
+      if (d > best) { best = d; p = [x, y, z]; }
     });
     return p;
   };

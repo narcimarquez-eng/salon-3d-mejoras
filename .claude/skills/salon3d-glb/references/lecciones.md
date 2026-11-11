@@ -229,3 +229,26 @@ Mira el script más parecido antes de empezar uno nuevo:
   cilindro entero, la banda de rodadura salía con rayas plateadas).
 - Botón "Juego" (pestaña Blender Python): junta las piezas que comparten material y quita el
   suelo. Coche: de 146 piezas a 13 y de 0,51 a 0,32 MB.
+
+## Blender de verdad (módulo bpy 5.3, sin ventana)
+
+- Instalación: `python3 -m venv <dir> && <dir>/bin/pip install bpy==5.3.0` (paquete oficial de
+  la Blender Foundation; ~1 GB). Renderiza con Cycles en CPU (unos 5-8 s por vista a 700 px).
+- `scripts/salon3d_blender.py script.py prefijo [--glb out.glb] [--juego]`: ejecuta un script
+  de la app en Blender. Traduce color_map / color_map_views / color_map_scale (UV por cara con
+  la misma regla que la app), ignora render.set_* y texture, suaviza por ángulo, renderiza
+  frente/lado/espalda/3/4 y exporta (con --juego: sin suelo, una malla, Draco y JPEG).
+- `scripts/blender_animar.py script.py animado_de_la_app.glb out.glb prefijo --rigidas
+  "OR_Baston:RightHand"`: mismo esqueleto y animaciones que la app, pero con pesos
+  automáticos de Blender (calor). En modelos hechos de piezas el calor falla en muchas (14-40 %
+  de vértices): esas piezas, y las pequeñas o de manos y pies, van enteras a su hueso.
+- Trampas vistas: bmesh solo se puede importar después de bpy; el importador glTF añade una
+  esfera para dibujar huesos (no medirla); los huesos importados apuntan hacia donde quiere
+  Blender (el tramo real va del inicio del hueso al inicio de su hijo); las anotaciones
+  "# ..." al final de `mat.color_map_scale = ...` rompían la traducción.
+- Resultado: misma forma y piel que en la app; luz y sombras mejores; .glb un 20 % más ligero
+  (Draco). Con pesos automáticos el tronco y los hombros se doblan algo más suaves, pero en
+  modelos de piezas no hay gran diferencia frente a la app.
+- Arreglo en la app de paso: el esqueleto humanoide tomaba como mano el punto más alejado
+  (un pincho del brazal, o la pierna). Ahora: el punto más lejano al hombro por fuera del
+  ancho de las piernas.
