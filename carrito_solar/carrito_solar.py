@@ -194,7 +194,8 @@ m_naranja = material("CS_Engranaje", (0.9, 0.28, 0.03, 1.0), 0.5)
 m_blanco = material("CS_Plastico", (0.85, 0.85, 0.82, 1.0), 0.5)
 m_rojo = material("CS_Cable_Rojo", (0.55, 0.02, 0.02, 1.0), 0.45)
 m_negro = material("CS_Cable_Negro", (0.01, 0.01, 0.01, 1.0), 0.45)
-m_goma = material("CS_Goma", (0.012, 0.012, 0.013, 1.0), 0.85)
+m_goma = material("CS_Goma", (0.014, 0.014, 0.015, 1.0), 0.8)
+m_cubo = material("CS_Cubo", (0.03, 0.028, 0.026, 1.0), 0.8)   # interior oscuro que se ve por los huecos
 
 # ==========================================
 # 2. BASE, EJES Y RUEDAS
@@ -209,17 +210,47 @@ pieza("CS_Base", (0, 0, Z_BASE + T / 2), (6.7, 12.0, T), m_madera)
 for lado in [-1, 1]:
     pieza("CS_Base_Canto_" + str(lado), (lado * 3.36, 0, Z_BASE + T / 2), (0.03, 12.0, T), m_canto)
 
+def neumatico(nombre, centro_cm, lado):
+    # Goma con perfil redondeado (giro de un perfil alrededor del eje X), hueca por dentro
+    # para que la llanta quede hundida, como en la foto de cerca.
+    PERFIL_R = [[1.45, 0.52], [1.62, 0.63], [1.78, 0.6], [1.86, 0.5], [1.9, 0.3], [1.9, -0.3],
+                [1.86, -0.5], [1.78, -0.6], [1.62, -0.63], [1.45, -0.52]]
+    NSEG = 32
+    verts = []
+    caras = []
+    np_ = len(PERFIL_R)
+    for i in range(NSEG):
+        a = 2 * math.pi * i / NSEG
+        for pr in PERFIL_R:
+            verts.append(((centro_cm[0] + pr[1]) * K, (centro_cm[1] + pr[0] * math.cos(a)) * K, (centro_cm[2] + pr[0] * math.sin(a)) * K))
+    for i in range(NSEG):
+        i2 = (i + 1) % NSEG
+        for j in range(np_):
+            j2 = (j + 1) % np_
+            caras.append((i * np_ + j, i * np_ + j2, i2 * np_ + j2, i2 * np_ + j))
+    malla(nombre, verts, caras, m_goma)
+
 def rueda(nombre, y):
-    # llanta y neumático: la foto de la rueda, vista de lado, para este eje
-    v = ["x", 0, 0, 0, 384, 384, (y - R_RUEDA) * K, (y + R_RUEDA) * K, R_RUEDA * 2 * K, 0.0, 1.0]
-    m = foto("CS_Rueda_" + nombre, "carrito_rueda", [v], 0.6)
+    # llanta: dibujo limpio sacado de la foto de cerca (5 radios, 5 tuercas y el eje)
+    v = ["x", 0, 0, 0, 512, 512, (y - 1.45) * K, (y + 1.45) * K, 1.45 * 2 * K, 0.0, 1.0]
+    m = foto("CS_Llanta_" + nombre, "carrito_rueda", [v], 0.35, barniz=0.4)
     for lado in [-1, 1]:
-        # neumático de goma con tacos y, en la cara de fuera, la llanta de la foto
-        cilindro("CS_Neumatico_" + nombre + "_" + str(lado), cm((lado * X_RUEDA, y, R_RUEDA)), R_RUEDA * K, 1.3 * K, m_goma, vertices=28, rot=(0, math.pi / 2, 0))
-        for t in range(18):
-            a = 2 * math.pi * t / 18
-            pieza("CS_Taco_" + nombre + "_" + str(lado) + "_" + str(t), (lado * X_RUEDA, y + R_RUEDA * math.cos(a), R_RUEDA + R_RUEDA * math.sin(a)), (1.25, 0.32, 0.12), m_goma, rot=(a + math.pi / 2, 0, 0))
-        cilindro("CS_Llanta_" + nombre + "_" + str(lado), cm((lado * (X_RUEDA + 0.66), y, R_RUEDA)), R_RUEDA * 0.99 * K, 0.03 * K, m, vertices=28, rot=(0, math.pi / 2, 0))
+        c = [lado * X_RUEDA, y, R_RUEDA]
+        neumatico("CS_Neumatico_" + nombre + "_" + str(lado), c, lado)
+        # tacos grandes y alternados: cruzan la banda y asoman por los dos laterales
+        for t in range(20):
+            a = 2 * math.pi * (t + 0.5 * (t % 2)) / 20
+            sx = 1
+            if t % 2 == 1:
+                sx = -1
+            ca = math.cos(a)
+            sa = math.sin(a)
+            pieza("CS_Taco_" + nombre + "_" + str(lado) + "_" + str(t), (c[0] + sx * 0.22, y + 1.95 * ca, R_RUEDA + 1.95 * sa), (0.82, 0.48, 0.16), m_goma, rot=(a + math.pi / 2, 0, 0))
+            pieza("CS_TacoLat_" + nombre + "_" + str(lado) + "_" + str(t), (c[0] + sx * 0.64, y + 1.72 * ca, R_RUEDA + 1.72 * sa), (0.1, 0.42, 0.34), m_goma, rot=(a + math.pi / 2, 0, 0))
+        # llanta hundida en las dos caras y el cubo
+        for cara in [-1, 1]:
+            cilindro("CS_Llanta_" + nombre + "_" + str(lado) + "_" + str(cara), cm((c[0] + cara * 0.44, y, R_RUEDA)), 1.46 * K, 0.04 * K, m, vertices=32, rot=(0, math.pi / 2, 0))
+        cilindro("CS_Cubo_" + nombre + "_" + str(lado), cm((c[0], y, R_RUEDA)), 1.44 * K, 0.84 * K, m_cubo, vertices=24, rot=(0, math.pi / 2, 0))
     cilindro("CS_Eje_" + nombre, cm((0, y, R_RUEDA)), 0.1 * K, 8.4 * K, m_metal, vertices=8, rot=(0, math.pi / 2, 0))
     for lado in [-1, 1]:
         # soportes del eje bajo la base
