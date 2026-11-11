@@ -282,8 +282,6 @@ for lado in [-1, 1]:
     tubo("OR_Brazo_" + str(lado), brazo, [0.11, 0.1, 0.1, 0.13, 0.11], m_cuerpo, n=16)
     esfera("OR_Palma_" + str(lado), q(pal, 1098, 600), 0.5, m_cuerpo, escala=(0.13, 0.16, 0.13))
     mano("OR_Mano_" + str(lado), q(pal, 1098, 612), q(pun, 1098, 655), lado)
-    # pinchos del brazal
-    cono("OR_Pincho_Brazal_" + str(lado), (x_de(cod) + lado * 0.1, y_de(1100), z_de(445)), 0.025, 0.0, 0.14, m_cuerpo, vertices=6, rot=(0, lado * 1.2, 0))
 
     if lado < 0:
         cad, rod, tob = 318, 302, 292
@@ -292,6 +290,24 @@ for lado in [-1, 1]:
     pierna = [q(cad, 1110, 690), q((cad + rod) / 2, 1105, 760), q(rod, 1100, 830), q((rod + tob) / 2, 1092, 900), q(tob, 1080, 960), q(tob, 1080, 1010)]
     tubo("OR_Pierna_" + str(lado), pierna, [0.15, 0.15, 0.17, 0.15, 0.11, 0.12], m_cuerpo, n=16)
     esfera("OR_Pie_" + str(lado), q(tob, 1130, 1040), 0.5, m_cuerpo, escala=(0.27, 0.42, 0.09))
+
+# ==========================================
+# PINCHOS: [base, punta] medidos en la vista de frente (columna, fila), y su grosor
+# ==========================================
+PINCHOS = [
+    [132, 445, 118, 383, 0.024], [108, 472, 72, 433, 0.022], [98, 502, 66, 476, 0.018],      # brazal derecho
+    [688, 435, 711, 383, 0.024], [716, 468, 747, 432, 0.022], [732, 498, 754, 476, 0.018],   # brazal izquierdo
+    [248, 798, 236, 750, 0.018], [326, 798, 342, 772, 0.014],                                 # calavera de la rodilla
+]
+for i in range(len(PINCHOS)):
+    c = PINCHOS[i]
+    prof = 1100
+    if c[1] > 700:
+        prof = 1150        # la calavera va delante de la rodilla
+    base = q(c[0], prof, c[1])
+    punta = q(c[2], prof, c[3])
+    medio = [(base[0] * 0.55 + punta[0] * 0.45), (base[1] + punta[1]) / 2, (base[2] * 0.55 + punta[2] * 0.45)]
+    tubo("OR_Pincho_" + str(i), [base, medio, punta], [c[4], c[4] * 0.6, 0.003], m_cuerpo, n=7)
 
 # ==========================================
 # 5. BASTÓN DE CUERNAS (de la primera hoja) EN LA MANO DERECHA
