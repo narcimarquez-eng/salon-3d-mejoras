@@ -88,7 +88,7 @@ import {
 } from './human/humanBodyTemplate';
 import type { HumanBuildOptions, HumanImageSet } from './human/buildHuman';
 import { createCreatureAnimationClips } from './human/creatureAnimations';
-import { rigQuadrupedFromObject, QuadrupedFacing } from './human/animateQuadruped';
+import { rigQuadrupedFromObject, rigHumanoidFromObject, QuadrupedFacing } from './human/animateQuadruped';
 import {
   averageSilhouettes,
   estimateOutlineThickness,
@@ -1176,7 +1176,7 @@ nodo.data.materials.append(mat)`);
   };
 
   /** Pone esqueleto de cuadrúpedo y animaciones al modelo del visor y lo vuelve a cargar animado */
-  const handleAnimateQuadruped = async () => {
+  const handleAnimateQuadruped = async (tipo: 'cuadrupedo' | 'humanoide' = 'cuadrupedo') => {
     const group = currentModelGroupRef.current;
     if (!group || group.children.length === 0) {
       setQuadInfo('No hay ningún modelo en el visor. Ejecuta un script o carga un .glb primero.');
@@ -1185,8 +1185,11 @@ nodo.data.materials.append(mat)`);
     setQuadBusy(true);
     setQuadInfo(null);
     try {
-      const res = await rigQuadrupedFromObject(group, quadFacing);
-      await loadGlbBytesIntoScene(res.bytes, 'cuadrupedo_animado.glb', true);
+      const res =
+        tipo === 'humanoide'
+          ? await rigHumanoidFromObject(group, quadFacing)
+          : await rigQuadrupedFromObject(group, quadFacing);
+      await loadGlbBytesIntoScene(res.bytes, `${tipo}_animado.glb`, true);
       const walk = res.clipNames.includes('Walk') ? 'Walk' : res.clipNames[0];
       if (walk) handleAnimationChange(walk);
       setActiveTab('monsters');
@@ -1752,7 +1755,7 @@ nodo.data.materials.append(mat)`);
               {/* Animar como cuadrúpedo: esqueleto automático y 11 animaciones */}
               <div className="p-2.5 rounded-lg bg-slate-900/90 border border-emerald-800/60 space-y-1.5">
                 <div className="text-[10px] font-semibold text-emerald-300">
-                  Animar como cuadrúpedo (esqueleto y animaciones automáticos)
+                  Animar (esqueleto y animaciones automáticos)
                 </div>
                 <div className="flex items-center gap-1.5">
                   <label className="text-[10px] text-slate-400 shrink-0" htmlFor="quad-facing-glb">
@@ -1773,10 +1776,21 @@ nodo.data.materials.append(mat)`);
                     type="button"
                     data-testid="animar-cuadrupedo-glb"
                     disabled={quadBusy || polyStats.verts === 0}
-                    onClick={handleAnimateQuadruped}
-                    className="px-2.5 py-1 rounded bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-[10px] font-bold cursor-pointer disabled:opacity-40 shrink-0"
+                    onClick={() => handleAnimateQuadruped('cuadrupedo')}
+                    title="Cuatro patas (y alas si hay piezas llamadas Ala/Wing)"
+                    className="px-2 py-1 rounded bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-[10px] font-bold cursor-pointer disabled:opacity-40 shrink-0"
                   >
-                    {quadBusy ? 'Animando...' : 'Animar'}
+                    {quadBusy ? '...' : 'Cuadrúpedo'}
+                  </button>
+                  <button
+                    type="button"
+                    data-testid="animar-humanoide-glb"
+                    disabled={quadBusy || polyStats.verts === 0}
+                    onClick={() => handleAnimateQuadruped('humanoide')}
+                    title="Bípedo en pose A o T. Una pieza llamada Arco/Bow da animaciones de arquero"
+                    className="px-2 py-1 rounded bg-teal-500 hover:bg-teal-400 text-slate-950 text-[10px] font-bold cursor-pointer disabled:opacity-40 shrink-0"
+                  >
+                    {quadBusy ? '...' : 'Humanoide'}
                   </button>
                 </div>
                 {quadInfo && <div className="text-[10px] text-emerald-200/90">{quadInfo}</div>}
@@ -2006,7 +2020,7 @@ nodo.data.materials.append(mat)`);
               {/* Animar como cuadrúpedo: esqueleto automático y 11 animaciones */}
               <div className="p-2.5 rounded-lg bg-slate-900/90 border border-emerald-800/60 space-y-1.5">
                 <div className="text-[10px] font-semibold text-emerald-300">
-                  Animar como cuadrúpedo (esqueleto y animaciones automáticos)
+                  Animar (esqueleto y animaciones automáticos)
                 </div>
                 <div className="flex items-center gap-1.5">
                   <label className="text-[10px] text-slate-400 shrink-0" htmlFor="quad-facing-py">
@@ -2027,10 +2041,21 @@ nodo.data.materials.append(mat)`);
                     type="button"
                     data-testid="animar-cuadrupedo-py"
                     disabled={quadBusy || polyStats.verts === 0}
-                    onClick={handleAnimateQuadruped}
-                    className="px-2.5 py-1 rounded bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-[10px] font-bold cursor-pointer disabled:opacity-40 shrink-0"
+                    onClick={() => handleAnimateQuadruped('cuadrupedo')}
+                    title="Cuatro patas (y alas si hay piezas llamadas Ala/Wing)"
+                    className="px-2 py-1 rounded bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-[10px] font-bold cursor-pointer disabled:opacity-40 shrink-0"
                   >
-                    {quadBusy ? 'Animando...' : 'Animar'}
+                    {quadBusy ? '...' : 'Cuadrúpedo'}
+                  </button>
+                  <button
+                    type="button"
+                    data-testid="animar-humanoide-py"
+                    disabled={quadBusy || polyStats.verts === 0}
+                    onClick={() => handleAnimateQuadruped('humanoide')}
+                    title="Bípedo en pose A o T. Una pieza llamada Arco/Bow da animaciones de arquero"
+                    className="px-2 py-1 rounded bg-teal-500 hover:bg-teal-400 text-slate-950 text-[10px] font-bold cursor-pointer disabled:opacity-40 shrink-0"
+                  >
+                    {quadBusy ? '...' : 'Humanoide'}
                   </button>
                 </div>
                 {quadInfo && <div className="text-[10px] text-emerald-200/90">{quadInfo}</div>}

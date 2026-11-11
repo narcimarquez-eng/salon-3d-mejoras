@@ -193,3 +193,15 @@ Mira el script más parecido antes de empezar uno nuevo:
 - "Animar como cuadrúpedo" solo pone alas si hay piezas llamadas Ala/Wing: las hombreras
   anchas del lobo se tomaban por alas.
 - Barniz (Coat) en la piel de foto deja puntitos blancos de brillo: déjalo a 0.
+
+## Arquero esqueleto (humanoide para juego)
+
+- Cuerpo hecho de tubos verticales (cabeza, costillas, falda) y tubos por los huesos de
+  brazos y piernas, todos medidos en frente (x) y perfil (y). Piel: atlas de 4 vistas en una
+  fila (`atlas_vistas.py ... 5000`), 200 KB.
+- Arco: tubo por la línea central de su vista en la hoja, con su propia vista "x". Se llama
+  AR_Arco: "Animar → Humanoide" lo pone rígido en la mano derecha (como lo sujetan las
+  animaciones de arquero). Evita "arma"/"arco" en otros nombres (Armadura lo contiene).
+- Esqueleto humanoide por proporciones (cadera 0,5 H, hombros 0,79 H...) y por la forma
+  (pies = lo más bajo de cada lado; manos = lo más alejado a cada lado). Resultado: 0,54 MB
+  animado con 3.000 triángulos.

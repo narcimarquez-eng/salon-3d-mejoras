@@ -6,7 +6,10 @@ por preparar_hoja_fotos.py siga alrededor), puede girar la cenital 90° para que
 quede a la izquierda, las coloca en filas y escala el conjunto al ancho pedido.
 
 Uso:
-    python3 atlas_vistas.py hoja_preparada.jpg salida.jpg ancho vistas.json
+    python3 atlas_vistas.py hoja_preparada.jpg salida.jpg ancho vistas.json [ancho_fila]
+
+ancho_fila: ancho máximo de cada fila antes de escalar (por defecto, la mitad del total).
+Para figuras altas (personajes de pie) conviene una sola fila: pon un número grande.
 
 vistas.json: [{"nombre": "perfil", "rect": [x0, y0, x1, y1], "girar": 0}, ...]
   girar: 0, o 90 para girar a izquierdas (una cenital con la cabeza arriba pasa a tenerla a
@@ -38,6 +41,8 @@ def main():
         trozos.append((v, (x0, y0, x1, y1), im))
     # Filas: se llenan en orden hasta el ancho de la vista más ancha (o de dos seguidas)
     limite = max(max(t[2].width for t in trozos), sum(t[2].width for t in trozos) // 2)
+    if len(sys.argv) > 5:
+        limite = int(sys.argv[5])
     filas, fila, ancho_fila = [], [], 0
     for t in trozos:
         if fila and ancho_fila + t[2].width > limite:

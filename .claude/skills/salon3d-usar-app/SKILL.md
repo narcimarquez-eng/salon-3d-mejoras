@@ -97,7 +97,12 @@ Panel **"Posición y Tamaño Translúcido (Junto al Frente)"** → **Abrir edito
 - Para un personaje, usa siempre el botón del propio panel: el exportador general pierde el
   esqueleto.
 
-## 7. Animar como cuadrúpedo
+## 7. Animar (cuadrúpedo o humanoide)
+
+- Botones **Cuadrúpedo** y **Humanoide** en el recuadro verde "Animar". Humanoide: bípedo en
+  pose A o T mirando al frente; 19 huesos y 11 animaciones (Idle, Walk, Attack, Hit, Death...).
+  Una pieza con "Arco"/"Bow" en el nombre va rígida en la mano derecha y Attack pasa a ser un
+  disparo con arco; otras armas (espada, hacha, escudo...) van rígidas en la mano más cercana.
 
 - Recuadro verde **"Animar como cuadrúpedo"**, en la pestaña Blender Python (bajo "Bajar escena
   actual en .GLB") y en Monstruos & GLB. Pone al modelo del visor (un script o un .glb cargado)
