@@ -3,13 +3,13 @@ import math
 
 # COORD_MODE: Z_UP
 # ==============================================================================
-# ORCO CHAMÁN (versión para juego)
+# ORCO CHAMÁN (versión para juego, hoja en alta)
 # ==============================================================================
-# Hecho a partir de la hoja de vistas del usuario (captura del móvil, 1174 x 472 px):
-# frente, perfil (mirando a la izquierda), espalda y el bastón de cuernas. Pose A, mirando
-# a -Y. Escala 0,5 cm por píxel (2,1 m). Piel: atlas de 1024 px con esas cuatro vistas
-# (public/textures/orco_chaman_atlas.jpg). La hoja es pequeña: con la imagen original
-# (no la captura) la piel saldría bastante más nítida.
+# Hecho a partir de la segunda hoja del usuario (2655 x 1085 px, cada figura ~1020 px):
+# frente, perfil (mirando a la derecha: el script lo voltea) y espalda. El bastón de
+# cuernas viene de la primera hoja (no sale en esta), escalado a la misma altura.
+# Escala 0,205 cm por píxel (2,1 m). Piel: atlas de 2048 x 1076 px (340 KB) con las tres
+# vistas y el bastón (public/textures/orco_chaman_atlas.jpg).
 # El bastón se llama "OR_Baston": al animar como humanoide va rígido en la mano derecha.
 # Ejes: X = ancho (el lado derecho del personaje en -X), Y = fondo (mira a -Y), Z = altura.
 # ==============================================================================
@@ -183,15 +183,19 @@ def plano_yz(puntos, x=0.0):
 # 1. ESCALA, ATLAS Y VISTAS
 # ==========================================
 HOJA = "orco_chaman_atlas"
-E = 0.005
-SA = 1.18656
-SUELO = 450
+E = 0.00205
+SA = 0.99129
+SUELO = 1062
+CX = 414         # eje del cuerpo en la vista de frente
+CB = 2257        # eje del cuerpo en la vista de espalda
+CY = 1110        # centro del cuerpo en la vista de perfil
 
 def x_de(px):
-    return (px - 163.5) * E
+    return (px - CX) * E
 
 def y_de(px):
-    return (px - 390) * E
+    # el perfil mira a la derecha de la foto y el personaje a -Y: se voltea
+    return -(px - CY) * E
 
 def z_de(py):
     return (SUELO - py) * E
@@ -200,23 +204,20 @@ def q(fx, sx, py):
     return [x_de(fx), y_de(sx), z_de(py)]
 
 def frente_a(px, py):
-    return [(px - 8) * SA, (py - 19) * SA]
+    return [(px - 48) * SA, (py - 30) * SA]
 
 def perfil_a(px, py):
-    return [370.21 + (px - 319) * SA, (py - 19) * SA]
+    return [726.61 + (px - 935) * SA, (py - 30) * SA]
 
 def espalda_a(px, py):
-    return [542.26 + (px - 628) * SA, (py - 19) * SA]
-
-def baston_a(px, py):
-    return [905.34 + (px - 918) * SA, (py - 19) * SA]
+    return [1066.63 + (px - 1895) * SA, (py - 30) * SA]
 
 def vista(eje, lado, a0, a1, h0, h1, w0, w1, peso):
     return [eje, lado, a0[0], a0[1], a1[0], a1[1], h0, h1, w0, w1, peso]
 
-V_FRENTE = vista("y", -1, frente_a(23.5, 29), frente_a(303.5, 450), x_de(23.5), x_de(303.5), z_de(29), 0.0, 1.3)
-V_ESPALDA = vista("y", 1, espalda_a(643.75, 29), espalda_a(923.75, 450), -x_de(23.5), -x_de(303.5), z_de(29), 0.0, 1.3)
-V_PERFIL = vista("x", 0, perfil_a(329, 29), perfil_a(454, 450), y_de(329), y_de(454), z_de(29), 0.0, 1.0)
+V_FRENTE = vista("y", -1, frente_a(58, 40), frente_a(770, 1062), x_de(58), x_de(770), z_de(40), 0.0, 1.3)
+V_ESPALDA = vista("y", 1, espalda_a(CB - 356, 40), espalda_a(CB + 356, 1062), 356 * E, -356 * E, z_de(40), 0.0, 1.3)
+V_PERFIL = vista("x", 0, perfil_a(945, 40), perfil_a(1268, 1062), y_de(945), y_de(1268), z_de(40), 0.0, 1.0)
 
 def material_foto(nombre, vistas, rugosidad=0.8):
     mat = material(nombre, (1.0, 1.0, 1.0, 1.0), rugosidad)
@@ -227,64 +228,86 @@ def material_foto(nombre, vistas, rugosidad=0.8):
 m_cuerpo = material_foto("OR_Cuerpo", [V_FRENTE, V_PERFIL, V_ESPALDA])
 
 # ==========================================
-# 2. CABEZA, COLETA Y TRONCO
+# 2. CABEZA, MOÑO Y COLETA
 # ==========================================
-tubo("OR_Cabeza", [q(163, 372, 34), q(163, 372, 50), q(163, 374, 75), q(163, 372, 95), q(163, 380, 110)],
-     [0.03, 0.08, 0.125, 0.115, 0.08], m_cuerpo, n=16, aplastar=1.05)
-tubo("OR_Coleta", [q(163, 412, 48), q(163, 428, 70), q(163, 436, 120), q(163, 438, 190)], [0.05, 0.045, 0.035, 0.015], m_cuerpo, n=8, aplastar=0.7)
-# tronco: [fila, medio ancho (frente), medio fondo (perfil)]
-TRONCO = [[105, 0.07, 0.07], [125, 0.28, 0.2], [160, 0.28, 0.22], [200, 0.23, 0.22], [245, 0.32, 0.22],
-          [290, 0.36, 0.22], [322, 0.32, 0.2]]
+tubo("OR_Cabeza", [q(CX, 1130, 45), q(CX, 1138, 85), q(CX, 1150, 140), q(CX, 1155, 195), q(CX, 1150, 235), q(CX, 1135, 262)],
+     [0.03, 0.075, 0.115, 0.125, 0.11, 0.07], m_cuerpo, n=18, aplastar=[1.0, 1.0, 0.95, 1.0, 1.05, 1.1])
+tubo("OR_Coleta", [q(CX, 1055, 75), q(CX, 1000, 110), q(CX, 968, 180), q(CX, 958, 270), q(CX, 965, 380)],
+     [0.045, 0.05, 0.045, 0.035, 0.012], m_cuerpo, n=10, aplastar=0.8)
+
+# ==========================================
+# 3. TRONCO Y FALDA: [fila, medio ancho (frente), medio fondo (perfil), centro en el perfil]
+# ==========================================
+TRONCO = [[235, 70, 75, 1125], [290, 140, 110, 1112], [370, 150, 118, 1105], [440, 116, 112, 1108],
+          [500, 124, 118, 1112], [560, 150, 122, 1112], [650, 176, 124, 1112], [720, 182, 120, 1115], [770, 150, 100, 1112]]
 pts = []
 rad = []
 apl = []
 for t in TRONCO:
-    pts.append(q(163.5, 390, t[0]))
-    rad.append(t[2])
+    pts.append(q(CX, t[3], t[0]))
+    rad.append(t[2] * E)
     apl.append(t[1] / t[2])
-tubo("OR_Tronco", pts, rad, m_cuerpo, n=22, aplastar=apl)
-# hombreras de calavera
+tubo("OR_Tronco", pts, rad, m_cuerpo, n=24, aplastar=apl)
+
+# Hombreras de calavera con sus cuernos
 for lado in [-1, 1]:
-    esfera("OR_Hombrera_" + str(lado), [lado * 0.32, y_de(392), z_de(118)], 0.5, m_cuerpo, escala=(0.3, 0.3, 0.26))
+    esfera("OR_Hombrera_" + str(lado), [lado * 0.37, y_de(1090), z_de(255)], 0.5, m_cuerpo, escala=(0.3, 0.38, 0.3))
+# Cuernos: [base, punta] en la vista de frente (no son simétricos en el dibujo)
+CUERNOS = [[235, 205, 226, 92, 0.045], [200, 210, 176, 140, 0.03], [538, 180, 551, 52, 0.045], [588, 205, 606, 150, 0.03]]
+for i in range(len(CUERNOS)):
+    c = CUERNOS[i]
+    tubo("OR_Cuerno_Hombrera_" + str(i), [q(c[0], 1088, c[1]), q((c[0] + c[2]) / 2, 1088, (c[1] + c[3]) / 2), q(c[2], 1088, c[3])],
+         [c[4], c[4] * 0.6, 0.004], m_cuerpo, n=8)
 
 # ==========================================
-# 3. BRAZOS, MANOS CON DEDOS Y PIERNAS
+# 4. BRAZOS CON BRAZALES, MANOS CON DEDOS Y PIERNAS CON BOTAS
 # ==========================================
 def mano(pref, palma, punta, lado):
     for d in range(4):
         f = (d - 1.5) / 1.5
-        base = [palma[0], palma[1] + f * 0.035, palma[2]]
-        fin = [punta[0] - lado * abs(f) * 0.01, punta[1] + f * 0.045, punta[2] + abs(f) * 0.02]
-        tubo(pref + "_Dedo_" + str(d), [base, fin], [0.022, 0.016], m_cuerpo, n=6)
-    pul = [palma[0] + lado * 0.01, palma[1] - 0.05, palma[2] + 0.02]
-    tubo(pref + "_Pulgar", [pul, [pul[0], pul[1] - 0.04, pul[2] - 0.05]], [0.022, 0.014], m_cuerpo, n=6)
-
-brazo_d = [q(95, 390, 125), q(75, 388, 160), q(55, 384, 195), q(42, 380, 230), q(40, 376, 252)]
-tubo("OR_Brazo_D", brazo_d, [0.1, 0.085, 0.075, 0.085, 0.07], m_cuerpo, n=14)
-esfera("OR_Palma_D", q(40, 374, 262), 0.5, m_cuerpo, escala=(0.1, 0.13, 0.11))
-mano("OR_Mano_D", q(40, 374, 268), q(36, 374, 290), -1)
-brazo_i = [q(232, 390, 125), q(255, 388, 160), q(275, 384, 195), q(288, 380, 230), q(295, 376, 252)]
-tubo("OR_Brazo_I", brazo_i, [0.1, 0.085, 0.075, 0.085, 0.07], m_cuerpo, n=14)
-esfera("OR_Palma_I", q(296, 374, 262), 0.5, m_cuerpo, escala=(0.1, 0.13, 0.11))
-mano("OR_Mano_I", q(296, 374, 268), q(300, 374, 290), 1)
+        base = [palma[0], palma[1] + f * 0.04, palma[2]]
+        fin = [punta[0] - lado * abs(f) * 0.012, punta[1] + f * 0.05, punta[2] + abs(f) * 0.02]
+        medio = [(base[0] + fin[0]) / 2 + lado * 0.012, (base[1] + fin[1]) / 2, (base[2] + fin[2]) / 2]
+        tubo(pref + "_Dedo_" + str(d), [base, medio, fin], [0.026, 0.024, 0.017], m_cuerpo, n=7)
+    pul = [palma[0] - lado * 0.01, palma[1] - 0.06, palma[2] + 0.02]
+    tubo(pref + "_Pulgar", [pul, [pul[0] - lado * 0.005, pul[1] - 0.05, pul[2] - 0.06]], [0.026, 0.017], m_cuerpo, n=7)
 
 for lado in [-1, 1]:
-    fx = 116
-    if lado > 0:
-        fx = 208
-    pierna = [q(fx, 386, 300), q(fx, 382, 345), q(fx, 380, 380), q(fx - lado * 2, 380, 412), q(fx - lado * 2, 382, 432)]
-    tubo("OR_Pierna_" + str(lado), pierna, [0.13, 0.12, 0.15, 0.1, 0.11], m_cuerpo, n=14)
-    esfera("OR_Pie_" + str(lado), q(fx - lado * 6, 372, 441), 0.5, m_cuerpo, escala=(0.26, 0.4, 0.09))
+    # lado -1 (derecho del personaje) = la izquierda de la foto
+    if lado < 0:
+        hom, cod, mun, pal, pun = 282, 190, 140, 112, 95
+    else:
+        hom, cod, mun, pal, pun = 548, 640, 690, 718, 740
+    brazo = [q(hom, 1110, 300), q((hom + cod) / 2, 1108, 365), q(cod, 1105, 430), q((cod + mun) / 2, 1100, 495), q(mun, 1098, 560)]
+    tubo("OR_Brazo_" + str(lado), brazo, [0.11, 0.1, 0.1, 0.13, 0.11], m_cuerpo, n=16)
+    esfera("OR_Palma_" + str(lado), q(pal, 1098, 600), 0.5, m_cuerpo, escala=(0.13, 0.16, 0.13))
+    mano("OR_Mano_" + str(lado), q(pal, 1098, 612), q(pun, 1098, 655), lado)
+    # pinchos del brazal
+    cono("OR_Pincho_Brazal_" + str(lado), (x_de(cod) + lado * 0.1, y_de(1100), z_de(445)), 0.025, 0.0, 0.14, m_cuerpo, vertices=6, rot=(0, lado * 1.2, 0))
+
+    if lado < 0:
+        cad, rod, tob = 318, 302, 292
+    else:
+        cad, rod, tob = 510, 530, 540
+    pierna = [q(cad, 1110, 690), q((cad + rod) / 2, 1105, 760), q(rod, 1100, 830), q((rod + tob) / 2, 1092, 900), q(tob, 1080, 960), q(tob, 1080, 1010)]
+    tubo("OR_Pierna_" + str(lado), pierna, [0.15, 0.15, 0.17, 0.15, 0.11, 0.12], m_cuerpo, n=16)
+    esfera("OR_Pie_" + str(lado), q(tob, 1130, 1040), 0.5, m_cuerpo, escala=(0.27, 0.42, 0.09))
 
 # ==========================================
-# 4. BASTÓN DE CUERNAS EN LA MANO DERECHA
+# 5. BASTÓN DE CUERNAS (de la primera hoja) EN LA MANO DERECHA
 # ==========================================
-MANO = q(40, 374, 262)
+EB = 0.005       # escala de la primera hoja
+MANO = q(112, 1098, 600)
 def bp(px, py):
-    # punto del bastón: su vista de la hoja va de frente, con el agarre (columna 977) en la mano
-    return [MANO[0] + (px - 977) * E, MANO[1], z_de(py)]
+    return [MANO[0] + (px - 977) * EB, MANO[1], (450 - py) * EB]
 
-V_BASTON = vista("y", 0, baston_a(927, 29), baston_a(1007, 450), MANO[0] + (927 - 977) * E, MANO[0] + (1007 - 977) * E, z_de(29), 0.0, 1.0)
+def baston_a(px, py):
+    # primera hoja -> hoja compuesta (x2,44 a la derecha de la nueva) -> atlas
+    cx = 2655 + (px - 918) * 2.44
+    cy = (py - 19) * 2.44
+    return [1796.21 + (cx - 2645) * SA, cy * SA]
+
+V_BASTON = vista("y", 0, baston_a(927, 29), baston_a(1007, 450), MANO[0] + (927 - 977) * EB, MANO[0] + (1007 - 977) * EB, (450 - 29) * EB, 0.0, 1.0)
 m_baston = material_foto("OR_BastonMat", [V_BASTON], 0.75)
 tubo("OR_Baston", [bp(980, 445), bp(979, 404), bp(974, 344), bp(976, 296), bp(980, 272), bp(975, 236), bp(981, 212), bp(978, 180), bp(970, 120), bp(968, 92)],
      [0.03, 0.03, 0.032, 0.03, 0.034, 0.03, 0.03, 0.03, 0.026, 0.02], m_baston, n=8)
@@ -292,7 +315,6 @@ tubo("OR_Baston_Cuerna_I", [bp(966, 175), bp(950, 140), bp(941, 90), bp(950, 44)
 tubo("OR_Baston_Cuerna_D", [bp(984, 175), bp(994, 140), bp(1000, 92), bp(996, 46)], [0.022, 0.018, 0.014, 0.006], m_baston, n=6)
 tubo("OR_Baston_Travesano", [bp(948, 104), bp(968, 100), bp(988, 104)], [0.014, 0.016, 0.014], m_baston, n=6)
 
-# Suelo pequeño para que la vista general encuadre bien
 bpy.ops.mesh.primitive_cylinder_add(vertices=40, radius=1.0, depth=0.02, location=(0, 0, -0.01))
 suelo = bpy.context.active_object
 suelo.name = "OR_Suelo"
