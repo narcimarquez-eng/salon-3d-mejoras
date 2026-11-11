@@ -30,7 +30,7 @@ const IGNORED = /suelo|floor|ground|pedestal|grid|helper/i;
 /** Piezas que son alas (por su nombre): no cuentan para medir el tronco. */
 const WING = /(^|[^a-z])(ala|alas|wing|wings)([^a-z]|$)|_ala_|_ala$/i;
 /** Armas y objetos en la mano (por su nombre): van rígidos con la mano, sin deformarse. */
-const PROP = /arco|bow|espada|sword|escudo|shield|hacha|axe|lanza|spear|arma|weapon/i;
+const PROP = /arco|bow|espada|sword|escudo|shield|hacha|axe|lanza|spear|arma|weapon|baston|bastón|staff|cayado|daga|dagger|maza|mace/i;
 
 function pickMaterial(mesh: THREE.Mesh): THREE.Material | THREE.Material[] {
   // Los modelos del estudio Python guardan su material PBR "de verdad" aparte del que se ve
