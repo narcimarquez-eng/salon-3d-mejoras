@@ -208,3 +208,5 @@ humano cerrado con profundidad por partes, le busca la cara, le pone botas, un e
 - `scripts/hoja_contactos.py` — junta capturas en una sola imagen.
 - `scripts/preparar_hoja_fotos.py` — prepara una hoja de vistas para proyectarla como piel
   (`mat.color_map_views`). Ejemplos: `tiburon_patas/`, `monstruo_cuadrupedo/`, `pony/`.
+- `scripts/atlas_vistas.py` — junta solo las vistas usadas en una textura pequeña (1024 px,
+  ~120 KB) para modelos de juego. Ejemplo: `lobo_acorazado/`.

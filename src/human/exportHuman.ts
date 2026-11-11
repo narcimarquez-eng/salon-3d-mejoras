@@ -14,6 +14,7 @@
 import * as THREE from 'three';
 import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
 import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
+import { mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
 
 /** Pasa una DataTexture a CanvasTexture conservando orientación y espacio de color. */
 function dataTextureToCanvasTexture(tex: THREE.Texture): THREE.Texture {
@@ -101,6 +102,11 @@ function prepareObjectForGLTFExport(root: THREE.Object3D): THREE.Object3D {
     if (custom.length > 0) {
       mesh.geometry = mesh.geometry.clone();
       for (const name of custom) mesh.geometry.deleteAttribute(name);
+    }
+    // Mallas en triángulos sueltos (fotos proyectadas, from_pydata): se unen los vértices
+    // repetidos (misma posición, normal, UV y pesos). El .glb pesa 3-5 veces menos y se ve igual.
+    if (!mesh.geometry.index && mesh.geometry.attributes.position?.count > 0) {
+      mesh.geometry = mergeVertices(mesh.geometry, 1e-5);
     }
   });
 

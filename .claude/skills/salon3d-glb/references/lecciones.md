@@ -178,3 +178,18 @@ Mira el script más parecido antes de empezar uno nuevo:
   Ahora las piezas con "Ala"/"Wing" en el nombre no cuentan para el ancho del tronco (llama
   así a las alas). En el suelo las alas se quedan abiertas: plegarlas con los ángulos de los
   dragones de la app enrollaba la membrana.
+
+## Lobo acorazado: modelos ligeros para juegos
+
+- La hoja entera como textura pesaba 2-4 MB y además el exportador guardaba las fotos como PNG.
+  Ahora: `preparar_hoja_fotos.py` y luego `atlas_vistas.py` (solo las 4 vistas, cenital girada,
+  1024 px, ~120 KB); las imágenes .jpg se exportan como JPEG.
+- Las normales de las mallas con foto no se compartían (el motor las recalculaba al final del
+  script en triángulos sueltos): salían facetadas y el .glb no podía unir vértices. Arreglado:
+  el motor respeta `normalesFijas` y el exportador une los vértices iguales. Lobo: 0,51 MB
+  quieto y 0,86 MB animado (antes 1,0 y 2,1 MB).
+- Los niveles High/Medium/Low bajan la textura a 384/256/128 px: con un atlas de 4 fotos se
+  ve borroso. Para estos modelos usa Completo (ya es ligero).
+- "Animar como cuadrúpedo" solo pone alas si hay piezas llamadas Ala/Wing: las hombreras
+  anchas del lobo se tomaban por alas.
+- Barniz (Coat) en la piel de foto deja puntitos blancos de brillo: déjalo a 0.

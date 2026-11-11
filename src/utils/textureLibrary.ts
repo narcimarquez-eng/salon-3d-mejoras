@@ -8,6 +8,7 @@ import {
   TextureLoader,
   Vector3,
 } from 'three';
+import { mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 
 export interface ColorMapSet {
   color: Texture | null;
@@ -104,6 +105,8 @@ async function loadTexture(url: string, isColor: boolean): Promise<Texture | nul
     tex.wrapT = RepeatWrapping;
     tex.anisotropy = 4;
     if (isColor) tex.colorSpace = SRGBColorSpace;
+    // Al exportar a .glb, una foto JPG se guarda como JPEG (como PNG pesaría 5-10 veces más)
+    if (/\.jpe?g$/i.test(url)) tex.userData.mimeType = 'image/jpeg';
     tex.needsUpdate = true;
     return tex;
   } catch {
@@ -258,11 +261,17 @@ export function applyPhotoViewsUv(
 ): BufferGeometry {
   let geo = geometry;
   if (!geo.attributes.position || views.length === 0) return geo;
-  if (geo.index) {
-    geo.computeVertexNormals();
-    geo = geo.toNonIndexed();
-  } else if (!geo.attributes.normal) {
-    geo.computeVertexNormals();
+  // Normales suaves: se unen los vértices que coinciden en posición y se calculan ahí, y
+  // luego se separan los triángulos (cada uno lleva el UV de su vista). Así dos triángulos
+  // vecinos comparten normal: la luz no marca facetas y, al exportar, los vértices iguales
+  // (posición, normal y UV) se vuelven a unir y el .glb pesa mucho menos.
+  if (!geo.userData?.normalesFijas) {
+    const plano = geo.index ? geo.toNonIndexed() : geo;
+    const soloPos = new BufferGeometry();
+    soloPos.setAttribute('position', plano.attributes.position.clone());
+    const unida = mergeVertices(soloPos, 1e-4);
+    unida.computeVertexNormals();
+    geo = unida.toNonIndexed();
   }
   const pos = geo.attributes.position;
   const nor = geo.attributes.normal;

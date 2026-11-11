@@ -9282,7 +9282,9 @@ export async function executeBlenderPythonScript(
         const geo = m.geometry as THREE.BufferGeometry;
         if (geo.attributes.position) {
           geo.attributes.position.needsUpdate = true;
-          geo.computeVertexNormals();
+          // Las mallas con fotos proyectadas ya traen normales suaves (y van en triángulos
+          // sueltos): recalcularlas aquí las dejaría facetadas.
+          if (!geo.userData?.normalesFijas) geo.computeVertexNormals();
           geo.computeBoundingBox();
           geo.computeBoundingSphere();
           prepareGeometryNormals(m);

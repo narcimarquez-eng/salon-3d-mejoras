@@ -198,6 +198,8 @@ export interface CreatureRigOptions {
    * de las alas, y entonces el tronco parecía enorme y las alas no se detectaban.
    */
   bodyHalfWidth?: number;
+  /** false: nunca alas (el modelo no tiene piezas de ala; placas anchas o cuernos no lo son). */
+  allowWings?: boolean;
 }
 
 export function computeCreatureRig(positions: Float32Array, opts: CreatureRigOptions = {}): CreatureRigResult {
@@ -401,7 +403,8 @@ export function computeCreatureRig(positions: Float32Array, opts: CreatureRigOpt
     if (dx > bestL) { bestL = dx; wingTipL = [x, y, z]; }
     if (-dx > bestR) { bestR = -dx; wingTipR = [x, y, z]; }
   }
-  const hasWings = wingN > n * 0.02 && wingTipL !== null && wingTipR !== null;
+  const hasWings =
+    opts.allowWings !== false && wingN > n * 0.02 && wingTipL !== null && wingTipR !== null;
 
   if (hasWings) {
     const wingChain = (side: 'Left' | 'Right', tip: V3) => {

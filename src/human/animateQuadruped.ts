@@ -146,7 +146,10 @@ export async function rigQuadrupedFromObject(
     all.set(p.geo.attributes.position.array as Float32Array, o);
     o += p.geo.attributes.position.count * 3;
   }
-  const built = computeCreatureRig(all, { bodyHalfWidth });
+  // Alas solo si el modelo tiene piezas de ala: sin ellas, unas hombreras anchas o los
+  // cuernos se tomaban por alas y salía un esqueleto de dragón.
+  const hasWingParts = parts.some((p) => p.wing);
+  const built = computeCreatureRig(all, { bodyHalfWidth, allowWings: hasWingParts });
   const height = Math.max(1e-6, box.max.y - box.min.y);
 
   const { root: rootBone, bones } = createSkeletonBones(built.rig);
