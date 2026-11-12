@@ -79,7 +79,6 @@ const CABANAS = [
 ];
 // instante del impacto en cada clip (medido en el .glb): puño abajo / pies en el suelo
 const CLIP = { golpe: { nombre: 'Attack', impacto: 0.45 }, salto: { nombre: 'JumpBite', impacto: 1.1 } };
-const SUELO_FIJO = /^(Hierba|Camino|Suelo|SueloPB|Agua)(_\d+)?$/;
 // ruta de los modelos: en el repositorio, .glb (el titán con Draco); publicada, texto base64
 const EMPAQUETADO = false;
 const RUTA_DRACO = '../draco/';
@@ -246,18 +245,13 @@ suelo.rotation.x = -Math.PI / 2;
 suelo.position.set(0, -0.006, LARGO / 2);
 suelo.receiveShadow = true;
 scene.add(suelo);
-{
-  // camino de tierra por donde avanza el titán, con los bordes deshilachados
-  const alfa = lienzo(64, 64, (g, w, h) => { const r = g.createLinearGradient(0, 0, w, 0); r.addColorStop(0, 'rgba(255,255,255,0)'); r.addColorStop(0.3, '#fff'); r.addColorStop(0.7, '#fff'); r.addColorStop(1, 'rgba(255,255,255,0)'); g.fillStyle = r; g.fillRect(0, 0, w, h); });
-  alfa.colorSpace = THREE.NoColorSpace;
-  const t = TEX.tierra.clone(); t.repeat.set(2, 30); t.needsUpdate = true;
-  const camino = new THREE.Mesh(new THREE.PlaneGeometry(1.4, LARGO + 14), new THREE.MeshStandardMaterial({ map: t, alphaMap: alfa, transparent: true, roughness: 1, depthWrite: false }));
-  camino.rotation.x = -Math.PI / 2;
-  camino.position.set(0, 0.002, LARGO / 2 - 2);
-  camino.receiveShadow = true;
-  scene.add(camino);
+const alfaRedonda = lienzo(64, 64, (g) => { const r = g.createRadialGradient(32, 32, 6, 32, 32, 31); r.addColorStop(0, '#fff'); r.addColorStop(0.6, '#fff'); r.addColorStop(1, 'rgba(255,255,255,0)'); g.fillStyle = r; g.fillRect(0, 0, 64, 64); });
+alfaRedonda.colorSpace = THREE.NoColorSpace;
+function claroDeTierra(x, z, radio) {
+  const m = new THREE.Mesh(new THREE.CircleGeometry(radio, 24), new THREE.MeshStandardMaterial({ map: TEX.tierra, alphaMap: alfaRedonda, transparent: true, depthWrite: false, roughness: 1 }));
+  m.rotation.x = -Math.PI / 2; m.position.set(x, 0.002, z); m.receiveShadow = true;
+  scene.add(m);
 }
-const libre = (x, z) => Math.abs(x) < 1.9 && z > -7 && z < LARGO + 2.5;   // pasillo del titán y parcelas
 function instanciar(geo, mat, n, poner) {
   const m = new THREE.InstancedMesh(geo, mat, n);
   const o = new THREE.Object3D();
@@ -266,47 +260,45 @@ function instanciar(geo, mat, n, poner) {
   scene.add(m);
   return m;
 }
+// piezas de árbol compartidas por el bosque de fondo y por los árboles que se pueden romper
+const matCorteza = new THREE.MeshStandardMaterial({ map: TEX.corteza, roughness: 1 });
+const matPino = new THREE.MeshStandardMaterial({ map: TEX.pino, roughness: 0.95, flatShading: true });
+const matHojas = new THREE.MeshStandardMaterial({ map: TEX.hojas, roughness: 0.9, flatShading: true });
+const geoTronco = new THREE.CylinderGeometry(0.035, 0.06, 0.5, 6).translate(0, 0.25, 0);
+const geoConos = [[0.42, 0.75, 0.35], [0.33, 0.62, 0.68], [0.22, 0.5, 0.98]].map(([r, alto, y]) => new THREE.ConeGeometry(r, alto, 7).translate(0, y + alto / 2, 0));
+const geoCopa = (() => {
+  const g = new THREE.IcosahedronGeometry(0.42, 1);
+  const p = g.attributes.position;
+  for (let i = 0; i < p.count; i++) { const v = new THREE.Vector3().fromBufferAttribute(p, i); v.multiplyScalar(entre(0.82, 1.15)); v.y *= 0.85; p.setXYZ(i, v.x, v.y, v.z); }
+  g.computeVertexNormals(); g.translate(0, 0.78, 0);
+  return g;
+})();
+const geoTocon = new THREE.CylinderGeometry(0.05, 0.06, 0.06, 6).translate(0, 0.03, 0);
+// el pasillo por donde pasa el titán y el prado del lado de la cámara quedan para los árboles que se rompen
+const zonaAldea = (x, z) => Math.abs(x) < 2.0 && z > -6 && z < LARGO + 2.2;
+const pradoCamara = (x, z) => x > 1.6 && x < 5.4 && z > -8 && z < LARGO + 5;
 {
   const sitios = [];
-  while (sitios.length < 520) {
+  while (sitios.length < 560) {
     const x = entre(-16, 16), z = entre(-12, LARGO + 14);
-    if (libre(x, z)) continue;
-    if (Math.abs(x) < 2.3 && azar() < 0.6) continue;           // claro a los lados del camino
-    if (x > 1.5 && x < 5.4 && z > -8 && z < LARGO + 5) continue; // prado del lado de la cámara: nada le tapa la vista
+    if (zonaAldea(x, z) || pradoCamara(x, z)) continue;
     sitios.push({ x, z, s: entre(0.6, 1.5) * (Math.abs(x) > 6 ? 1.25 : 1), r: azar() * Math.PI * 2, pino: azar() < 0.55 });
   }
   const pinos = sitios.filter((p) => p.pino), frondosos = sitios.filter((p) => !p.pino);
-  const matCorteza = new THREE.MeshStandardMaterial({ map: TEX.corteza, roughness: 1 });
-  const matPino = new THREE.MeshStandardMaterial({ map: TEX.pino, roughness: 0.95, flatShading: true });
-  const matHojas = new THREE.MeshStandardMaterial({ map: TEX.hojas, roughness: 0.9, flatShading: true });
-  const tronco = new THREE.CylinderGeometry(0.035, 0.06, 0.5, 6).translate(0, 0.25, 0);
-  instanciar(tronco, matCorteza, sitios.length, (o, i) => { const p = sitios[i]; o.position.set(p.x, 0, p.z); o.rotation.set(0, p.r, 0); o.scale.set(p.s, p.s * (p.pino ? 0.9 : 1.1), p.s); });
-  for (const [r, alto, y] of [[0.42, 0.75, 0.35], [0.33, 0.62, 0.68], [0.22, 0.5, 0.98]]) {
-    const cono = new THREE.ConeGeometry(r, alto, 7).translate(0, y + alto / 2, 0);
-    instanciar(cono, matPino, pinos.length, (o, i) => { const p = pinos[i]; o.position.set(p.x, 0, p.z); o.rotation.set(0, p.r, 0); o.scale.setScalar(p.s); });
-  }
-  const copa = new THREE.IcosahedronGeometry(0.42, 1);
-  const pos = copa.attributes.position;
-  for (let i = 0; i < pos.count; i++) { const v = new THREE.Vector3().fromBufferAttribute(pos, i); v.multiplyScalar(entre(0.82, 1.15)); v.y *= 0.85; pos.setXYZ(i, v.x, v.y, v.z); }
-  copa.computeVertexNormals(); copa.translate(0, 0.78, 0);
-  instanciar(copa, matHojas, frondosos.length, (o, i) => { const p = frondosos[i]; o.position.set(p.x, 0, p.z); o.rotation.set(0, p.r, 0); o.scale.set(p.s * 1.05, p.s, p.s * 1.05); });
-  // rocas y matas de hierba
-  const roca = new THREE.DodecahedronGeometry(0.12, 0);
-  instanciar(roca, new THREE.MeshStandardMaterial({ map: TEX.roca, roughness: 1, flatShading: true }), 90, (o) => {
-    let x, z; do { x = entre(-14, 14); z = entre(-10, LARGO + 12); } while (libre(x, z) && Math.abs(x) < 0.8);
+  instanciar(geoTronco, matCorteza, sitios.length, (o, i) => { const p = sitios[i]; o.position.set(p.x, 0, p.z); o.rotation.set(0, p.r, 0); o.scale.set(p.s, p.s * (p.pino ? 0.9 : 1.1), p.s); });
+  for (const cono of geoConos) instanciar(cono, matPino, pinos.length, (o, i) => { const p = pinos[i]; o.position.set(p.x, 0, p.z); o.rotation.set(0, p.r, 0); o.scale.setScalar(p.s); });
+  instanciar(geoCopa, matHojas, frondosos.length, (o, i) => { const p = frondosos[i]; o.position.set(p.x, 0, p.z); o.rotation.set(0, p.r, 0); o.scale.set(p.s * 1.05, p.s, p.s * 1.05); });
+  instanciar(new THREE.DodecahedronGeometry(0.12, 0), new THREE.MeshStandardMaterial({ map: TEX.roca, roughness: 1, flatShading: true }), 90, (o) => {
+    let x, z; do { x = entre(-14, 14); z = entre(-10, LARGO + 12); } while (Math.abs(x) < 1.2);
     o.position.set(x, 0.02, z); o.rotation.set(azar() * 3, azar() * 3, azar() * 3); const s = entre(0.4, 2.2); o.scale.set(s, s * 0.6, s);
   });
-  const mata = new THREE.ConeGeometry(0.02, 0.07, 3).translate(0, 0.035, 0);
-  const matas = instanciar(mata, new THREE.MeshStandardMaterial({ roughness: 1 }), 2600, (o) => {
-    let x, z; do { x = entre(-12, 12); z = entre(-8, LARGO + 10); } while (Math.abs(x) < 0.55);
-    o.position.set(x, 0, z); o.rotation.set(entre(-0.2, 0.2), azar() * 3, entre(-0.2, 0.2)); o.scale.setScalar(entre(0.7, 1.8));
+  const matas = instanciar(new THREE.ConeGeometry(0.02, 0.07, 3).translate(0, 0.035, 0), new THREE.MeshStandardMaterial({ roughness: 1 }), 2600, (o) => {
+    o.position.set(entre(-12, 12), 0, entre(-8, LARGO + 10)); o.rotation.set(entre(-0.2, 0.2), azar() * 3, entre(-0.2, 0.2)); o.scale.setScalar(entre(0.7, 1.8));
   });
   matas.castShadow = false;
   const col = new THREE.Color();
   for (let i = 0; i < 2600; i++) matas.setColorAt(i, col.setHSL(entre(0.2, 0.3), entre(0.4, 0.6), entre(0.22, 0.36)));
-  // montañas lejanas
-  const monte = new THREE.ConeGeometry(1, 1, 6).translate(0, 0.5, 0);
-  const montes = instanciar(monte, new THREE.MeshStandardMaterial({ color: 0x5b6878, roughness: 1, flatShading: true }), 34, (o, i) => {
+  const montes = instanciar(new THREE.ConeGeometry(1, 1, 6).translate(0, 0.5, 0), new THREE.MeshStandardMaterial({ color: 0x5b6878, roughness: 1, flatShading: true }), 34, (o, i) => {
     const a = (i / 34) * Math.PI * 2 + entre(-0.05, 0.05), r = entre(40, 52);
     o.position.set(Math.cos(a) * r, -0.5, LARGO / 2 + Math.sin(a) * r); o.scale.set(entre(7, 13), entre(6, 15), entre(7, 13)); o.rotation.y = azar() * 3;
   });
@@ -341,83 +333,176 @@ const mundo = (n) => new THREE.Vector3().setFromMatrixPosition(huesos[n].matrixW
 
 // ================================================================ sonido (sintetizado en la página)
 const Sonido = (() => {
-  let ctx = null, master = null, activo = true, viento = null;
-  const ruido = () => {
-    const b = ctx.createBuffer(1, ctx.sampleRate * 2, ctx.sampleRate);
-    const d = b.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
-    return b;
-  };
-  let bufRuido;
+  let ctx = null, master = null, activo = true, bufRuido;
   const fuenteRuido = () => { const s = ctx.createBufferSource(); s.buffer = bufRuido; s.loop = true; return s; };
-  const env = (g, t, a, pico, cae) => { g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(pico, t + a); g.gain.exponentialRampToValueAtTime(0.0001, t + a + cae); };
-  return {
+  const env = (g, t, a, pico, cae) => { g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(Math.max(0.0002, pico), t + a); g.gain.exponentialRampToValueAtTime(0.0001, t + a + cae); };
+  const ruidoFiltrado = (t, tipo, f, q, a, pico, cae) => {
+    const n = fuenteRuido(), fl = ctx.createBiquadFilter(), g = ctx.createGain();
+    fl.type = tipo; fl.frequency.value = f; fl.Q.value = q; env(g, t, a, pico, cae);
+    n.connect(fl); fl.connect(g); g.connect(master); n.start(t, Math.random()); n.stop(t + a + cae + 0.05);
+    return fl;
+  };
+  const tono = (t, tipo, f0, f1, a, pico, cae) => {
+    const o = ctx.createOscillator(), g = ctx.createGain(); o.type = tipo;
+    o.frequency.setValueAtTime(f0, t); o.frequency.exponentialRampToValueAtTime(f1, t + a + cae);
+    env(g, t, a, pico, cae); o.connect(g); g.connect(master); o.start(t); o.stop(t + a + cae + 0.05);
+  };
+  const S = {
     iniciar() {
       if (ctx) return;
       ctx = new (window.AudioContext || window.webkitAudioContext)();
       master = ctx.createGain(); master.gain.value = 0.9;
       const comp = ctx.createDynamicsCompressor(); master.connect(comp); comp.connect(ctx.destination);
-      bufRuido = ruido();
+      bufRuido = ctx.createBuffer(1, ctx.sampleRate * 2, ctx.sampleRate);
+      const d = bufRuido.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
       // viento de fondo
       const n = fuenteRuido(), f = ctx.createBiquadFilter(), g = ctx.createGain();
       f.type = 'lowpass'; f.frequency.value = 380; g.gain.value = 0.05;
       const lfo = ctx.createOscillator(), lg = ctx.createGain(); lfo.frequency.value = 0.12; lg.gain.value = 0.035; lfo.connect(lg); lg.connect(g.gain); lfo.start();
       n.connect(f); f.connect(g); g.connect(master); n.start();
-      viento = g;
     },
     alternar() { activo = !activo; if (master) master.gain.value = activo ? 0.9 : 0; return activo; },
     get listo() { return !!ctx && activo; },
     rugido() {
-      if (!this.listo) return; const t = ctx.currentTime;
+      const t = ctx.currentTime;
       const f = ctx.createBiquadFilter(); f.type = 'lowpass'; f.Q.value = 6;
       f.frequency.setValueAtTime(250, t); f.frequency.linearRampToValueAtTime(1300, t + 0.5); f.frequency.linearRampToValueAtTime(380, t + 2.6);
       const g = ctx.createGain(); env(g, t, 0.25, 0.55, 2.4); f.connect(g); g.connect(master);
       for (const fr of [62, 68.5, 93, 124]) { const o = ctx.createOscillator(); o.type = 'sawtooth'; o.frequency.setValueAtTime(fr, t); o.frequency.linearRampToValueAtTime(fr * 0.78, t + 2.6); const vib = ctx.createOscillator(), vg = ctx.createGain(); vib.frequency.value = 11; vg.gain.value = fr * 0.06; vib.connect(vg); vg.connect(o.frequency); vib.start(t); o.connect(f); o.start(t); o.stop(t + 2.8); vib.stop(t + 2.8); }
-      const n = fuenteRuido(), nf = ctx.createBiquadFilter(), ng = ctx.createGain(); nf.type = 'bandpass'; nf.frequency.value = 700; nf.Q.value = 0.8; env(ng, t, 0.2, 0.25, 2.3); n.connect(nf); nf.connect(ng); ng.connect(master); n.start(t); n.stop(t + 2.8);
+      ruidoFiltrado(t, 'bandpass', 700, 0.8, 0.2, 0.25, 2.3);
     },
-    pisada(fuerza = 1) {
-      if (!this.listo) return; const t = ctx.currentTime;
-      const o = ctx.createOscillator(), g = ctx.createGain(); o.frequency.setValueAtTime(70, t); o.frequency.exponentialRampToValueAtTime(32, t + 0.35); env(g, t, 0.01, 0.6 * fuerza, 0.4); o.connect(g); g.connect(master); o.start(t); o.stop(t + 0.5);
-      const n = fuenteRuido(), f = ctx.createBiquadFilter(), ng = ctx.createGain(); f.type = 'lowpass'; f.frequency.value = 260; env(ng, t, 0.005, 0.35 * fuerza, 0.25); n.connect(f); f.connect(ng); ng.connect(master); n.start(t); n.stop(t + 0.4);
+    pisada(v) {
+      const t = ctx.currentTime;
+      tono(t, 'sine', 70, 32, 0.01, 0.6 * v, 0.4);
+      ruidoFiltrado(t, 'lowpass', 260, 0.7, 0.005, 0.35 * v, 0.25);
     },
-    destruccion(fuerza = 1) {
-      if (!this.listo) return; const t = ctx.currentTime;
-      // golpe grave
-      const o = ctx.createOscillator(), g = ctx.createGain(); o.frequency.setValueAtTime(85, t); o.frequency.exponentialRampToValueAtTime(28, t + 0.9); env(g, t, 0.01, 0.9 * fuerza, 1.1); o.connect(g); g.connect(master); o.start(t); o.stop(t + 1.3);
-      // estruendo de madera
-      const n = fuenteRuido(), f = ctx.createBiquadFilter(), ng = ctx.createGain(); f.type = 'bandpass'; f.frequency.setValueAtTime(1400, t); f.frequency.exponentialRampToValueAtTime(300, t + 1.4); f.Q.value = 0.7; env(ng, t, 0.01, 0.7 * fuerza, 1.6); n.connect(f); f.connect(ng); ng.connect(master); n.start(t); n.stop(t + 1.9);
-      // astillas: chasquidos sueltos durante la caída de los trozos
-      for (let i = 0; i < 34; i++) {
-        const ti = t + Math.pow(Math.random(), 1.6) * 2.4, s = fuenteRuido(), sf = ctx.createBiquadFilter(), sg = ctx.createGain();
-        sf.type = 'bandpass'; sf.frequency.value = 900 + Math.random() * 3200; sf.Q.value = 3; env(sg, ti, 0.002, (0.12 + Math.random() * 0.25) * fuerza, 0.05 + Math.random() * 0.12);
-        s.connect(sf); sf.connect(sg); sg.connect(master); s.start(ti, Math.random()); s.stop(ti + 0.25);
-      }
+    destruccion(v) {
+      const t = ctx.currentTime;
+      tono(t, 'sine', 85, 28, 0.01, 0.9 * v, 1.1);
+      const f = ruidoFiltrado(t, 'bandpass', 1400, 0.7, 0.01, 0.7 * v, 1.6);
+      f.frequency.setValueAtTime(1400, t); f.frequency.exponentialRampToValueAtTime(300, t + 1.4);
+      for (let i = 0; i < 34; i++) ruidoFiltrado(t + Math.pow(Math.random(), 1.6) * 2.4, 'bandpass', 900 + Math.random() * 3200, 3, 0.002, (0.12 + Math.random() * 0.25) * v, 0.05 + Math.random() * 0.12);
     },
-    grito() {
-      if (!this.listo) return; const t = ctx.currentTime + Math.random() * 0.4;
+    arbol(v) {
+      // crujido del tronco, hojas y golpe sordo al caer
+      const t = ctx.currentTime;
+      for (let i = 0; i < 10; i++) ruidoFiltrado(t + Math.random() * 0.35, 'bandpass', 500 + Math.random() * 1500, 4, 0.002, 0.3 * v, 0.06);
+      ruidoFiltrado(t + 0.05, 'highpass', 2500, 0.5, 0.05, 0.12 * v, 0.6);
+      tono(t + 0.5, 'sine', 60, 35, 0.01, 0.4 * v, 0.35);
+    },
+    muro(v) {
+      // piedra: más grave y granulado que la madera
+      const t = ctx.currentTime;
+      tono(t, 'sine', 70, 25, 0.01, 1.0 * v, 1.2);
+      const f = ruidoFiltrado(t, 'lowpass', 900, 0.6, 0.01, 0.8 * v, 1.4);
+      f.frequency.setValueAtTime(900, t); f.frequency.exponentialRampToValueAtTime(200, t + 1.3);
+      for (let i = 0; i < 26; i++) ruidoFiltrado(t + 0.1 + Math.random() * 1.6, 'bandpass', 300 + Math.random() * 900, 2, 0.003, (0.15 + Math.random() * 0.3) * v, 0.08 + Math.random() * 0.1);
+    },
+    hachazo(v) {
+      const t = ctx.currentTime;
+      tono(t, 'triangle', 420, 300, 0.002, 0.25 * v, 0.07);
+      ruidoFiltrado(t, 'bandpass', 1800, 2, 0.001, 0.25 * v, 0.04);
+    },
+    tink(v) {
+      const t = ctx.currentTime;
+      tono(t, 'sine', 1900, 1800, 0.002, 0.12 * v, 0.18);
+      tono(t, 'sine', 2950, 2900, 0.002, 0.07 * v, 0.12);
+    },
+    grito(v, grave) {
+      const t = ctx.currentTime + Math.random() * 0.3;
       const o = ctx.createOscillator(), f = ctx.createBiquadFilter(), g = ctx.createGain();
-      const base = 520 + Math.random() * 420; o.type = 'sawtooth';
-      o.frequency.setValueAtTime(base, t); o.frequency.linearRampToValueAtTime(base * 1.25, t + 0.15); o.frequency.exponentialRampToValueAtTime(base * 0.62, t + 0.9);
+      const base = grave ? 220 + Math.random() * 90 : 520 + Math.random() * 420; o.type = 'sawtooth';
+      o.frequency.setValueAtTime(base, t); o.frequency.linearRampToValueAtTime(base * 1.25, t + 0.15); o.frequency.exponentialRampToValueAtTime(base * (grave ? 0.9 : 0.62), t + 0.9);
       const vib = ctx.createOscillator(), vg = ctx.createGain(); vib.frequency.value = 7 + Math.random() * 3; vg.gain.value = base * 0.05; vib.connect(vg); vg.connect(o.frequency);
-      f.type = 'bandpass'; f.frequency.value = 1100 + Math.random() * 500; f.Q.value = 2.5;
-      env(g, t, 0.05, 0.16, 0.85); o.connect(f); f.connect(g); g.connect(master); o.start(t); vib.start(t); o.stop(t + 1); vib.stop(t + 1);
+      f.type = 'bandpass'; f.frequency.value = grave ? 700 : 1100 + Math.random() * 500; f.Q.value = 2.5;
+      env(g, t, 0.05, 0.16 * v, 0.85); o.connect(f); f.connect(g); g.connect(master); o.start(t); vib.start(t); o.stop(t + 1); vib.stop(t + 1);
     },
-    pajaro() {
-      if (!this.listo) return; const t = ctx.currentTime;
-      for (let i = 0; i < 3; i++) { const ti = t + i * 0.12, o = ctx.createOscillator(), g = ctx.createGain(); o.type = 'sine'; o.frequency.setValueAtTime(3200 + Math.random() * 900, ti); o.frequency.exponentialRampToValueAtTime(2200, ti + 0.08); env(g, ti, 0.01, 0.04, 0.08); o.connect(g); g.connect(master); o.start(ti); o.stop(ti + 0.12); }
+    pajaro(v) {
+      const t = ctx.currentTime;
+      for (let i = 0; i < 3; i++) tono(t + i * 0.12, 'sine', 3200 + Math.random() * 900, 2200, 0.01, 0.04 * v, 0.08);
     },
   };
+  return S;
 })();
-// en la grabación del vídeo no hay audio: se apunta cada sonido con su instante para montarlo después
+// cada sonido se apunta con su instante y volumen: así la grabación del vídeo puede montar el mismo audio
 const sucesos = [];
 let reloj = 0;
-const sonar = (tipo, fuerza = 1) => {
-  sucesos.push({ t: +reloj.toFixed(3), tipo, fuerza });
-  if (tipo === 'rugido') Sonido.rugido();
-  else if (tipo === 'pisada') Sonido.pisada(fuerza);
-  else if (tipo === 'destruccion') Sonido.destruccion(fuerza);
-  else if (tipo === 'grito') Sonido.grito();
-  else if (tipo === 'pajaro') Sonido.pajaro();
-};
+function sonar(tipo, v = 1, donde = null) {
+  if (donde) v *= THREE.MathUtils.clamp(2.2 / Math.max(0.5, camera.position.distanceTo(donde)), 0, 1);
+  if (v < 0.04) return;
+  sucesos.push({ t: +reloj.toFixed(3), tipo, v: +v.toFixed(3) });
+  if (!Sonido.listo) return;
+  if (tipo === 'grito_guerra') Sonido.grito(v, true);
+  else if (tipo === 'grito') Sonido.grito(v, false);
+  else Sonido[tipo](v);
+}
+
+// ================================================================ física de los trozos que salen volando
+const volando = [];
+const polvo = [];
+function lanzar(obj, v, giro = 4.5) {
+  scene.attach(obj);
+  const bb = new THREE.Box3().setFromObject(obj);
+  volando.push({ m: obj, v, minY: bb.min.y - obj.position.y, w: new THREE.Vector3(entre(-giro, giro), entre(-giro, giro), entre(-giro, giro)), quieto: false });
+}
+const texPolvo = lienzo(64, 64, (g) => { const r = g.createRadialGradient(32, 32, 2, 32, 32, 30); r.addColorStop(0, 'rgba(190,165,130,0.9)'); r.addColorStop(1, 'rgba(190,165,130,0)'); g.fillStyle = r; g.fillRect(0, 0, 64, 64); });
+const texHojaSuelta = lienzo(32, 32, (g) => { g.fillStyle = '#3e7a2e'; g.beginPath(); g.ellipse(16, 16, 12, 7, 0.6, 0, Math.PI * 2); g.fill(); });
+function soltarPolvo(en, n, tam = 1, tex = texPolvo, caer = false) {
+  for (let i = 0; i < n; i++) {
+    const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false }));
+    s.position.copy(en).add(new THREE.Vector3(entre(-0.25, 0.25) * tam, entre(0.03, 0.2), entre(-0.25, 0.25) * tam));
+    s.scale.setScalar((caer ? 0.05 : 0.2) * tam);
+    scene.add(s);
+    polvo.push({ s, v: new THREE.Vector3(entre(-0.7, 0.7) * tam, entre(0.15, 0.6) + (caer ? 0.6 : 0), entre(-0.7, 0.7) * tam), vida: 0, dura: entre(1.3, 2.3), tam, caer });
+  }
+}
+let temblor = 0;
+
+// ================================================================ árboles que se pueden romper
+const arboles = [];
+function crearArbol(x, z, s, pino) {
+  const g = new THREE.Group();
+  const tronco = new THREE.Mesh(geoTronco, matCorteza);
+  tronco.scale.set(1, pino ? 0.9 : 1.1, 1);
+  g.add(tronco);
+  const copa = pino ? geoConos.map((c) => new THREE.Mesh(c, matPino)) : [new THREE.Mesh(geoCopa, matHojas)];
+  copa.forEach((m) => g.add(m));
+  g.position.set(x, 0, z); g.rotation.y = azar() * Math.PI * 2; g.scale.setScalar(s);
+  g.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+  scene.add(g);
+  const a = { g, tronco, copa, x, z, s, roto: false, temblor: 0 };
+  arboles.push(a);
+  return a;
+}
+// reventado: la copa sale volando hecha trizas y el tronco se parte; queda el tocón
+function reventarArbol(a, dir, fuerza = 1) {
+  if (a.roto) return;
+  a.roto = true;
+  const tocon = new THREE.Mesh(geoTocon, matCorteza);
+  tocon.position.set(a.x, 0, a.z); tocon.scale.setScalar(a.s); tocon.castShadow = true; tocon.userData.aldea = true;
+  scene.add(tocon);
+  const d = dir.clone().setY(0).normalize();
+  for (const m of a.copa) lanzar(m, d.clone().multiplyScalar(entre(0.6, 1.4) * fuerza).add(new THREE.Vector3(entre(-0.4, 0.4), entre(1.0, 2.0) * fuerza, entre(-0.4, 0.4))), 6);
+  lanzar(a.tronco, d.clone().multiplyScalar(entre(0.8, 1.5) * fuerza).setY(entre(0.8, 1.4) * fuerza), 7);
+  scene.remove(a.g);
+  soltarPolvo(new THREE.Vector3(a.x, 0.5 * a.s, a.z), 16, 0.8, texHojaSuelta, true);
+  soltarPolvo(new THREE.Vector3(a.x, 0.05, a.z), 6, 0.6);
+  sonar('arbol', 1, new THREE.Vector3(a.x, 0.3, a.z));
+}
+// tumbado por la onda del golpe: cae entero girando sobre su base
+const cayendo = [];
+function tumbarArbol(a, desde) {
+  if (a.roto) return;
+  a.roto = true;
+  const pivote = new THREE.Group();
+  pivote.position.set(a.x, 0, a.z);
+  scene.add(pivote);
+  pivote.attach(a.g);
+  const dir = new THREE.Vector3(a.x - desde.x, 0, a.z - desde.z);
+  if (dir.lengthSq() < 1e-6) dir.set(1, 0, 0);
+  dir.normalize();
+  cayendo.push({ pivote, eje: new THREE.Vector3(dir.z, 0, -dir.x), ang: 0, vel: entre(0.6, 1.0), sonado: false, a });
+}
 
 // ================================================================ aldeanos
 const ROPAS = [0xb3392b, 0x2f5d9a, 0xc79a2e, 0x4f7a3a, 0x7b3f8c, 0xd8d0c0, 0x9a5a2a];
@@ -427,186 +512,414 @@ const geoCabeza = new THREE.SphereGeometry(0.012, 8, 6);
 const geoPierna = new THREE.BoxGeometry(0.009, 0.034, 0.009).translate(0, -0.017, 0);
 const geoBrazo = new THREE.BoxGeometry(0.007, 0.03, 0.007).translate(0, -0.015, 0);
 const geoPelo = new THREE.SphereGeometry(0.0125, 8, 4, 0, Math.PI * 2, 0, Math.PI / 2);
+const geoCasco = new THREE.SphereGeometry(0.0135, 8, 4, 0, Math.PI * 2, 0, Math.PI / 2);
+const geoMango = new THREE.BoxGeometry(0.003, 0.042, 0.003).translate(0, -0.035, 0);
+const geoFilo = new THREE.BoxGeometry(0.004, 0.012, 0.014).translate(0, -0.052, 0.006);
+const geoLeno = new THREE.CylinderGeometry(0.006, 0.006, 0.06, 6).rotateZ(Math.PI / 2);
+const geoSaco = new THREE.SphereGeometry(0.013, 8, 6).scale(1, 0.8, 1);
 const matPantalon = new THREE.MeshStandardMaterial({ color: 0x4a3a2a, roughness: 1 });
+const matMetal = new THREE.MeshStandardMaterial({ color: 0x9aa0a6, roughness: 0.35, metalness: 0.8 });
+const matMango = new THREE.MeshStandardMaterial({ color: 0x6b4a2b, roughness: 0.9 });
+const matSaco = new THREE.MeshStandardMaterial({ color: 0xb79a6a, roughness: 1 });
 const matPelo = [0x2a1d14, 0x5a3a20, 0x8a8a8a, 0xb88a4a].map((c) => new THREE.MeshStandardMaterial({ color: c, roughness: 1 }));
 const texAlerta = lienzo(64, 64, (g) => { g.fillStyle = '#f2b44a'; g.beginPath(); g.arc(32, 32, 28, 0, Math.PI * 2); g.fill(); g.fillStyle = '#2a1608'; g.font = 'bold 44px Georgia'; g.textAlign = 'center'; g.fillText('!', 32, 48); });
-function crearAldeano() {
+const texRabia = lienzo(64, 64, (g) => { g.fillStyle = '#c2452d'; g.beginPath(); g.arc(32, 32, 28, 0, Math.PI * 2); g.fill(); g.strokeStyle = '#fff'; g.lineWidth = 6; g.beginPath(); g.moveTo(18, 20); g.lineTo(46, 44); g.moveTo(46, 20); g.lineTo(18, 44); g.stroke(); });
+const aldeanos = [];
+// tarea: 'talar' (con hacha, junto a un árbol), 'cargar' (va y viene con leña o un saco), 'charlar', 'guardia'
+function crearAldeano({ x, z, tarea, grupo, arbol = null, ida = null, vuelta = null, valiente = false }) {
   const g = new THREE.Group();
-  const ropa = new THREE.MeshStandardMaterial({ color: ROPAS[Math.floor(azar() * ROPAS.length)], roughness: 0.9 });
+  const guardia = tarea === 'guardia';
+  const ropa = new THREE.MeshStandardMaterial({ color: guardia ? 0x5d6470 : ROPAS[Math.floor(azar() * ROPAS.length)], roughness: 0.9 });
   const piel = new THREE.MeshStandardMaterial({ color: PIELES[Math.floor(azar() * PIELES.length)], roughness: 0.8 });
   const torso = new THREE.Mesh(geoTorso, ropa); torso.position.y = 0.053;
   const cabeza = new THREE.Mesh(geoCabeza, piel); cabeza.position.y = 0.084;
-  const pelo = new THREE.Mesh(geoPelo, matPelo[Math.floor(azar() * matPelo.length)]); pelo.position.y = 0.086;
+  const pelo = new THREE.Mesh(guardia ? geoCasco : geoPelo, guardia ? matMetal : matPelo[Math.floor(azar() * matPelo.length)]); pelo.position.y = 0.086;
   const piernas = [-1, 1].map((l) => { const p = new THREE.Mesh(geoPierna, matPantalon); p.position.set(l * 0.006, 0.034, 0); return p; });
   const brazos = [-1, 1].map((l) => { const b = new THREE.Mesh(geoBrazo, ropa); b.position.set(l * 0.02, 0.07, 0); return b; });
+  const hacha = tarea === 'talar' || guardia;
+  if (hacha) { brazos[1].add(new THREE.Mesh(geoMango, matMango), new THREE.Mesh(geoFilo, matMetal)); }
+  let carga = null;
+  if (tarea === 'cargar') { carga = new THREE.Mesh(azar() < 0.5 ? geoLeno : geoSaco, azar() < 0.5 ? matCorteza : matSaco); carga.position.set(0.012, 0.1, 0); g.add(carga); }
   const alerta = new THREE.Sprite(new THREE.SpriteMaterial({ map: texAlerta, depthTest: false, transparent: true }));
   alerta.scale.setScalar(0.035); alerta.position.y = 0.125; alerta.visible = false;
   g.add(torso, cabeza, pelo, ...piernas, ...brazos, alerta);
   g.traverse((o) => { if (o.isMesh) o.castShadow = true; });
-  g.scale.setScalar(1.5);
-  return { g, piernas, brazos, alerta };
+  g.scale.setScalar(1.9);
+  g.position.set(x, 0, z);
+  g.rotation.y = azar() * Math.PI * 2;
+  if (arbol) g.rotation.y = Math.atan2(arbol.x - x, arbol.z - z);
+  scene.add(g);
+  const al = { g, piernas, brazos, alerta, carga, tarea, grupo, arbol, ida, vuelta, hacha, valiente: guardia || (hacha && valiente),
+    estado: 'trabajo', fase: azar() * 10, v: new THREE.Vector3(), vel: entre(0.42, 0.62), vy: 0, giro: new THREE.Vector3(), tAlerta: 0, tRumbo: 0, tAtaque: 0, tKo: 0, golpeAnterior: 0, haciaIda: true };
+  aldeanos.push(al);
+  return al;
 }
-const aldeanos = [];
-function ponerAldeanos(p, i) {
-  const n = 6 + (i % 2);
-  for (let k = 0; k < n; k++) {
-    const a = crearAldeano();
-    let x, z, tries = 0;
-    do {
-      const ang = entre(-Math.PI, Math.PI), r = entre(0.35, 0.95);
-      x = p.centro.x + Math.cos(ang) * r; z = p.centro.z + Math.sin(ang) * r; tries++;
-    } while (tries < 40 && x > p.casa.min.x - 0.05 && x < p.casa.max.x + 0.05 && z > p.casa.min.z - 0.05 && z < p.casa.max.z + 0.05);
-    a.g.position.set(x, 0, z);
-    a.g.rotation.y = azar() * Math.PI * 2;
-    scene.add(a.g);
-    aldeanos.push({ ...a, parcela: i, estado: 'calma', fase: azar() * 10, v: new THREE.Vector3(), vel: entre(0.42, 0.62), vy: 0, giro: new THREE.Vector3(), tAlerta: 0, tRumbo: 0 });
-  }
-}
-function asustar(i) {
-  let gritos = 0;
+// el titán se acerca: los valientes cargan con el hacha, el resto huye
+function alarma(grupo) {
+  let gritos = 0, guerra = 0;
   for (const a of aldeanos) {
-    if (a.parcela !== i || a.estado !== 'calma') continue;
-    a.estado = 'huye'; a.tAlerta = 1.4; a.alerta.visible = true;
-    a.tRumbo = 0;
-    if (gritos++ < 3) sonar('grito');
+    if (a.grupo !== grupo || a.estado !== 'trabajo') continue;
+    a.tAlerta = 1.4; a.alerta.visible = true; a.tRumbo = 0;
+    if (a.carga) { lanzar(a.carga, new THREE.Vector3(entre(-0.2, 0.2), 0.4, entre(-0.2, 0.2)), 8); a.carga = null; }
+    if (a.valiente) {
+      a.estado = 'ataca'; a.alerta.material = a.alerta.material.clone(); a.alerta.material.map = texRabia;
+      a.tAtaque = entre(1.6, 3.2); a.vel = entre(0.55, 0.75);
+      if (guerra++ < 2) sonar('grito_guerra', 1, a.g.position);
+    } else {
+      a.estado = 'huye';
+      if (gritos++ < 3) sonar('grito', 1, a.g.position);
+    }
   }
 }
-function lanzarAldeanos(punto, radio) {
-  for (const a of aldeanos) {
-    const d = Math.hypot(a.g.position.x - punto.x, a.g.position.z - punto.z);
-    if (d > radio || a.estado === 'fuera') continue;
-    const dir = new THREE.Vector3(a.g.position.x - punto.x, 0, a.g.position.z - punto.z).normalize();
-    a.estado = 'vuela'; a.v.copy(dir.multiplyScalar(entre(0.7, 1.3))); a.vy = entre(1.3, 2.1);
-    a.giro.set(entre(-14, 14), entre(-6, 6), entre(-14, 14));
-  }
+function despedir(a, desde, fuerza = 1) {
+  if (a.estado === 'fuera' || a.estado === 'vuela') return;
+  const dir = new THREE.Vector3(a.g.position.x - desde.x, 0, a.g.position.z - desde.z);
+  if (dir.lengthSq() < 1e-6) dir.set(entre(-1, 1), 0, -1);
+  dir.normalize();
+  a.estado = 'vuela'; a.v.copy(dir.multiplyScalar(entre(1.0, 1.8) * fuerza)); a.vy = entre(2.0, 3.0) * fuerza;
+  a.giro.set(entre(-16, 16), entre(-6, 6), entre(-16, 16));
+  if (a.carga) { lanzar(a.carga, a.v.clone().setY(1.5), 8); a.carga = null; }
+  sonar(a.valiente ? 'grito_guerra' : 'grito', 0.8, a.g.position);
+}
+function lanzarAldeanos(punto, radio, fuerza = 1) {
+  for (const a of aldeanos) if (Math.hypot(a.g.position.x - punto.x, a.g.position.z - punto.z) < radio) despedir(a, punto, fuerza);
 }
 const tmp = new THREE.Vector3();
+const ARRIBA = new THREE.Vector3(0, 1, 0);
+function andarHacia(a, objetivo, vel, dt) {
+  tmp.set(objetivo.x - a.g.position.x, 0, objetivo.z - a.g.position.z);
+  const d = tmp.length();
+  if (d > 1e-4) { tmp.multiplyScalar(Math.min(d, vel * dt) / d); a.g.position.add(tmp); }
+  girarHacia(a, Math.atan2(objetivo.x - a.g.position.x, objetivo.z - a.g.position.z), dt);
+  return d;
+}
+function girarHacia(a, ang, dt) { a.g.rotation.y += Math.atan2(Math.sin(ang - a.g.rotation.y), Math.cos(ang - a.g.rotation.y)) * Math.min(1, dt * 10); }
+function piernasCorrer(a, ritmo, amp) {
+  const s = Math.sin(a.fase * ritmo);
+  a.piernas[0].rotation.x = s * amp; a.piernas[1].rotation.x = -s * amp;
+  a.g.position.y = Math.abs(s) * 0.006 * amp;
+  return s;
+}
 function pasoAldeanos(dt) {
   for (const a of aldeanos) {
     if (a.estado === 'fuera') continue;
     a.fase += dt;
     if (a.tAlerta > 0) { a.tAlerta -= dt; if (a.tAlerta <= 0) a.alerta.visible = false; }
-    if (a.estado === 'calma') {
-      const s = Math.sin(a.fase * 2);
-      a.brazos[0].rotation.x = s * 0.15; a.brazos[1].rotation.x = -s * 0.15;
-      a.g.position.y = Math.abs(Math.sin(a.fase * 1.3)) * 0.002;
+    if (a.estado === 'trabajo') {
+      if (a.tarea === 'talar') {
+        // levanta despacio y descarga de golpe
+        const c = (a.fase * 0.9) % 1;
+        a.brazos[1].rotation.x = c < 0.72 ? THREE.MathUtils.lerp(-0.5, -2.7, c / 0.72) : THREE.MathUtils.lerp(-2.7, -0.4, (c - 0.72) / 0.28);
+        a.brazos[0].rotation.x = a.brazos[1].rotation.x * 0.6;
+        if (c < a.golpeAnterior) { sonar('hachazo', 0.9, a.g.position); if (a.arbol && !a.arbol.roto) a.arbol.temblor = 0.25; }
+        a.golpeAnterior = c;
+      } else if (a.tarea === 'cargar') {
+        const meta = a.haciaIda ? a.ida : a.vuelta;
+        if (andarHacia(a, meta, 0.11, dt) < 0.02) a.haciaIda = !a.haciaIda;
+        piernasCorrer(a, 10, 0.5);
+        a.brazos[0].rotation.x = -2.6; a.brazos[1].rotation.x = -2.6;
+      } else if (a.tarea === 'guardia') {
+        a.brazos[1].rotation.x = -0.6 + Math.sin(a.fase * 1.5) * 0.08;
+      } else {
+        const s = Math.sin(a.fase * 2.4);
+        a.brazos[0].rotation.x = s * 0.35 - 0.3; a.brazos[1].rotation.x = -s * 0.2;
+        a.g.position.y = Math.abs(Math.sin(a.fase * 1.3)) * 0.002;
+      }
     } else if (a.estado === 'huye') {
       a.tRumbo -= dt;
       if (a.tRumbo <= 0) {
-        // lejos del titán, con un quiebro de vez en cuando
         tmp.set(a.g.position.x - raiz.position.x, 0, a.g.position.z - raiz.position.z);
         if (tmp.lengthSq() < 1e-6) tmp.set(1, 0, 0);
         tmp.normalize();
         tmp.x += Math.sign(a.g.position.x - raiz.position.x || 1) * 0.9;
-        tmp.applyAxisAngle(new THREE.Vector3(0, 1, 0), entre(-0.5, 0.5)).normalize();
+        tmp.applyAxisAngle(ARRIBA, entre(-0.5, 0.5)).normalize();
         a.v.copy(tmp).multiplyScalar(a.vel);
         a.tRumbo = entre(0.5, 1.1);
       }
       a.g.position.addScaledVector(a.v, dt);
-      const objetivo = Math.atan2(a.v.x, a.v.z);
-      a.g.rotation.y += Math.atan2(Math.sin(objetivo - a.g.rotation.y), Math.cos(objetivo - a.g.rotation.y)) * Math.min(1, dt * 10);
-      const s = Math.sin(a.fase * 22);
-      a.piernas[0].rotation.x = s * 0.9; a.piernas[1].rotation.x = -s * 0.9;
-      // brazos arriba, agitándose del pánico
+      girarHacia(a, Math.atan2(a.v.x, a.v.z), dt);
+      const s = piernasCorrer(a, 22, 0.9);
       a.brazos[0].rotation.set(Math.PI * 0.95 + s * 0.35, 0, -0.3); a.brazos[1].rotation.set(Math.PI * 0.95 - s * 0.35, 0, 0.3);
-      a.g.position.y = Math.abs(Math.sin(a.fase * 22)) * 0.008;
       if (a.g.position.distanceTo(raiz.position) > 9) { a.estado = 'fuera'; scene.remove(a.g); }
+    } else if (a.estado === 'ataca') {
+      // al pie más cercano del titán, a dar hachazos en el tobillo
+      const pd = mundo('RightFoot'), pi = mundo('LeftFoot');
+      const pie = (pd.distanceToSquared(a.g.position) < pi.distanceToSquared(a.g.position) ? pd : pi).setY(0);
+      const d = Math.hypot(pie.x - a.g.position.x, pie.z - a.g.position.z);
+      if (d > 0.1) {
+        andarHacia(a, pie, a.vel, dt);
+        const s = piernasCorrer(a, 22, 0.9);
+        a.brazos[1].rotation.x = -2.6 + s * 0.2; a.brazos[0].rotation.x = s * 0.6;
+      } else {
+        girarHacia(a, Math.atan2(pie.x - a.g.position.x, pie.z - a.g.position.z), dt);
+        a.piernas[0].rotation.x = 0.3; a.piernas[1].rotation.x = -0.3;
+        const c = (a.fase * 2.6) % 1;
+        a.brazos[1].rotation.x = c < 0.6 ? THREE.MathUtils.lerp(-0.3, -2.8, c / 0.6) : THREE.MathUtils.lerp(-2.8, -0.3, (c - 0.6) / 0.4);
+        if (c < a.golpeAnterior) sonar('tink', 1, a.g.position);
+        a.golpeAnterior = c;
+        a.tAtaque -= dt;
+        // el titán se lo quita de encima de una patada
+        if (a.tAtaque <= 0) despedir(a, raiz.position, 1.15);
+      }
     } else if (a.estado === 'vuela') {
       a.vy -= GRAVEDAD * dt;
       a.g.position.addScaledVector(a.v, dt); a.g.position.y += a.vy * dt;
       a.g.rotation.x += a.giro.x * dt; a.g.rotation.z += a.giro.z * dt;
       if (a.g.position.y <= 0 && a.vy < 0) {
+        a.g.position.y = 0.012; a.g.rotation.set(-Math.PI / 2, a.g.rotation.y, 0);
+        a.estado = 'ko'; a.tKo = entre(1.0, 2.0);
+        soltarPolvo(a.g.position, 2, 0.25);
+      }
+    } else if (a.estado === 'ko') {
+      a.tKo -= dt;
+      if (a.tKo <= 0) {
         a.g.position.y = 0; a.g.rotation.set(0, a.g.rotation.y, 0);
-        a.estado = 'huye'; a.tRumbo = 0; a.tAlerta = 1; a.alerta.visible = true;
+        a.estado = 'huye'; a.valiente = false; a.tRumbo = 0; a.tAlerta = 1; a.alerta.visible = true; a.alerta.material = new THREE.SpriteMaterial({ map: texAlerta, depthTest: false, transparent: true });
       }
     }
   }
 }
 
-// ================================================================ cabañas
+// ================================================================ cabañas, murallas y aldea
 const parcelas = [];
-const trozosVivos = [];
-const arbolesCayendo = [];
-const polvo = [];
+const murallas = [];
 const materialesHechos = new Map();
+const BASE = /^(Hierba|Camino|Suelo|SueloPB|Agua)(_\d+)?$/;
 function texturizar(o) {
   const m = o.material;
-  if (!m || !m.color || /Cristal|Fuego|Agua/.test(o.name)) return;
-  let tex = null;
+  if (!m || !m.color || /Cristal|Fuego/.test(o.name)) return;
+  let tex = TEX.madera;
   if (/Techo|Tejado|Cumbrera|TorreTecho/.test(o.name)) tex = TEX.tejas;
   else if (/Piedra|Chimenea|Almena|TorreMuro|Hogar|Escalon/.test(o.name)) tex = TEX.piedra;
-  else if (/Arbol\d+_Copa/.test(o.name)) tex = TEX.hojas;
-  else if (/Arbol\d+_Tronco/.test(o.name)) tex = TEX.corteza;
-  else if (/^Camino/.test(o.name)) tex = TEX.tierra;
-  else if (!/Colchon|Manta|Almohada/.test(o.name)) tex = TEX.madera;
-  if (!tex) return;
+  else if (/Colchon|Manta|Almohada/.test(o.name)) return;
   const clave = m.uuid + tex.uuid;
-  if (!materialesHechos.has(clave)) {
-    const n = m.clone(); n.map = tex;
-    if (tex === TEX.hojas || tex === TEX.corteza) n.color.multiplyScalar(1.6);
-    n.roughness = 0.9; n.metalness = 0;
-    materialesHechos.set(clave, n);
-  }
+  if (!materialesHechos.has(clave)) { const n = m.clone(); n.map = tex; n.roughness = 0.9; n.metalness = 0; materialesHechos.set(clave, n); }
   o.material = materialesHechos.get(clave);
 }
-function montarCabanas() {
+const matBloque = new THREE.MeshStandardMaterial({ map: TEX.piedra, color: 0xb9b3a8, roughness: 1 });
+const matEstaca = new THREE.MeshStandardMaterial({ map: TEX.corteza, color: 0xc9a27a, roughness: 1 });
+const geoBloque = new THREE.BoxGeometry(0.15, 0.075, 0.12);
+const geoEstaca = (() => { const g = new THREE.CylinderGeometry(0.022, 0.022, 0.26, 6).translate(0, 0.13, 0); const p = new THREE.ConeGeometry(0.022, 0.06, 6).translate(0, 0.29, 0); return [g, p]; })();
+// murallas que cruzan el paso de la aldea; los guardias esperan detrás con el hacha
+function crearMuralla(z, clase) {
+  const piezas = [];
+  if (clase === 'piedra') {
+    for (let fila = 0; fila < 4; fila++) for (let x = -1.7 + (fila % 2) * 0.075; x < 1.7; x += 0.155) {
+      const b = new THREE.Mesh(geoBloque, matBloque);
+      b.position.set(x, 0.0375 + fila * 0.076, z); b.rotation.y = entre(-0.03, 0.03);
+      b.castShadow = b.receiveShadow = true; scene.add(b); piezas.push(b);
+    }
+    for (let x = -1.65; x < 1.7; x += 0.31) { const b = new THREE.Mesh(geoBloque, matBloque); b.position.set(x, 0.0375 + 4 * 0.076, z); b.castShadow = true; scene.add(b); piezas.push(b); }
+  } else {
+    for (let x = -1.7; x < 1.7; x += 0.05) {
+      const e = new THREE.Group();
+      e.add(new THREE.Mesh(geoEstaca[0], matEstaca), new THREE.Mesh(geoEstaca[1], matEstaca));
+      e.position.set(x + entre(-0.006, 0.006), 0, z + entre(-0.01, 0.01)); e.rotation.set(entre(-0.04, 0.04), azar() * 3, entre(-0.04, 0.04)); e.scale.y = entre(0.9, 1.1);
+      e.traverse((o) => { if (o.isMesh) o.castShadow = o.receiveShadow = true; });
+      scene.add(e); piezas.push(e);
+    }
+  }
+  const m = { z, clase, piezas: piezas.map((p) => ({ p, roto: false })), grupo: `muro${murallas.length}` };
+  murallas.push(m);
+  for (let i = 0; i < (clase === 'piedra' ? 4 : 3); i++) crearAldeano({ x: entre(-0.7, 0.7), z: z + entre(0.12, 0.3), tarea: 'guardia', grupo: m.grupo });
+  return m;
+}
+function romperMuro(m, punto, radio, fuerza, dir = null) {
+  let n = 0;
+  for (const q of m.piezas) {
+    if (q.roto) continue;
+    const c = q.p.position;
+    const d = Math.hypot(c.x - punto.x, (c.z - punto.z) * 0.5);
+    if (d > radio) continue;
+    q.roto = true; n++;
+    const v = dir ? dir.clone().multiplyScalar(entre(0.6, 1.3) * fuerza) : new THREE.Vector3(c.x - punto.x, 0, 0.8).normalize().multiplyScalar(fuerza * entre(0.4, 1.1) / (0.4 + d));
+    v.x += (c.x - punto.x) * entre(0.5, 1.5);
+    v.y = fuerza * entre(0.6, 1.5) * (0.6 + c.y * 3);
+    lanzar(q.p, v, 6);
+  }
+  return n;
+}
+function montarAldea() {
+  for (const o of [...scene.children]) if (o.userData.aldea) scene.remove(o);
   for (const p of parcelas) scene.remove(p.grupo);
-  for (const t of trozosVivos) scene.remove(t.m);
-  for (const a of arbolesCayendo) scene.remove(a.pivote);
+  for (const t of volando) scene.remove(t.m);
+  for (const c of cayendo) scene.remove(c.pivote);
   for (const d of polvo) scene.remove(d.s);
   for (const a of aldeanos) scene.remove(a.g);
-  parcelas.length = trozosVivos.length = arbolesCayendo.length = polvo.length = aldeanos.length = 0;
+  for (const a of arboles) scene.remove(a.g);
+  for (const m of murallas) for (const q of m.piezas) scene.remove(q.p);
+  parcelas.length = volando.length = cayendo.length = polvo.length = aldeanos.length = arboles.length = murallas.length = 0;
+  const antes = new Set(scene.children);
+  const r = (() => { let s = 99; return () => ((s = (s * 16807) % 2147483647) - 1) / 2147483646; })();
+  const e2 = (a, b) => a + (b - a) * r();
   cabGltf.forEach((g, i) => {
     const grupo = g.scene.clone(true);
     const cb = new THREE.Box3().setFromObject(grupo);
     grupo.position.set(0, -cb.min.y, i * SEPARACION);
     scene.add(grupo);
     grupo.updateMatrixWorld(true);
-    const trozos = [], arboles = new Map(), casa = new THREE.Box3();
+    const trozos = [], casa = new THREE.Box3();
     grupo.traverse((o) => {
       if (!o.isMesh) return;
-      // el césped de cada parcela sobra: el suelo del bosque ya lo es
-      if (/^Hierba/.test(o.name)) { o.visible = false; return; }
+      // sin base (césped, suelo, camino, agua) ni los árboles de bola de la parcela: la cabaña queda en el bosque
+      if (BASE.test(o.name) || /^Arbol\d+_/.test(o.name)) { o.visible = false; return; }
       texturizar(o);
-      if (/^Agua/.test(o.name)) o.material = new THREE.MeshStandardMaterial({ color: 0x35677e, roughness: 0.15, metalness: 0.2, transparent: true, opacity: 0.9 });
-      o.castShadow = !SUELO_FIJO.test(o.name);
-      o.receiveShadow = true;
-      if (SUELO_FIJO.test(o.name)) return;
-      const ar = o.name.match(/^(Arbol\d+)_/);
-      if (ar) { if (!arboles.has(ar[1])) arboles.set(ar[1], []); arboles.get(ar[1]).push(o); return; }
+      o.castShadow = true; o.receiveShadow = true;
       trozos.push(o);
       casa.expandByObject(o);
     });
-    const p = {
-      grupo, trozos, casa, rota: false, asustada: false,
-      centro: casa.getCenter(new THREE.Vector3()),
-      arboles: [...arboles.values()].map((ms) => ({ ms, caido: false, base: new THREE.Box3().setFromObject(ms[0]).getCenter(new THREE.Vector3()) })),
-    };
+    const centro = casa.getCenter(new THREE.Vector3());
+    const p = { grupo, trozos, casa, centro, rota: false, alarmada: false, grupo_id: `cab${i}` };
     parcelas.push(p);
-    ponerAldeanos(p, i);
+    claroDeTierra(centro.x, centro.z, 0.75);
+    // bosque cerrado alrededor de la cabaña (menos y más bajos del lado de la cámara)
+    const mitad = Math.max(casa.max.x - casa.min.x, casa.max.z - casa.min.z) / 2;
+    const suyos = [];
+    for (let k = 0, intentos = 0; k < 16 && intentos < 300; intentos++) {
+      const ang = e2(0, Math.PI * 2), rad = e2(mitad + 0.25, mitad + 1.35);
+      const x = centro.x + Math.cos(ang) * rad, z = centro.z + Math.sin(ang) * rad;
+      if (x > casa.min.x - 0.2 && x < casa.max.x + 0.2 && z > casa.min.z - 0.2 && z < casa.max.z + 0.2) continue;
+      if (suyos.some((q) => Math.hypot(q.x - x, q.z - z) < 0.32)) continue;
+      const lado = x > centro.x + 0.25;
+      if (lado && r() < 0.65) continue;
+      suyos.push(crearArbol(x, z, lado ? e2(0.3, 0.45) : e2(0.65, 1.25), lado ? false : r() < 0.5));
+      k++;
+    }
+    // aldeanos con su faena: leñadores junto a un árbol, gente cargando, gente charlando
+    const lejos = suyos.filter((a) => a.x < centro.x && Math.abs(a.z - centro.z) < 1.4).slice(0, 2);
+    lejos.forEach((a, k) => {
+      const ang = Math.atan2(centro.z - a.z, centro.x - a.x);
+      crearAldeano({ x: a.x + Math.cos(ang) * 0.09 * a.s, z: a.z + Math.sin(ang) * 0.09 * a.s, tarea: 'talar', grupo: p.grupo_id, arbol: a, valiente: k === 0 || r() < 0.5 });
+    });
+    for (let k = 0; k < 2; k++) {
+      const ida = new THREE.Vector3(centro.x + e2(-0.7, -0.4), 0, centro.z + e2(-0.5, 0.5));
+      const vuelta = new THREE.Vector3(centro.x + e2(0.4, 0.75), 0, centro.z + e2(-0.6, -0.35));
+      crearAldeano({ x: ida.x, z: ida.z, tarea: 'cargar', grupo: p.grupo_id, ida, vuelta });
+    }
+    for (let k = 0; k < 3; k++) {
+      const ang = e2(0, Math.PI * 2);
+      crearAldeano({ x: centro.x + Math.cos(ang) * (mitad + 0.15), z: centro.z + Math.sin(ang) * (mitad + 0.15), tarea: 'charlar', grupo: p.grupo_id });
+    }
   });
+  // árboles sueltos en el paso entre cabañas: el titán los revienta al andar
+  for (let i = -1; i < CABANAS.length - 1; i++) {
+    const z0 = i < 0 ? -2.6 : parcelas[i].casa.max.z + 0.35, z1 = parcelas[i + 1].casa.min.z - 0.35;
+    for (let k = 0; k < 5; k++) {
+      const x = e2(-0.55, 0.55), z = e2(z0, z1);
+      if (arboles.some((q) => Math.hypot(q.x - x, q.z - z) < 0.3)) continue;
+      crearArbol(x, z, e2(0.45, 0.75), r() < 0.5);
+    }
+  }
+  // murallas: de piedra a la entrada y a mitad de la aldea, empalizadas entre medias
+  const entre2 = (i) => (parcelas[i].casa.max.z + parcelas[i + 1].casa.min.z) / 2;
+  const muros = [
+    { antes: 0, m: crearMuralla(parcelas[0].casa.min.z - 1.5, 'piedra'), golpe: 'golpe' },
+    { antes: 1, m: crearMuralla(entre2(0), 'empalizada'), golpe: null },
+    { antes: 3, m: crearMuralla(entre2(2), 'piedra'), golpe: 'salto' },
+    { antes: 4, m: crearMuralla(entre2(3), 'empalizada'), golpe: null },
+  ];
+  // no dejar árboles encima de los muros
+  for (const a of arboles) for (const mu of murallas) if (Math.abs(a.z - mu.z) < 0.3) { scene.remove(a.g); a.roto = true; }
+  for (const o of scene.children) if (!antes.has(o)) o.userData.aldea = true;
+  // el guion: una lista de objetivos en orden
+  const lista = [];
+  CABANAS.forEach((c, i) => {
+    for (const mu of muros) if (mu.antes === i) lista.push({ tipo: 'muro', m: mu.m, golpe: mu.golpe, nombre: mu.m.clase === 'piedra' ? 'Muralla de piedra' : 'Empalizada' });
+    lista.push({ tipo: 'cabana', i, golpe: c.golpe, nombre: c.nombre });
+  });
+  return lista;
 }
 
-function tumbarArbol(ar, desde) {
-  if (ar.caido) return;
-  ar.caido = true;
-  const pivote = new THREE.Group();
-  const b = new THREE.Box3().setFromObject(ar.ms[0]);
-  pivote.position.set(ar.base.x, b.min.y, ar.base.z);
-  scene.add(pivote);
-  pivote.updateMatrixWorld(true);
-  for (const m of ar.ms) pivote.attach(m);
-  const dir = new THREE.Vector3(ar.base.x - desde.x, 0, ar.base.z - desde.z);
-  if (dir.lengthSq() < 1e-6) dir.set(1, 0, 0);
-  dir.normalize();
-  arbolesCayendo.push({ pivote, eje: new THREE.Vector3(dir.z, 0, -dir.x), ang: 0, vel: entre(0.6, 1.0) });
+// ================================================================ guion
+let objetivos = [], paso = 0, estado, tEstado, impactado, golpes, tPajaro = 0, pajaros = true, nCabana = 0;
+const pies = { RightFoot: { abajo: true }, LeftFoot: { abajo: true } };
+let pieReposo = 0;
+const camara = new THREE.Vector3();
+function empezar() {
+  objetivos = montarAldea();
+  raiz.position.set(0, 0, -3.6);
+  paso = 0; estado = 'intro'; tEstado = 0; reloj = 0; sucesos.length = 0; pajaros = true; nCabana = 0;
+  mixer.stopAllAction(); actual = null; poner('quieto', 0);
+  mixer.update(0.01); titan.updateMatrixWorld(true);
+  pieReposo = Math.min(mundo('RightFoot').y, mundo('LeftFoot').y);
+  decir('');
+  cartel.classList.remove('ver');
 }
-
-function romper(p, impacto, fuerza) {
-  if (p.rota) return;
+function objetivoZ(o) { return o.tipo === 'muro' ? o.m.z : parcelas[o.i].casa.min.z; }
+function anunciar(o, extra = '') {
+  const cab = o.tipo === 'cabana' ? `<b>Cabaña ${o.i + 1}/5</b> · ` : '<b>¡Murallas!</b> · ';
+  decir(cab + o.nombre + (extra ? ` · <b>${extra}</b>` : ''));
+}
+function pasoGuion(dt) {
+  tEstado += dt;
+  if (estado === 'intro') {
+    if (tEstado > 1.2 && tEstado - dt <= 1.2) { sonar('rugido'); temblor = 0.6; }
+    if (tEstado > 2.2 && tEstado - dt <= 2.2) mostrarCartel('EL TITÁN', 'ha despertado', 3.2);
+    if (tEstado >= DURA_INTRO) { estado = 'andar'; tEstado = 0; anunciar(objetivos[0]); }
+    return;
+  }
+  if (estado === 'fin') { if (!captura && tEstado > 9) empezar(); return; }
+  const o = objetivos[paso];
+  // alarma en la aldea cuando el titán asoma
+  for (const p of parcelas) if (!p.alarmada && raiz.position.z > p.casa.min.z - 2.3) { p.alarmada = true; alarma(p.grupo_id); }
+  for (const m of murallas) if (!m.alarmada && raiz.position.z > m.z - 2.0) { m.alarmada = true; alarma(m.grupo); }
+  if (estado === 'andar') {
+    poner('andar');
+    // sin golpe (empalizada): la atraviesa andando
+    const meta = o.golpe ? objetivoZ(o) - (o.golpe.startsWith('golpe') ? 0.24 : 0.07) : objetivoZ(o) + 0.4;
+    raiz.position.z = Math.min(meta, raiz.position.z + VEL_ANDAR * dt);
+    raiz.position.x += ((o.tipo === 'cabana' ? parcelas[o.i].centro.x : 0) - raiz.position.x) * Math.min(1, dt * 2);
+    arrollar();
+    if (raiz.position.z >= meta - 1e-4) {
+      if (o.golpe) { estado = 'accion'; golpes = o.golpe.split('+'); siguienteGolpe(); }
+      else siguienteObjetivo();
+    }
+  } else if (estado === 'accion') {
+    const k = golpes[0], a = A[k];
+    if (!impactado && a.time >= CLIP[k].impacto) {
+      impactado = true;
+      const punto = k === 'golpe' ? mundo('RightHand') : mundo('RightFoot').add(mundo('LeftFoot')).multiplyScalar(0.5);
+      punto.y = 0.05;
+      if (o.tipo === 'cabana') {
+        const p = parcelas[o.i];
+        punto.x = THREE.MathUtils.clamp(punto.x, p.casa.min.x, p.casa.max.x);
+        punto.z = THREE.MathUtils.clamp(punto.z, p.casa.min.z, p.casa.max.z);
+        if (!p.rota) romperCabana(p, punto, k === 'salto' ? 1.5 : 1.2);
+        else { soltarPolvo(punto, 18); temblor = 0.35; empujarEscombros(punto); sonar('destruccion', 0.6); }
+        nCabana = o.i + 1;
+      } else {
+        punto.z = o.m.z;
+        romperMuro(o.m, punto, k === 'salto' ? 0.85 : 0.7, k === 'salto' ? 1.5 : 1.3);
+        soltarPolvo(punto, 30, 1.2); temblor = 0.5; sonar('muro', 1);
+      }
+      ondaExpansiva(punto, k === 'salto' ? 1.0 : 0.8);
+      pajaros = false;
+      anunciar(o, k === 'golpe' ? '¡Golpe!' : '¡Salto!');
+    }
+    if (a.time >= a.getClip().duration - 1e-3 || (!a.isRunning() && tEstado > 0.3)) {
+      golpes.shift();
+      if (golpes.length) siguienteGolpe();
+      else { estado = 'pausa'; tEstado = 0; poner('quieto', 0.3); }
+    }
+  } else if (estado === 'pausa') {
+    if (tEstado > (o.tipo === 'muro' ? 0.4 : 1.0)) siguienteObjetivo();
+  }
+}
+function siguienteObjetivo() {
+  paso++;
+  if (paso >= objetivos.length) {
+    estado = 'fin'; tEstado = 0; decir('');
+    mostrarCartel('LA ALDEA HA CAÍDO', 'ni cabañas, ni murallas, ni bosque', 6);
+    sonar('rugido'); temblor = 0.5;
+    return;
+  }
+  estado = 'andar'; tEstado = 0;
+  anunciar(objetivos[paso]);
+}
+function siguienteGolpe() { impactado = false; tEstado = 0; poner(golpes[0], 0.2); }
+function romperCabana(p, impacto, fuerza) {
   p.rota = true;
   for (const m of p.trozos) {
-    scene.attach(m);
     const bb = new THREE.Box3().setFromObject(m);
     const c = bb.getCenter(new THREE.Vector3());
     const dir = new THREE.Vector3().subVectors(c, impacto); dir.y = 0;
@@ -615,117 +928,53 @@ function romper(p, impacto, fuerza) {
     dir.normalize();
     const v = dir.multiplyScalar(fuerza * entre(0.25, 0.7) / (0.45 + d));
     v.y = fuerza * entre(0.45, 1.2) * (c.y > 0.15 ? 1.15 : 0.7);
-    trozosVivos.push({ m, v, minY: bb.min.y - m.position.y, w: new THREE.Vector3(entre(-4.5, 4.5), entre(-4.5, 4.5), entre(-4.5, 4.5)), quieto: false });
+    lanzar(m, v);
   }
-  for (const ar of p.arboles) if (ar.base.distanceTo(impacto) < 1.0) tumbarArbol(ar, impacto);
-  lanzarAldeanos(impacto, 0.55);
   soltarPolvo(impacto, 40, 1.4);
   temblor = 0.5;
   sonar('destruccion', fuerza > 1.3 ? 1 : 0.85);
 }
-
-const texPolvo = lienzo(64, 64, (g) => {
-  const r = g.createRadialGradient(32, 32, 2, 32, 32, 30);
-  r.addColorStop(0, 'rgba(190,165,130,0.9)'); r.addColorStop(1, 'rgba(190,165,130,0)');
-  g.fillStyle = r; g.fillRect(0, 0, 64, 64);
-});
-function soltarPolvo(en, n, tam = 1) {
-  for (let i = 0; i < n; i++) {
-    const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: texPolvo, transparent: true, depthWrite: false }));
-    s.position.copy(en).add(new THREE.Vector3(entre(-0.25, 0.25) * tam, entre(0.03, 0.2), entre(-0.25, 0.25) * tam));
-    s.scale.setScalar(0.2 * tam);
-    scene.add(s);
-    polvo.push({ s, v: new THREE.Vector3(entre(-0.7, 0.7) * tam, entre(0.15, 0.6), entre(-0.7, 0.7) * tam), vida: 0, dura: entre(1.3, 2.3), tam });
+// todo lo que hay cerca del impacto: árboles tumbados o reventados, aldeanos por los aires
+function ondaExpansiva(punto, radio) {
+  for (const a of arboles) {
+    if (a.roto) continue;
+    const d = Math.hypot(a.x - punto.x, a.z - punto.z);
+    if (d < radio * 0.55) reventarArbol(a, new THREE.Vector3(a.x - punto.x, 0, a.z - punto.z), 1.1);
+    else if (d < radio) tumbarArbol(a, punto);
+  }
+  lanzarAldeanos(punto, radio * 0.7, 1.1);
+}
+// al andar: revienta los árboles que tiene delante y se lleva por delante empalizadas y guardias
+function arrollar() {
+  const r = raiz.position;
+  for (const a of arboles) {
+    if (a.roto) continue;
+    const dz = a.z - r.z;
+    if (Math.abs(a.x - r.x) < 0.33 && dz > -0.1 && dz < 0.3) reventarArbol(a, new THREE.Vector3(a.x - r.x, 0, 1), 1);
+  }
+  for (const m of murallas) {
+    if (Math.abs(m.z - r.z) > 0.25) continue;
+    const n = romperMuro(m, new THREE.Vector3(r.x, 0, m.z), 0.42, 1.0, new THREE.Vector3(0, 0, 1));
+    if (n > 3 && !m.sonado) { m.sonado = true; sonar(m.clase === 'piedra' ? 'muro' : 'arbol', 1); soltarPolvo(new THREE.Vector3(r.x, 0.05, m.z), 14); temblor = 0.3; }
   }
 }
-
-// ================================================================ guion
-let estado, idx, tEstado, impactado, pasos, temblor = 0, tPajaro = 0, pajaros = true;
-const pies = { RightFoot: { abajo: true }, LeftFoot: { abajo: true } };
-let pieReposo = 0;
-const camara = new THREE.Vector3();
-function empezar() {
-  montarCabanas();
-  raiz.position.set(parcelas[0].centro.x, 0, -3.2);
-  idx = 0; estado = 'intro'; tEstado = 0; reloj = 0; sucesos.length = 0; pajaros = true;
-  mixer.stopAllAction(); actual = null; poner('quieto', 0);
-  mixer.update(0.01); titan.updateMatrixWorld(true);
-  pieReposo = Math.min(mundo('RightFoot').y, mundo('LeftFoot').y);
-  decir('');
-  mostrarCartel('', '', 0); cartel.classList.remove('ver');
-}
-const parada = (p, tipo) => p.casa.min.z - (tipo === 'golpe' ? 0.22 : 0.05);
-
-function pasoGuion(dt) {
-  tEstado += dt;
-  if (estado === 'intro') {
-    if (tEstado > 1.2 && tEstado - dt <= 1.2) { sonar('rugido'); temblor = 0.6; }
-    if (tEstado > 2.2 && tEstado - dt <= 2.2) mostrarCartel('EL TITÁN', 'ha despertado', 3.2);
-    if (tEstado >= DURA_INTRO) { estado = 'andar'; tEstado = 0; decir(`<b>Cabaña 1/5</b> · ${CABANAS[0].nombre}`); }
-    return;
-  }
-  if (estado === 'fin') { if (!captura && tEstado > 9) empezar(); return; }
-  const c = CABANAS[idx], p = parcelas[idx];
-  const tipos = c.golpe.split('+');
-  if (!p.asustada && raiz.position.z > p.casa.min.z - 2.3) { p.asustada = true; asustar(idx); }
-  if (estado === 'andar') {
-    poner('andar');
-    const meta = parada(p, tipos[0]);
-    raiz.position.z = Math.min(meta, raiz.position.z + VEL_ANDAR * dt);
-    raiz.position.x += (p.centro.x - raiz.position.x) * Math.min(1, dt * 2);
-    for (const q of parcelas) for (const ar of q.arboles) {
-      if (!ar.caido && Math.hypot(ar.base.x - raiz.position.x, ar.base.z - raiz.position.z) < 0.33) tumbarArbol(ar, raiz.position);
-    }
-    if (raiz.position.z >= meta - 1e-4) { estado = 'accion'; pasos = tipos.slice(); siguienteGolpe(); }
-  } else if (estado === 'accion') {
-    const k = pasos[0], a = A[k];
-    if (!impactado && a.time >= CLIP[k].impacto) {
-      impactado = true;
-      const punto = k === 'golpe' ? mundo('RightHand') : mundo('RightFoot').add(mundo('LeftFoot')).multiplyScalar(0.5);
-      punto.y = 0.05;
-      punto.x = THREE.MathUtils.clamp(punto.x, p.casa.min.x, p.casa.max.x);
-      punto.z = THREE.MathUtils.clamp(punto.z, p.casa.min.z, p.casa.max.z);
-      if (!p.rota) romper(p, punto, k === 'salto' ? 1.5 : 1.2);
-      else { soltarPolvo(punto, 18); temblor = 0.35; empujarEscombros(punto); lanzarAldeanos(punto, 0.5); sonar('destruccion', 0.6); }
-      pajaros = false;
-      decir(`<b>Cabaña ${idx + 1}/5</b> · ${c.nombre} · <b>${k === 'golpe' ? '¡Golpe!' : '¡Salto!'}</b>`);
-    }
-    if (a.time >= a.getClip().duration - 1e-3 || (!a.isRunning() && tEstado > 0.3)) {
-      pasos.shift();
-      if (pasos.length) siguienteGolpe();
-      else { estado = 'pausa'; tEstado = 0; poner('quieto', 0.3); }
-    }
-  } else if (estado === 'pausa') {
-    if (tEstado > 1.1) {
-      idx++;
-      if (idx >= CABANAS.length) {
-        estado = 'fin'; tEstado = 0; decir('');
-        mostrarCartel('LA ALDEA HA CAÍDO', 'cinco cabañas, ni una en pie', 6);
-        sonar('rugido'); temblor = 0.5;
-        return;
-      }
-      estado = 'andar'; tEstado = 0;
-      decir(`<b>Cabaña ${idx + 1}/5</b> · ${CABANAS[idx].nombre}`);
-    }
-  }
-}
-function siguienteGolpe() { impactado = false; tEstado = 0; poner(pasos[0], 0.2); }
 function empujarEscombros(punto) {
-  for (const t of trozosVivos) {
+  for (const t of volando) {
     const d = t.m.position.distanceTo(punto);
     if (d > 0.9) continue;
     const dir = new THREE.Vector3().subVectors(t.m.position, punto); dir.y = 0; dir.normalize();
     t.v.addScaledVector(dir, 0.5 / (0.4 + d)); t.v.y += entre(0.5, 1.1); t.quieto = false;
   }
 }
-// pisadas: el pie baja hasta el suelo
+// pisadas: suenan, levantan polvo y mandan a volar a quien esté debajo
 function pasoPisadas() {
   if (estado !== 'andar') { for (const k in pies) pies[k].abajo = true; return; }
   for (const k in pies) {
-    const y = mundo(k).y, abajo = y < pieReposo + 0.02;
+    const pos = mundo(k), abajo = pos.y < pieReposo + 0.02;
     if (abajo && !pies[k].abajo) {
       sonar('pisada', 1); temblor = Math.max(temblor, 0.12);
-      soltarPolvo(mundo(k).setY(0.02), 4, 0.5);
+      soltarPolvo(pos.clone().setY(0.02), 4, 0.5);
+      lanzarAldeanos(pos, 0.16, 0.9);
     }
     pies[k].abajo = abajo;
   }
@@ -734,7 +983,7 @@ function pasoPisadas() {
 // ================================================================ física
 const q = new THREE.Quaternion(), e = new THREE.Euler();
 function pasoFisica(dt) {
-  for (const t of trozosVivos) {
+  for (const t of volando) {
     if (t.quieto) continue;
     t.v.y -= GRAVEDAD * dt;
     t.m.position.addScaledVector(t.v, dt);
@@ -748,20 +997,26 @@ function pasoFisica(dt) {
       if (t.v.lengthSq() < 0.004) t.quieto = true;
     }
   }
-  for (const a of arbolesCayendo) {
-    if (a.ang >= Math.PI / 2 - 0.05) continue;
-    a.vel += 3.5 * Math.sin(a.ang + 0.15) * dt;
-    a.ang = Math.min(Math.PI / 2 - 0.05, a.ang + a.vel * dt);
-    a.pivote.quaternion.setFromAxisAngle(a.eje, a.ang);
+  for (const c of cayendo) {
+    if (c.ang >= Math.PI / 2 - 0.05) continue;
+    c.vel += 3.5 * Math.sin(c.ang + 0.15) * dt;
+    c.ang = Math.min(Math.PI / 2 - 0.05, c.ang + c.vel * dt);
+    c.pivote.quaternion.setFromAxisAngle(c.eje, c.ang);
+    if (c.ang >= Math.PI / 2 - 0.05 && !c.sonado) { c.sonado = true; sonar('arbol', 0.7, c.pivote.position); soltarPolvo(c.pivote.position.clone().add(new THREE.Vector3(0, 0.03, 0)), 3, 0.5); }
+  }
+  for (const a of arboles) {
+    if (a.roto || a.temblor <= 0) continue;
+    a.temblor -= dt;
+    a.g.rotation.z = Math.sin(a.temblor * 60) * 0.02 * a.temblor;
   }
   for (let i = polvo.length - 1; i >= 0; i--) {
     const d = polvo[i];
     d.vida += dt;
     d.s.position.addScaledVector(d.v, dt);
-    d.v.multiplyScalar(1 - dt * 1.5);
-    d.s.scale.setScalar((0.2 + d.vida * 0.6) * d.tam);
+    if (d.caer) { d.v.y -= 1.2 * dt; d.v.x *= 1 - dt; d.v.z *= 1 - dt; d.s.material.rotation += dt * 3; }
+    else { d.v.multiplyScalar(1 - dt * 1.5); d.s.scale.setScalar((0.2 + d.vida * 0.6) * d.tam); }
     d.s.material.opacity = Math.max(0, 1 - d.vida / d.dura) * 0.85;
-    if (d.vida > d.dura) { scene.remove(d.s); polvo.splice(i, 1); }
+    if (d.vida > d.dura || d.s.position.y < 0) { scene.remove(d.s); polvo.splice(i, 1); }
   }
   if (pajaros) { tPajaro -= dt; if (tPajaro <= 0) { sonar('pajaro'); tPajaro = entre(1.5, 4); } }
 }
@@ -773,8 +1028,8 @@ function pasoCamara(dt) {
   const r = raiz.position;
   // pantalla estrecha (móvil en vertical): la cámara se aparta más para que quepa lo mismo
   const k = Math.max(1, 1.25 / camera.aspect);
-  const sigue = new THREE.Vector3(r.x + 3.3 * k, 0.5 + 1.4 * k, r.z - 0.2 * k);
-  const miraSigue = new THREE.Vector3(r.x, 0.5, r.z + 1.0);
+  const sigue = new THREE.Vector3(r.x + 2.6 * k, 0.6 + 2.2 * k, r.z - 0.9 * k);
+  const miraSigue = new THREE.Vector3(r.x - 0.2, 0.35, r.z + 1.0);
   if (estado === 'intro') {
     // primer plano de la cara; a los 2 s empieza a alejarse hasta la vista de seguimiento
     const cara = mundo('Head').add(new THREE.Vector3(0, 0.05, 0));
@@ -782,7 +1037,6 @@ function pasoCamara(dt) {
     const medio = cara.clone().add(new THREE.Vector3(1.3 * k, -0.2, 1.8 * k));
     const t = THREE.MathUtils.clamp((tEstado - 2.0) / (DURA_INTRO - 2.0), 0, 1);
     const u = suave(t);
-    // curva: cara -> de frente y abierto -> seguimiento lateral
     const a = cerca.clone().lerp(medio, u), b = medio.clone().lerp(sigue, u);
     camara.copy(a.lerp(b, u));
     mira.copy(cara).lerp(miraSigue, suave(Math.max(0, t * 1.2 - 0.2)));
@@ -830,14 +1084,13 @@ document.getElementById('reiniciar').onclick = () => empezar();
 document.getElementById('sonido').onclick = (ev) => { Sonido.iniciar(); ev.target.textContent = Sonido.alternar() ? 'Sonido: sí' : 'Sonido: no'; };
 
 empezar();
-// primer fotograma ya dibujado detrás de la portada
 mixer.update(0); titan.updateMatrixWorld(true); pasoCamara(0); renderer.render(scene, camera);
 const inicio = document.getElementById('inicio');
 if (captura) {
   inicio.remove();
   document.getElementById('botones').hidden = true;
   window.__paso = (dt) => avanzar(dt);
-  window.__estado = () => ({ estado, idx });
+  window.__estado = () => ({ estado, idx: paso });
   window.__sucesos = () => sucesos;
   window.__listo = true;
 } else {
