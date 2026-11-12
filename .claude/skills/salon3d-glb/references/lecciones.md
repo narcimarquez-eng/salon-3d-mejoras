@@ -261,3 +261,14 @@ Mira el script más parecido antes de empezar uno nuevo:
 - El visor abre .glb con Draco (DRACOLoader con el decodificador en public/draco).
 - Gana mucho en geometría (coche 0,53 → 0,20 MB) y poco cuando manda la textura (orco
   animado 0,87 → 0,65 MB): para eso, bajar la textura (High/Medium) o un atlas más pequeño.
+
+## Retexturizar un modelo del panel de fotos (titán)
+
+- El panel da buena forma, pero los costados salen estirados y la foto de perfil al 100 %
+  hace franjas. `scripts/repiel_panel.cjs entrada.glb /textures/atlas.jpg '<cfg>' salida.glb`
+  conserva forma, esqueleto y animaciones y le pone la piel con la regla de las vistas
+  (cfg: escala del atlas, pesos, rectángulos de cada vista en la hoja y su origen en el atlas;
+  ejemplo en el commit del titán). Los brazos (fuera de `medioTronco`) y las filas `tapadas`
+  (donde la mano tapa el muslo en el perfil) nunca usan el perfil.
+- Caras de canto cogen la línea de tinta del contorno: preparar la hoja con
+  `preparar_hoja_fotos.py ... 50 0 150 7` (quitar 7 px de borde) y usar ese atlas.

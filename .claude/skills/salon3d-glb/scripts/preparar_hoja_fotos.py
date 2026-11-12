@@ -4,7 +4,11 @@ Estira el color de cada figura unos píxeles por fuera de su contorno, para que 
 blanco no manche los bordes del modelo cuando la malla es un poco más ancha que la foto.
 
 Uso:
-    python3 preparar_hoja_fotos.py hoja.jpg public/textures/<id>.jpg [pasos=60] [ancho_max=0] [umbral=150]
+    python3 preparar_hoja_fotos.py hoja.jpg public/textures/<id>.jpg [pasos=60] [ancho_max=0] [umbral=150] [quitar_borde=1]
+
+quitar_borde: píxeles del contorno que se sustituyen por el color de dentro (1 = solo el
+antialias). Con 6-8 desaparece la línea de tinta del dibujo: útil cuando el modelo tiene
+caras de canto que cogen el borde de la foto (se ven como rayas oscuras).
 
 umbral: cuánto debe apartarse un píxel del blanco (suma de |255 - canal|) para contar como
 figura. Con 150, los huecos claros entre pelos (crin, cola, tupé) cuentan como fondo y se
@@ -35,6 +39,7 @@ def main():
     pasos = int(sys.argv[3]) if len(sys.argv) > 3 else 60
     ancho_max = int(sys.argv[4]) if len(sys.argv) > 4 else 0
     umbral = int(sys.argv[5]) if len(sys.argv) > 5 else 150
+    quitar_borde = int(sys.argv[6]) if len(sys.argv) > 6 else 1
     im = Image.open(src).convert('RGB')
     if ancho_max and im.width > ancho_max:
         im = im.resize((ancho_max, round(im.height * ancho_max / im.width)), Image.LANCZOS)
@@ -42,8 +47,10 @@ def main():
     figura = np.abs(a - 255).sum(2) > umbral
     # Quita el borde de antialias (mezcla con el blanco) antes de estirar el color
     nucleo = figura.copy()
-    for dy, dx in [(0, 1), (0, -1), (1, 0), (-1, 0)]:
-        nucleo &= desplazar(figura, dy, dx)
+    for _ in range(max(1, quitar_borde)):
+        previo = nucleo.copy()
+        for dy, dx in [(0, 1), (0, -1), (1, 0), (-1, 0)]:
+            nucleo &= desplazar(previo, dy, dx)
     conocido = nucleo.copy()
     color = a * conocido[..., None]
     vecinos = [(0, 1), (0, -1), (1, 0), (-1, 0), (1, 1), (-1, -1), (1, -1), (-1, 1)]
