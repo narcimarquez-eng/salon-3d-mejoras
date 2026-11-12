@@ -280,3 +280,14 @@ Mira el script más parecido antes de empezar uno nuevo:
   izquierda puesto en la rodilla. Con brazos en A, al acabarse la mano la cadena del brazo
   (humanRig.ts) saltaba a la pierna de ese lado; ahora rechaza saltos de más de 0,04·alto.
   Para comprobar un rig: posiciones de los huesos en reposo, deben ser simétricas.
+
+## Cabaña de troncos espectacular (cabana_espectacular/)
+
+- capturar_y_exportar.cjs ya no encuadra con la interfaz actual (los botones de vista no
+  responden y la cámara queda pegada al modelo). Para exportar: `scripts/exportar_glb.cjs`
+  (pulsa el botón por código). Para ver el modelo, renderiza el .glb con three.js aparte.
+- La exportación Completo deja una pieza y un material por objeto (644): para juegos usa
+  "Juego" y después dedup + flatten + join + weld (glTF-Transform) y texturas PNG a JPEG de
+  512 px: 3,4 MB -> 1,2 MB (0,29 MB con Draco) con los mismos triángulos.
+- En el motor, `(k + f) % 2` falla (paréntesis seguido de %): guarda la suma en una variable.
+- Faldones con cumbrera a lo largo de X: giro en X; +ángulo levanta el lado +Y.
