@@ -275,5 +275,8 @@ Mira el script más parecido antes de empezar uno nuevo:
 - Bulto en los muslos: en la foto de perfil las manos tapan el muslo y el panel lo toma como
   grosor de la pierna. `scripts/quitar_bulto_perfil.cjs` lo aplana por anillos (no por
   franjas de altura fijas: con franjas vacías salen ondas horizontales).
-- La animación Walk del panel estira mucho la entrepierna en el paso largo: viene de los
-  pesos del panel (pasa igual en el .glb original), no de retexturizar.
+- (Ver corrección abajo) La animación Walk del panel estiraba la entrepierna en el paso largo.
+- Corrección: el estirón de la entrepierna no eran los pesos sino el hueso de la mano
+  izquierda puesto en la rodilla. Con brazos en A, al acabarse la mano la cadena del brazo
+  (humanRig.ts) saltaba a la pierna de ese lado; ahora rechaza saltos de más de 0,04·alto.
+  Para comprobar un rig: posiciones de los huesos en reposo, deben ser simétricas.

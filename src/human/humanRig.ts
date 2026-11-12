@@ -146,6 +146,10 @@ export function computeHumanRig(
             bestIdx = j;
           }
         }
+        // Un brazo baja casi recto: si el trozo más cercano está lejos del anterior, es otra
+        // cosa (con los brazos en A, al acabar la mano aparece la pierna de ese lado y la
+        // cadena saltaba a ella: la mano acababa en la rodilla).
+        if (bestIdx >= 0 && samples.length > 0 && bestDist > Math.max(4, 0.04 * H)) bestIdx = -1;
         if (bestIdx >= 0) {
           const [a, b] = runs[bestIdx];
           const cx = (a + b) / 2;
