@@ -19,7 +19,9 @@ Imprime, para cada vista, la función que pasa un píxel de la hoja a un píxel 
 el script del modelo mide en la hoja y convierte con esos números (ver lobo_acorazado/).
 """
 import json
+import os
 import sys
+import tempfile
 
 from PIL import Image
 
@@ -79,7 +81,7 @@ def main():
             print(f"{v['nombre']}: atlas_x = {ox * s:.2f} + (px - {x0}) * {s:.5f};  "
                   f"atlas_y = {oy * s:.2f} + (py - {y0}) * {s:.5f}")
     json.dump([{'nombre': v['nombre'], 'rect': list(r), 'ox': ox, 'oy': oy, 'girar': v.get('girar', 0),
-                'escala': s} for v, r, ox, oy, w, h in colocadas], open(dst + '.json', 'w'), indent=1)
+                'escala': s} for v, r, ox, oy, w, h in colocadas], open(os.path.join(tempfile.gettempdir(), os.path.basename(dst) + '.json'), 'w'), indent=1)
 
 
 if __name__ == '__main__':
