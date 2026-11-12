@@ -272,3 +272,8 @@ Mira el script más parecido antes de empezar uno nuevo:
   (donde la mano tapa el muslo en el perfil) nunca usan el perfil.
 - Caras de canto cogen la línea de tinta del contorno: preparar la hoja con
   `preparar_hoja_fotos.py ... 50 0 150 7` (quitar 7 px de borde) y usar ese atlas.
+- Bulto en los muslos: en la foto de perfil las manos tapan el muslo y el panel lo toma como
+  grosor de la pierna. `scripts/quitar_bulto_perfil.cjs` lo aplana por anillos (no por
+  franjas de altura fijas: con franjas vacías salen ondas horizontales).
+- La animación Walk del panel estira mucho la entrepierna en el paso largo: viene de los
+  pesos del panel (pasa igual en el .glb original), no de retexturizar.
