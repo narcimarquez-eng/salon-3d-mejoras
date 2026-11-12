@@ -291,3 +291,13 @@ Mira el script más parecido antes de empezar uno nuevo:
   512 px: 3,4 MB -> 1,2 MB (0,29 MB con Draco) con los mismos triángulos.
 - En el motor, `(k + f) % 2` falla (paréntesis seguido de %): guarda la suma en una variable.
 - Faldones con cumbrera a lo largo de X: giro en X; +ángulo levanta el lado +Y.
+
+## Texturas fotográficas del usuario y cabaña con patio (cabana_patio/)
+
+- 50 texturas de 512 px recortadas de cinco láminas, en `public/textures/`: `suelo_piedras_t01..t10`,
+  `tejado_t01..t10`, `madera_cabana_t01..t10`, `piedra_pared_t01..t10`, `agua_t01..t10`. Se usan con
+  `mat.color_map = "tejado_t03"` y `mat.color_map_scale = metros por repetición`; color base
+  blanco (1, 1, 1) para no oscurecer la foto. Agua: `alfa` 0,2-0,8 y `barniz` 1.
+- La exportación "Juego" quita las piezas que se llaman "Suelo": el suelo de un patio debe
+  llamarse de otra forma (`CP_Empedrado`).
+- `scripts/optimizar_juego.mjs` hace la limpieza final (juntar por material, JPEG, Draco opcional).
