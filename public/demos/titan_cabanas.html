@@ -1,0 +1,397 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Titán contra las cabañas</title>
+<style>
+  :root { --fondo: #9cc4e4; --panel: rgba(20, 24, 32, 0.72); --texto: #f4f1ea; --acento: #ffb347; }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: var(--fondo); font-family: system-ui, -apple-system, "Segoe UI", sans-serif; color: var(--texto); }
+  canvas { display: block; }
+  #hud { position: fixed; left: 16px; top: 16px; right: 16px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; pointer-events: none; }
+  #rotulo { background: var(--panel); padding: 8px 14px; border-radius: 10px; font-size: 15px; line-height: 1.35; max-width: 100%; }
+  #rotulo b { color: var(--acento); }
+  #botones { position: fixed; right: 16px; bottom: 16px; display: flex; gap: 8px; }
+  button { background: var(--panel); color: var(--texto); border: 1px solid rgba(255,255,255,0.25); border-radius: 8px; padding: 8px 12px; font-size: 14px; cursor: pointer; }
+  button:hover { border-color: var(--acento); }
+  #carga { position: fixed; inset: 0; display: grid; place-items: center; font-size: 18px; background: var(--fondo); color: #1d2733; }
+</style>
+</head>
+<body>
+<div id="carga">Cargando el titán y las cabañas…</div>
+<div id="hud"><div id="rotulo"></div></div>
+<div id="botones">
+  <button id="pausa">Pausa</button>
+  <button id="vel">Velocidad 1x</button>
+  <button id="reiniciar">Reiniciar</button>
+</div>
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+} }
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
+
+// ---------------------------------------------------------------- ajustes
+const ALTO_TITAN = 1.5;          // las cabañas miden ~0,4: el titán les saca casi 4 veces
+const SEPARACION = 3.4;          // distancia entre parcelas (cada parcela mide 2,6)
+const VEL_ANDAR = 0.95;          // casa con el paso de la animación Walk a esta escala
+const GRAVEDAD = 4.0;            // baja, para que los trozos caigan "a cámara lenta" de gigante
+const CABANAS = [
+  { f: 'cabana_1_troncos_clasica', nombre: 'Cabaña de troncos', golpe: 'golpe' },
+  { f: 'cabana_2_posada_dos_plantas', nombre: 'Posada de dos plantas', golpe: 'salto' },
+  { f: 'cabana_3_pescador_pilotes', nombre: 'Cabaña del pescador', golpe: 'golpe' },
+  { f: 'cabana_4_torre_de_vigia', nombre: 'Torre de vigía', golpe: 'salto' },
+  { f: 'cabana_5_redonda', nombre: 'Cabaña redonda', golpe: 'salto+golpe' },
+];
+// momento del impacto dentro de cada clip (medido en el .glb): puño abajo / pies en el suelo
+const CLIP = { golpe: { nombre: 'Attack', impacto: 0.45 }, salto: { nombre: 'JumpBite', impacto: 1.1 } };
+const SUELO_FIJO = /^(Hierba|Camino|Suelo|SueloPB|Agua)(_\d+)?$/;
+
+const captura = new URLSearchParams(location.search).has('captura');
+
+// ---------------------------------------------------------------- escena
+const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: captura });
+renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
+renderer.setSize(innerWidth, innerHeight);
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+document.body.prepend(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x9cc4e4);
+scene.fog = new THREE.Fog(0x9cc4e4, 9, 22);
+const camera = new THREE.PerspectiveCamera(45, innerWidth / innerHeight, 0.05, 80);
+scene.add(new THREE.HemisphereLight(0xdfefff, 0x5a6a40, 1.6));
+const sol = new THREE.DirectionalLight(0xfff2dd, 2.4);
+sol.castShadow = true;
+sol.shadow.mapSize.set(2048, 2048);
+Object.assign(sol.shadow.camera, { left: -4, right: 4, top: 4, bottom: -4, near: 0.5, far: 20 });
+sol.shadow.bias = -0.0005;
+scene.add(sol, sol.target);
+
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+
+const draco = new DRACOLoader();
+draco.setDecoderPath('https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/libs/draco/gltf/');
+const loader = new GLTFLoader();
+loader.setDRACOLoader(draco);
+
+const rotulo = document.getElementById('rotulo');
+const decir = (html) => { rotulo.innerHTML = html; };
+
+// ---------------------------------------------------------------- carga
+const [titanGltf, ...cabGltf] = await Promise.all([
+  loader.loadAsync('./titan.glb'),
+  ...CABANAS.map((c) => loader.loadAsync(`./cabanas/${c.f}.glb`)),
+]);
+document.getElementById('carga').remove();
+
+// suelo que une las parcelas, del color de su hierba
+let verde = 0x8fce7c;
+cabGltf[0].scene.traverse((o) => { if (o.isMesh && /^Hierba/.test(o.name) && o.material?.color) verde = o.material.color.getHex(); });
+const suelo = new THREE.Mesh(new THREE.PlaneGeometry(60, 60), new THREE.MeshStandardMaterial({ color: verde, roughness: 1 }));
+suelo.rotation.x = -Math.PI / 2;
+suelo.position.set(0, -0.006, SEPARACION * 2);
+suelo.receiveShadow = true;
+scene.add(suelo);
+
+// ---------------------------------------------------------------- titán
+const titan = titanGltf.scene;
+const caja = new THREE.Box3().setFromObject(titan);
+const escala = ALTO_TITAN / (caja.max.y - caja.min.y);
+const raiz = new THREE.Group();
+titan.scale.setScalar(escala);
+titan.position.y = -caja.min.y * escala;
+raiz.add(titan);
+scene.add(raiz);
+titan.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; o.frustumCulled = false; } });
+const huesos = {};
+titan.traverse((o) => { if (o.isBone) huesos[o.name] = o; });
+const mixer = new THREE.AnimationMixer(titan);
+const accion = (n) => mixer.clipAction(titanGltf.animations.find((a) => a.name === n));
+const A = { andar: accion('Walk'), quieto: accion('Idle'), golpe: accion('Attack'), salto: accion('JumpBite') };
+for (const k of ['golpe', 'salto']) { A[k].setLoop(THREE.LoopOnce, 1); A[k].clampWhenFinished = true; }
+let actual = null;
+const poner = (k, fundido = 0.25) => {
+  const a = A[k];
+  if (actual === a) return;
+  a.reset().setEffectiveWeight(1).play();
+  if (actual) actual.crossFadeTo(a, fundido, false);
+  actual = a;
+};
+
+// ---------------------------------------------------------------- cabañas
+const parcelas = []; // por cabaña: centro de la casa, trozos y árboles
+const trozosVivos = [];
+const arbolesCayendo = [];
+const polvo = [];
+
+function montarCabanas() {
+  for (const p of parcelas) scene.remove(p.grupo);
+  for (const t of trozosVivos) scene.remove(t.m);
+  for (const a of arbolesCayendo) scene.remove(a.pivote);
+  for (const d of polvo) scene.remove(d.s);
+  parcelas.length = trozosVivos.length = arbolesCayendo.length = polvo.length = 0;
+  cabGltf.forEach((g, i) => {
+    const grupo = g.scene.clone(true);
+    const cb = new THREE.Box3().setFromObject(grupo);
+    grupo.position.set(0, -cb.min.y, i * SEPARACION);
+    scene.add(grupo);
+    grupo.updateMatrixWorld(true);
+    const trozos = [];
+    const arboles = new Map();
+    const casa = new THREE.Box3();
+    grupo.traverse((o) => {
+      if (!o.isMesh) return;
+      o.castShadow = !SUELO_FIJO.test(o.name);
+      o.receiveShadow = true;
+      // el césped de cada parcela sobra: el suelo general es del mismo verde (y así no se ven sus bordes)
+      if (/^Hierba/.test(o.name)) o.visible = false;
+      if (SUELO_FIJO.test(o.name)) return;
+      const ar = o.name.match(/^(Arbol\d+)_/);
+      if (ar) { if (!arboles.has(ar[1])) arboles.set(ar[1], []); arboles.get(ar[1]).push(o); return; }
+      trozos.push(o);
+      casa.expandByObject(o);
+    });
+    parcelas.push({
+      grupo, trozos, casa, rota: false,
+      centro: casa.getCenter(new THREE.Vector3()),
+      arboles: [...arboles.values()].map((ms) => ({ ms, caido: false, base: new THREE.Box3().setFromObject(ms[0]).getCenter(new THREE.Vector3()) })),
+    });
+  });
+}
+
+// un árbol cae entero girando sobre la base de su tronco
+function tumbarArbol(ar, desde) {
+  if (ar.caido) return;
+  ar.caido = true;
+  const pivote = new THREE.Group();
+  const b = new THREE.Box3().setFromObject(ar.ms[0]);
+  pivote.position.set(ar.base.x, b.min.y, ar.base.z);
+  scene.add(pivote);
+  pivote.updateMatrixWorld(true);
+  for (const m of ar.ms) pivote.attach(m);
+  const dir = new THREE.Vector3(ar.base.x - desde.x, 0, ar.base.z - desde.z);
+  if (dir.lengthSq() < 1e-6) dir.set(1, 0, 0);
+  dir.normalize();
+  const eje = new THREE.Vector3(dir.z, 0, -dir.x); // perpendicular: el árbol cae hacia "dir"
+  arbolesCayendo.push({ pivote, eje, ang: 0, vel: 0.6 + Math.random() * 0.4 });
+}
+
+// la casa salta en pedazos desde el punto del impacto
+function romper(p, impacto, fuerza) {
+  if (p.rota) return;
+  p.rota = true;
+  for (const m of p.trozos) {
+    scene.attach(m); // conserva su sitio en el mundo
+    const c = new THREE.Box3().setFromObject(m).getCenter(new THREE.Vector3());
+    const dir = new THREE.Vector3().subVectors(c, impacto); dir.y = 0;
+    const d = dir.length();
+    if (d < 1e-4) dir.set(Math.random() - 0.5, 0, Math.random() - 0.5);
+    dir.normalize();
+    const empuje = fuerza * (0.25 + Math.random() * 0.45) / (0.45 + d);
+    const v = dir.multiplyScalar(empuje);
+    v.y = fuerza * (0.45 + Math.random() * 0.75) * (c.y > 0.15 ? 1.15 : 0.7);
+    const minY = new THREE.Box3().setFromObject(m).min.y - m.position.y;
+    trozosVivos.push({
+      m, v, minY,
+      w: new THREE.Vector3((Math.random() - 0.5) * 9, (Math.random() - 0.5) * 9, (Math.random() - 0.5) * 9),
+      quieto: false,
+    });
+  }
+  for (const ar of p.arboles) if (ar.base.distanceTo(impacto) < 1.0) tumbarArbol(ar, impacto);
+  soltarPolvo(impacto, 26);
+  temblor = 0.35;
+}
+
+const texPolvo = (() => {
+  const c = document.createElement('canvas'); c.width = c.height = 64;
+  const g = c.getContext('2d');
+  const r = g.createRadialGradient(32, 32, 2, 32, 32, 30);
+  r.addColorStop(0, 'rgba(200,180,150,0.9)'); r.addColorStop(1, 'rgba(200,180,150,0)');
+  g.fillStyle = r; g.fillRect(0, 0, 64, 64);
+  return new THREE.CanvasTexture(c);
+})();
+function soltarPolvo(en, n) {
+  for (let i = 0; i < n; i++) {
+    const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: texPolvo, transparent: true, depthWrite: false }));
+    s.position.copy(en).add(new THREE.Vector3((Math.random() - 0.5) * 0.4, 0.05 + Math.random() * 0.2, (Math.random() - 0.5) * 0.4));
+    s.scale.setScalar(0.2);
+    scene.add(s);
+    polvo.push({ s, v: new THREE.Vector3((Math.random() - 0.5) * 1.2, 0.2 + Math.random() * 0.5, (Math.random() - 0.5) * 1.2), vida: 0, dura: 1.2 + Math.random() * 0.8 });
+  }
+}
+
+// ---------------------------------------------------------------- guion
+let estado, idx, tEstado, impactado, pasos, temblor = 0;
+function empezar() {
+  montarCabanas();
+  raiz.position.set(parcelas[0].centro.x, 0, -2.6);
+  raiz.rotation.set(0, 0, 0);
+  idx = 0; estado = 'andar'; tEstado = 0;
+  mixer.stopAllAction(); actual = null; poner('andar', 0);
+  decir(`<b>Cabaña 1/5</b> · ${CABANAS[0].nombre}`);
+  camara.copy(new THREE.Vector3(raiz.position.x + 3.3, 1.9, raiz.position.z - 0.2));
+}
+const camara = new THREE.Vector3();
+
+// dónde pararse delante de cada casa: el puño baja ~0,35 por delante; el salto cae ~0,3 más allá
+const parada = (p, tipo) => p.casa.min.z - (tipo === 'golpe' ? 0.22 : 0.05);
+
+function pasoGuion(dt) {
+  tEstado += dt;
+  if (estado === 'fin') { if (!captura && tEstado > 5) empezar(); return; }
+  const c = CABANAS[idx], p = parcelas[idx];
+  const tipos = c.golpe.split('+');
+  if (estado === 'andar') {
+    poner('andar');
+    const meta = parada(p, tipos[0]);
+    raiz.position.z = Math.min(meta, raiz.position.z + VEL_ANDAR * dt);
+    raiz.position.x += (p.centro.x - raiz.position.x) * Math.min(1, dt * 2);
+    // árboles que se cruzan en el camino
+    for (const q of parcelas) for (const ar of q.arboles) {
+      if (!ar.caido && Math.hypot(ar.base.x - raiz.position.x, ar.base.z - raiz.position.z) < 0.33) tumbarArbol(ar, raiz.position);
+    }
+    if (raiz.position.z >= meta - 1e-4) { estado = 'accion'; pasos = tipos.slice(); siguienteGolpe(); }
+  } else if (estado === 'accion') {
+    const k = pasos[0], a = A[k];
+    if (!impactado && a.time >= CLIP[k].impacto) {
+      impactado = true;
+      const punto = k === 'golpe'
+        ? new THREE.Vector3().setFromMatrixPosition(huesos.RightHand.matrixWorld)
+        : new THREE.Vector3().addVectors(
+          new THREE.Vector3().setFromMatrixPosition(huesos.RightFoot.matrixWorld),
+          new THREE.Vector3().setFromMatrixPosition(huesos.LeftFoot.matrixWorld)).multiplyScalar(0.5);
+      punto.y = 0.05;
+      // el impacto cae dentro de la casa aunque el puño quede un poco fuera
+      punto.x = THREE.MathUtils.clamp(punto.x, p.casa.min.x, p.casa.max.x);
+      punto.z = THREE.MathUtils.clamp(punto.z, p.casa.min.z, p.casa.max.z);
+      if (!p.rota) romper(p, punto, k === 'salto' ? 1.5 : 1.2);
+      else { soltarPolvo(punto, 14); temblor = 0.25; empujarEscombros(punto); }
+      decir(`<b>Cabaña ${idx + 1}/5</b> · ${c.nombre} · <b>${k === 'golpe' ? '¡Golpe!' : '¡Salto!'}</b>`);
+    }
+    if (a.time >= a.getClip().duration - 1e-3 || (!a.isRunning() && tEstado > 0.3)) {
+      pasos.shift();
+      if (pasos.length) siguienteGolpe();
+      else { estado = 'pausa'; tEstado = 0; poner('quieto', 0.3); }
+    }
+  } else if (estado === 'pausa') {
+    if (tEstado > 1.1) {
+      idx++;
+      if (idx >= CABANAS.length) { estado = 'fin'; tEstado = 0; decir('<b>¡Las cinco cabañas, destruidas!</b>'); return; }
+      estado = 'andar'; tEstado = 0;
+      decir(`<b>Cabaña ${idx + 1}/5</b> · ${CABANAS[idx].nombre}`);
+    }
+  } else if (estado === 'fin') {
+    if (!captura && tEstado > 5) empezar();
+  }
+}
+function siguienteGolpe() {
+  impactado = false; tEstado = 0;
+  poner(pasos[0], 0.2);
+}
+function empujarEscombros(punto) {
+  for (const t of trozosVivos) {
+    const d = t.m.position.distanceTo(punto);
+    if (d > 0.9) continue;
+    const dir = new THREE.Vector3().subVectors(t.m.position, punto); dir.y = 0; dir.normalize();
+    t.v.addScaledVector(dir, 0.5 / (0.4 + d)); t.v.y += 0.5 + Math.random() * 0.6; t.quieto = false;
+  }
+}
+
+// ---------------------------------------------------------------- física sencilla
+const q = new THREE.Quaternion(), e = new THREE.Euler();
+function pasoFisica(dt) {
+  for (const t of trozosVivos) {
+    if (t.quieto) continue;
+    t.v.y -= GRAVEDAD * dt;
+    t.m.position.addScaledVector(t.v, dt);
+    q.setFromEuler(e.set(t.w.x * dt, t.w.y * dt, t.w.z * dt));
+    t.m.quaternion.premultiply(q);
+    const suelo = -t.minY * 0.5 + 0.01;
+    if (t.m.position.y < suelo) {
+      t.m.position.y = suelo;
+      if (Math.abs(t.v.y) > 0.4) t.v.y *= -0.3; else t.v.y = 0;
+      t.v.x *= 0.6; t.v.z *= 0.6; t.w.multiplyScalar(0.55);
+      if (t.v.lengthSq() < 0.004) t.quieto = true;
+    }
+  }
+  for (const a of arbolesCayendo) {
+    if (a.ang >= Math.PI / 2 - 0.05) continue;
+    a.vel += 3.5 * Math.sin(a.ang + 0.15) * dt;
+    a.ang = Math.min(Math.PI / 2 - 0.05, a.ang + a.vel * dt);
+    a.pivote.quaternion.setFromAxisAngle(a.eje, a.ang);
+  }
+  for (let i = polvo.length - 1; i >= 0; i--) {
+    const d = polvo[i];
+    d.vida += dt;
+    d.s.position.addScaledVector(d.v, dt);
+    d.v.multiplyScalar(1 - dt * 1.5);
+    d.s.scale.setScalar(0.2 + d.vida * 0.55);
+    d.s.material.opacity = Math.max(0, 1 - d.vida / d.dura) * 0.8;
+    if (d.vida > d.dura) { scene.remove(d.s); polvo.splice(i, 1); }
+  }
+}
+
+// ---------------------------------------------------------------- cámara
+const mira = new THREE.Vector3();
+function pasoCamara(dt) {
+  const r = raiz.position;
+  const objetivo = new THREE.Vector3(r.x + 3.3, 1.9, r.z - 0.2);
+  camara.lerp(objetivo, Math.min(1, dt * 1.6));
+  camera.position.copy(camara);
+  if (temblor > 0) {
+    camera.position.x += (Math.random() - 0.5) * temblor * 0.12;
+    camera.position.y += (Math.random() - 0.5) * temblor * 0.12;
+    temblor = Math.max(0, temblor - dt);
+  }
+  mira.set(r.x, 0.5, r.z + 1.0);
+  camera.lookAt(mira);
+  sol.position.set(r.x + 3, 6, r.z + 2);
+  sol.target.position.set(r.x, 0, r.z + 0.8);
+}
+
+// ---------------------------------------------------------------- bucle
+let velocidad = 1, pausado = false;
+function avanzar(dt) {
+  const n = Math.max(1, Math.ceil(dt / (1 / 60)));
+  for (let i = 0; i < n; i++) {
+    const h = dt / n;
+    mixer.update(h);
+    titan.updateMatrixWorld(true);
+    pasoGuion(h);
+    pasoFisica(h);
+  }
+  pasoCamara(dt);
+  renderer.render(scene, camera);
+}
+document.getElementById('pausa').onclick = (ev) => { pausado = !pausado; ev.target.textContent = pausado ? 'Seguir' : 'Pausa'; };
+document.getElementById('vel').onclick = (ev) => { velocidad = velocidad === 1 ? 0.5 : velocidad === 0.5 ? 2 : 1; ev.target.textContent = `Velocidad ${velocidad}x`; };
+document.getElementById('reiniciar').onclick = () => empezar();
+
+empezar();
+if (captura) {
+  document.getElementById('botones').style.display = 'none';
+  window.__paso = (dt) => avanzar(dt);
+  window.__estado = () => ({ estado, idx });
+  window.__listo = true;
+} else {
+  const reloj = new THREE.Clock();
+  renderer.setAnimationLoop(() => {
+    const dt = Math.min(0.05, reloj.getDelta());
+    if (pausado) { renderer.render(scene, camera); return; }
+    avanzar(dt * velocidad);
+  });
+}
+</script>
+</body>
+</html>
