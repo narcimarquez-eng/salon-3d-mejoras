@@ -5079,9 +5079,16 @@ function buildProfileDriven3DMoldGeometry(
     // vale: su columna es vertical y solo tiene dos piernas, así que al animarlo
     // despedaza al animal. `looksLikeQuadruped` lo decide con la malla ya hecha.
     const kindOption = options.rigKind ?? 'auto';
+    // El panel reenvía el esqueleto de la construcción anterior como `customRig` en cada
+    // reconstrucción. Solo vale como esqueleto humanoide si lo es (tiene pies): uno de
+    // cuadrúpedo metido por el camino humanoide dejaba la malla sin pies y las animaciones
+    // humanas fallaban ("reading 'tail'"). Y si se pide Cuadrúpedo, manda la elección.
+    const customIsHumanoid = Boolean(options.customRig?.bones.some((b) => b.name === 'RightFoot'));
+    const customHumanRig = customIsHumanoid ? options.customRig : null;
+    const customWasCreature = Boolean(options.customRig) && !customIsHumanoid;
     const useCreature =
-      !options.customRig &&
-      (kindOption === 'creature' || (kindOption === 'auto' && looksLikeQuadruped(P)));
+      kindOption === 'creature' ||
+      (kindOption === 'auto' && !customHumanRig && (customWasCreature || looksLikeQuadruped(P)));
 
     if (useCreature) {
       const built = computeCreatureRig(P);
@@ -5094,9 +5101,9 @@ function buildProfileDriven3DMoldGeometry(
       geometry.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(skin.index, 4));
       geometry.setAttribute('skinWeight', new THREE.Float32BufferAttribute(skin.weight, 4));
     } else {
-      rig = options.customRig
+      rig = customHumanRig
         ? {
-            bones: options.customRig.bones.map((b) => ({
+            bones: customHumanRig.bones.map((b) => ({
               name: b.name,
               parent: b.parent,
               head: [...b.head] as [number, number, number],
@@ -5779,9 +5786,11 @@ export function buildHumanBodyTemplateGeometry(
   // Skeleton + skin weights (optional).
   let rig: HumanRig | undefined;
   if (options.rig) {
-    rig = options.customRig
+    // Un esqueleto de cuadrúpedo reenviado por el panel no sirve en este camino humanoide.
+    const customHumanRig = options.customRig?.bones.some((b) => b.name === 'RightFoot') ? options.customRig : null;
+    rig = customHumanRig
       ? {
-          bones: options.customRig.bones.map((b) => ({
+          bones: customHumanRig.bones.map((b) => ({
             name: b.name,
             parent: b.parent,
             head: [...b.head] as [number, number, number],
