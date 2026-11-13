@@ -17,7 +17,7 @@ import math
 #    ciegas de arcos lobulados.
 #  - Friso de arcos entrecruzados y banda de azulejo bajo la cornisa almohade.
 #  - Terraza con balaustrada y las cuatro jarras de azucenas de las esquinas.
-#  - Cuerpo de campanas con arcos abiertos y campanas de bronce, pilastras, oculos
+#  - Cuerpo de campanas con cinco arcos por cara y campanas de bronce, pilastras, oculos
 #    y pinaculos en las esquinas.
 #  - Cuerpo del reloj con la inscripcion TURRIS FORTISSIMA NOMEN DNI.
 #  - Cuerpo de las estrellas, cuerpo octogonal de la carraca, tambor y cupulin.
@@ -27,9 +27,13 @@ import math
 # ~13,6 m, altura ~97,5 m sin veleta y ~104 m con el Giraldillo. Las alturas de cada
 # cuerpo renacentista, el numero y la posicion exacta de ventanas, el numero de
 # rombos de la sebka y los colores son aproximados (foto frontal del usuario como
-# referencia de color y proporcion). El interior (35 rampas) no se modela.
+# referencia de color y proporcion). Version 2: fotos desde varios angulos del usuario
+# (color ocre arenoso uniforme, sebka desde media altura, cinco arcos en el cuerpo de
+# campanas, jarras grandes en las esquinas). El interior (35 rampas) no se modela.
 # Ejes: X = ancho, Y = profundidad (cara principal a Y negativo), Z = altura. Metros.
-# Colores en valores lineales, como en Blender.
+# Colores en valores lineales, como en Blender. El ladrillo y el ocre salen del color medido
+# en las fotos del usuario; el GLB final lleva ademas texturas hechas con esas fotos
+# (giralda/texturas_foto.py y giralda/aplicar_texturas_foto.mjs).
 # ==============================================================================
 
 bpy.ops.object.select_all(action='SELECT')
@@ -115,25 +119,25 @@ def viga(nombre, a, b, grosor, mat):
 # ==========================================
 # 1. MATERIALES
 # ==========================================
-m_ladrillo = material("GI_Ladrillo", (0.50, 0.24, 0.13, 1.0), 0.88)
+m_ladrillo = material("GI_Ladrillo", (0.54, 0.42, 0.315, 1.0), 0.88)
 m_ladrillo.texture = "brick_mudejar"
 m_ladrillo.texture_repeat = 10
-m_relieve = material("GI_Ladrillo_Relieve", (0.58, 0.30, 0.16, 1.0), 0.85)
-m_sombra = material("GI_Ladrillo_Sombra", (0.20, 0.085, 0.045, 1.0), 0.95)
+m_relieve = material("GI_Ladrillo_Relieve", (0.62, 0.48, 0.36, 1.0), 0.85)
+m_sombra = material("GI_Ladrillo_Sombra", (0.30, 0.225, 0.165, 1.0), 0.95)
 m_hueco = material("GI_Hueco", (0.018, 0.014, 0.012, 1.0), 1.0)
 m_piedra = material("GI_Sillares", (0.42, 0.36, 0.27, 1.0), 0.9)
 m_piedra.texture = "stone_ashlar"
 m_marmol = material("GI_Marmol", (0.70, 0.68, 0.62, 1.0), 0.35)
 m_marmol.texture = "marble_carrara"
-m_cal = material("GI_Cal_Renacentista", (0.74, 0.68, 0.54, 1.0), 0.8)
-m_albero = material("GI_Albero", (0.58, 0.32, 0.085, 1.0), 0.75)
+m_cal = material("GI_Ocre_Renacentista", (0.61, 0.425, 0.23, 1.0), 0.8)
+m_albero = material("GI_Moldura_Clara", (0.80, 0.70, 0.51, 1.0), 0.75)
 m_azulejo = material("GI_Azulejo", (0.05, 0.22, 0.13, 1.0), 0.25, barniz=0.6)
 m_azulejo.texture = "andalusi_tiles"
 m_hierro = material("GI_Hierro", (0.03, 0.03, 0.032, 1.0), 0.5, 0.6)
 m_campana = material("GI_Bronce_Campanas", (0.16, 0.12, 0.045, 1.0), 0.45, 0.85)
 m_bronce = material("GI_Bronce_Giraldillo", (0.10, 0.075, 0.035, 1.0), 0.4, 0.9)
 m_oro = material("GI_Dorado", (0.80, 0.52, 0.14, 1.0), 0.25, 1.0)
-m_rojo = material("GI_Almagra", (0.26, 0.035, 0.02, 1.0), 0.7)
+m_rojo = material("GI_Almagra", (0.38, 0.11, 0.045, 1.0), 0.7)
 m_suelo = material("GI_Pavimento", (0.30, 0.28, 0.25, 1.0), 0.9)
 
 # ==========================================
@@ -280,7 +284,7 @@ alfiz_f("GI_Puerta", 0, 7.0, 0.0, -0.1, 3.1, 4.4, 0.02, m_piedra)
 
 # Desfase de las ventanas en cada cara (las rampas interiores las escalonan)
 DESFASE = [0.0, 1.6, 3.2, 0.8]
-ZV = [6.5, 12.5, 18.5, 24.5, 30.5, 36.5]
+ZV = [7.0, 13.0, 19.0, 25.5, 31.5, 37.5]
 
 for f in range(4):
     pre = "GI_C" + str(f)
@@ -315,20 +319,26 @@ for f in range(4):
             u1 = ua
         nm = pre + "_Lat" + str(s)
         # Primer piso
-        arqueria_ciega_f(nm + "_ArqA", f, H, u0, u1, 17.0, 2.6, 4)
-        caja_f(nm + "_FondoA", f, H, (u0 + u1) / 2, 0.02, 25.4, u1 - u0, 0.04, 11.4, m_sombra)
-        sebka_f(nm + "_SebA", f, H, u0, u1, 19.7, 31.1, 0.85, 1.25, 0.12, 0.17, m_relieve)
+        arqueria_ciega_f(nm + "_ArqA", f, H, u0, u1, 21.6, 2.6, 4)
+        caja_f(nm + "_FondoA", f, H, (u0 + u1) / 2, 0.02, 28.9, u1 - u0, 0.04, 9.4, m_sombra)
+        sebka_f(nm + "_SebA", f, H, u0, u1, 24.2, 33.6, 0.85, 1.25, 0.12, 0.17, m_relieve)
         # Segundo piso
-        arqueria_ciega_f(nm + "_ArqB", f, H, u0, u1, 32.4, 2.4, 4)
-        caja_f(nm + "_FondoB", f, H, (u0 + u1) / 2, 0.02, 39.9, u1 - u0, 0.04, 10.2, m_sombra)
-        sebka_f(nm + "_SebB", f, H, u0, u1, 34.8, 45.0, 0.85, 1.25, 0.12, 0.17, m_relieve)
+        arqueria_ciega_f(nm + "_ArqB", f, H, u0, u1, 34.4, 2.4, 4)
+        caja_f(nm + "_FondoB", f, H, (u0 + u1) / 2, 0.02, 41.2, u1 - u0, 0.04, 8.8, m_sombra)
+        sebka_f(nm + "_SebB", f, H, u0, u1, 36.8, 45.6, 0.85, 1.25, 0.12, 0.17, m_relieve)
         # Imposta de ladrillo bajo la arqueria
-        caja_f(nm + "_Imposta", f, H, (u0 + u1) / 2, 0.08, 16.85, u1 - u0 + 0.4, 0.16, 0.3, m_relieve)
+        caja_f(nm + "_Imposta", f, H, (u0 + u1) / 2, 0.08, 21.45, u1 - u0 + 0.4, 0.16, 0.3, m_relieve)
+        # Ventanucos de la parte baja de las calles laterales (luz de las rampas)
+        uv = (u0 + u1) / 2
+        for q in range(2):
+            zq = 5.0 + 6.5 * q + DESFASE[f] * 0.5
+            caja_f(nm + "_Ventanuco" + str(q), f, H, uv, 0.02, zq, 0.45, 0.06, 0.9, m_hueco)
+            caja_f(nm + "_VentanucoMarco" + str(q), f, H, uv, 0.05, zq + 0.55, 0.75, 0.1, 0.16, m_relieve)
     # Ventanas altas de la calle central, a la altura de la sebka superior
     hueco_lobulado(pre + "_VenAlta", f, H, 0.0, 42.0, 1.1, 2.6, 0.04)
     alfiz_f(pre + "_VenAlta", f, H, 0.0, 41.6, 2.4, 3.7, 0.08, m_relieve)
     # Banda de azulejo y friso de arcos entrecruzados bajo la cornisa
-    caja_f(pre + "_Azulejo", f, H, 0.0, 0.03, 46.35, 13.6, 0.08, 0.5, m_azulejo)
+    caja_f(pre + "_Azulejo", f, H, 0.0, 0.03, 46.35, 13.6, 0.08, 0.5, m_relieve)
     caja_f(pre + "_FrisoFondo", f, H, 0.0, 0.02, 48.3, 13.6, 0.04, 3.0, m_sombra)
     for i in range(15):
         uc = -6.3 + 0.9 * i
@@ -360,20 +370,21 @@ for e in range(4):
     x = sx * 6.75
     y = sy * 6.75
     pre = "GI_Jarra" + str(e)
-    caja(pre + "_Pedestal", (x, y, 51.5), (0.9, 0.9, 1.4), m_cal)
-    cono(pre + "_Pie", (x, y, 52.4), 0.42, 0.18, 0.4, m_bronce, vertices=12)
-    esfera(pre + "_Panza", (x, y, 53.0), 0.5, m_bronce, escala=(1.0, 1.0, 0.85), segmentos=14, anillos=8)
-    cono(pre + "_Cuello", (x, y, 53.6), 0.24, 0.42, 0.5, m_bronce, vertices=12)
-    viga(pre + "_Asa1", (x + 0.45, y, 53.4), (x + 0.62, y, 52.9), 0.08, m_bronce)
-    viga(pre + "_Asa2", (x - 0.45, y, 53.4), (x - 0.62, y, 52.9), 0.08, m_bronce)
-    for k in range(5):
-        a = 2 * math.pi * k / 5
-        dx = 0.55 * math.cos(a)
-        dy = 0.55 * math.sin(a)
-        viga(pre + "_Tallo" + str(k), (x, y, 53.8), (x + dx, y + dy, 55.2), 0.05, m_bronce)
-        cono(pre + "_Flor" + str(k), (x + dx * 1.1, y + dy * 1.1, 55.4), 0.08, 0.2, 0.35, m_oro, vertices=6)
-    viga(pre + "_TalloC", (x, y, 53.8), (x, y, 55.9), 0.05, m_bronce)
-    cono(pre + "_FlorC", (x, y, 56.05), 0.08, 0.22, 0.4, m_oro, vertices=6)
+    caja(pre + "_Pedestal", (x, y, 51.6), (1.2, 1.2, 1.6), m_cal)
+    caja(pre + "_PedCornisa", (x, y, 52.45), (1.4, 1.4, 0.15), m_albero)
+    cono(pre + "_Pie", (x, y, 52.85), 0.65, 0.28, 0.65, m_bronce, vertices=12)
+    esfera(pre + "_Panza", (x, y, 53.9), 0.8, m_bronce, escala=(1.0, 1.0, 0.85), segmentos=14, anillos=8)
+    cono(pre + "_Cuello", (x, y, 54.85), 0.38, 0.66, 0.8, m_bronce, vertices=12)
+    viga(pre + "_Asa1", (x + 0.7, y, 54.5), (x + 0.98, y, 53.7), 0.12, m_bronce)
+    viga(pre + "_Asa2", (x - 0.7, y, 54.5), (x - 0.98, y, 53.7), 0.12, m_bronce)
+    for k in range(6):
+        a = 2 * math.pi * k / 6
+        dx = 0.85 * math.cos(a)
+        dy = 0.85 * math.sin(a)
+        viga(pre + "_Tallo" + str(k), (x, y, 55.2), (x + dx, y + dy, 57.3), 0.07, m_bronce)
+        cono(pre + "_Flor" + str(k), (x + dx * 1.08, y + dy * 1.08, 57.6), 0.1, 0.3, 0.5, m_oro, vertices=6)
+    viga(pre + "_TalloC", (x, y, 55.2), (x, y, 58.3), 0.08, m_bronce)
+    cono(pre + "_FlorC", (x, y, 58.55), 0.1, 0.32, 0.55, m_oro, vertices=6)
 
 # ==========================================
 # 4. CUERPO DE CAMPANAS (z 51 - 64.5)
@@ -389,47 +400,50 @@ def campana(nombre, pos, r, alto):
     aro(nombre + "_Labio", (pos[0], pos[1], pos[2] - alto), r * 0.97, r * 0.07, m_campana, tramos=10)
     caja(nombre + "_Yugo", (pos[0], pos[1], pos[2] + r * 0.45), (r * 2.2, 0.25, 0.35), m_hierro)
 
-VANOS = [[-3.4, 1.4, 56.4], [0.0, 3.0, 57.0], [3.4, 1.4, 56.4]]   # u, ancho, arranque del arco
+# Cinco vanos por cara (fotos): cuatro estrechos y el central mas ancho. u, ancho, arranque
+VANOS = [[-4.05, 1.1, 56.3], [-2.3, 1.1, 56.3], [0.0, 2.6, 57.0], [2.3, 1.1, 56.3], [4.05, 1.1, 56.3]]
+BORDES = [-HB]
+for i in range(5):
+    BORDES.append(VANOS[i][0] - VANOS[i][1] / 2)
+    BORDES.append(VANOS[i][0] + VANOS[i][1] / 2)
+BORDES.append(HB)
 for f in range(4):
     pre = "GI_B" + str(f)
-    # Machones entre vanos
-    pil = [[-5.0, 1.0], [-1.85, 0.7], [1.85, 0.7], [5.0, 1.0]]
-    for i in range(4):
-        caja_f(pre + "_Machon" + str(i), f, HB, pil[i][0], -0.45, (ZB0 + ZB1) / 2, pil[i][1], 0.9, ZB1 - ZB0, m_cal)
-        caja_f(pre + "_Pilastra" + str(i), f, HB, pil[i][0], 0.08, (ZB0 + 1.4 + ZB1) / 2, pil[i][1] * 0.6, 0.18, ZB1 - ZB0 - 1.4, m_albero)
-    for i in range(3):
+    # Machones entre vanos, con pilastra clara en los anchos
+    for i in range(6):
+        ua = BORDES[2 * i]
+        ub = BORDES[2 * i + 1]
+        caja_f(pre + "_Machon" + str(i), f, HB, (ua + ub) / 2, -0.45, (ZB0 + ZB1) / 2, ub - ua + 0.02, 0.9, ZB1 - ZB0, m_cal)
+        caja_f(pre + "_Pilastra" + str(i), f, HB, (ua + ub) / 2, 0.06, (ZB0 + 1.4 + ZB1) / 2, (ub - ua) * 0.55, 0.14, ZB1 - ZB0 - 1.4, m_albero)
+    for i in range(5):
         u = VANOS[i][0]
         w = VANOS[i][1]
         zs = VANOS[i][2]
         r = w / 2
         nm = pre + "_Vano" + str(i)
-        # Antepecho
         caja_f(nm + "_Antepecho", f, HB, u, -0.45, ZB0 + 0.6, w, 0.9, 1.2, m_cal)
-        # Enjutas escalonadas sobre el arco
         caja_f(nm + "_Sobrearco", f, HB, u, -0.45, (zs + r + ZB1) / 2, w, 0.9, ZB1 - zs - r, m_cal)
         for q in range(3):
             fr = 0.35 + 0.22 * q
-            hq = r * (1.0 - math.sqrt(1.0 - fr * fr))
+            hq = r - r * math.sqrt(1.0 - fr * fr)
             ancho_q = r * (1.0 - fr) + 0.02
-            zq = zs + r - hq / 2 - 0.0
-            caja_f(nm + "_EnjI" + str(q), f, HB, u - r + ancho_q / 2, -0.45, zs + r * math.sqrt(1.0 - fr * fr) + (r - r * math.sqrt(1.0 - fr * fr)) / 2, ancho_q, 0.9, r - r * math.sqrt(1.0 - fr * fr) + 0.02, m_cal)
-            caja_f(nm + "_EnjD" + str(q), f, HB, u + r - ancho_q / 2, -0.45, zs + r * math.sqrt(1.0 - fr * fr) + (r - r * math.sqrt(1.0 - fr * fr)) / 2, ancho_q, 0.9, r - r * math.sqrt(1.0 - fr * fr) + 0.02, m_cal)
-        arco_f(nm + "_Rosca", f, HB, u, zs, r + 0.12, 0.05, 0.24, m_albero, tramos=10)
-        # Campana colgada en el vano
-        rc = 0.55
-        hc = 1.0
-        if i == 1:
+            zq = zs + r - hq / 2
+            caja_f(nm + "_EnjI" + str(q), f, HB, u - r + ancho_q / 2, -0.45, zq, ancho_q, 0.9, hq + 0.02, m_cal)
+            caja_f(nm + "_EnjD" + str(q), f, HB, u + r - ancho_q / 2, -0.45, zq, ancho_q, 0.9, hq + 0.02, m_cal)
+        arco_f(nm + "_Rosca", f, HB, u, zs, r + 0.1, 0.05, 0.2, m_albero, tramos=10)
+        rc = 0.42
+        hc = 0.8
+        if i == 2:
             rc = 0.95
             hc = 1.6
         campana(nm + "_Campana", pf(f, HB, u, -0.5, zs - 0.1), rc, hc)
-        # Oculo sobre los vanos laterales
-        if i != 1:
-            disco_f(nm + "_Oculo", f, HB, u, 0.02, 59.6, 0.42, 0.06, m_hueco)
-            aro_f(nm + "_OculoMarco", f, HB, u, 0.06, 59.6, 0.48, 0.07, m_albero)
+        if i != 2:
+            disco_f(nm + "_Oculo", f, HB, u, 0.02, 59.4, 0.34, 0.06, m_hueco)
+            aro_f(nm + "_OculoMarco", f, HB, u, 0.06, 59.4, 0.4, 0.06, m_albero)
     # Balaustrada del vano central
     for k in range(7):
-        cilindro(pre + "_BalC" + str(k), pf(f, HB, -1.2 + 0.4 * k, 0.05, ZB0 + 1.6), 0.07, 0.75, m_albero, vertices=6)
-    caja_f(pre + "_BalCPas", f, HB, 0.0, 0.05, ZB0 + 2.0, 3.0, 0.2, 0.12, m_cal)
+        cilindro(pre + "_BalC" + str(k), pf(f, HB, -1.08 + 0.36 * k, 0.05, ZB0 + 1.6), 0.07, 0.75, m_albero, vertices=6)
+    caja_f(pre + "_BalCPas", f, HB, 0.0, 0.05, ZB0 + 2.0, 2.6, 0.2, 0.12, m_cal)
     # Entablamento: arquitrabe, friso de almagra y cornisa
     caja_f(pre + "_Arquitrabe", f, HB, 0.0, 0.1, 62.9, 11.6, 0.3, 0.6, m_cal)
     caja_f(pre + "_Friso", f, HB, 0.0, 0.08, 63.55, 11.4, 0.2, 0.7, m_rojo)
@@ -533,7 +547,7 @@ for k in range(8):
     a = 2 * math.pi * k / 8
     caja("GI_Tambor_Vano" + str(k), (2.28 * math.cos(a), 2.28 * math.sin(a), 88.9), (0.1, 0.5, 1.4), m_hueco, rot=(0, 0, a))
 aro("GI_Tambor_Anillo", (0, 0, 90.2), 2.3, 0.14, m_albero)
-esfera("GI_Cupulin", (0, 0, 90.2), 2.3, m_azulejo, escala=(1.0, 1.0, 1.25), segmentos=20, anillos=12)
+esfera("GI_Cupulin", (0, 0, 90.2), 2.3, m_cal, escala=(1.0, 1.0, 1.25), segmentos=20, anillos=12)
 for k in range(8):
     a = 2 * math.pi * k / 8
     # Nervios del cupulin
