@@ -98,30 +98,44 @@ def viga(nombre, a, b, grosor, mat):
     return caja(nombre, centro, (largo, grosor, grosor), mat, rot=(0, -math.atan2(dz, horiz), math.atan2(dy, dx)))
 
 # ==========================================
-# 1. MATERIALES (pocos y compartidos) con texturas
+# 1. MATERIALES (pocos y compartidos) con texturas recortadas de la foto del usuario
+#    (public/textures/burro_*_diff_1k.jpg, sin costuras; color_map_scale = metros por repetición)
 # ==========================================
 m_pelo = material("BUR_Pelaje_Pardo", (0.12, 0.092, 0.07, 1.0), 0.85)
-m_pelo.texture = "animal_fur"
+m_pelo.color_map = "burro_pelaje"
+m_pelo.color_map_scale = 0.22
 m_claro = material("BUR_Hocico_Vientre", (0.30, 0.265, 0.23, 1.0), 0.85)
-m_claro.texture = "animal_fur"
+m_claro.color_map = "burro_hocico"
+m_claro.color_map_scale = 0.12
 m_oscuro = material("BUR_Crin_Cola", (0.045, 0.035, 0.028, 1.0), 0.8)
-m_oscuro.texture = "animal_fur"
+m_oscuro.color_map = "burro_crin"
+m_oscuro.color_map_scale = 0.15
+m_barriga = material("BUR_Barriga_Clara", (0.5, 0.45, 0.4, 1.0), 0.85)
+m_barriga.color_map = "burro_barriga"
+m_barriga.color_map_scale = 0.3
 m_pezuna = material("BUR_Pezuna_Nariz", (0.025, 0.02, 0.018, 1.0), 0.5)
 m_ojo = material("BUR_Ojo", (0.012, 0.008, 0.006, 1.0), 0.15)
 m_madera = material("BUR_Madera_Cajas", (0.13, 0.065, 0.028, 1.0), 0.75)
-m_madera.texture = "wood_oak"
+m_madera.color_map = "burro_madera"
+m_madera.color_map_scale = 0.32
 m_cuero = material("BUR_Cuero", (0.16, 0.055, 0.025, 1.0), 0.6)
-m_cuero.texture = "beast_hide"
+m_cuero.color_map = "burro_cuero"
+m_cuero.color_map_scale = 0.22
 m_lona = material("BUR_Lona_Sacos", (0.21, 0.16, 0.085, 1.0), 0.9)
-m_lona.texture = "woven_linen"
+m_lona.color_map = "burro_saco"
+m_lona.color_map_scale = 0.25
 m_verde = material("BUR_Manta_Verde", (0.05, 0.085, 0.04, 1.0), 0.9)
-m_verde.texture = "woven_linen"
+m_verde.color_map = "burro_manta_verde"
+m_verde.color_map_scale = 0.22
 m_gris = material("BUR_Manta_Gris", (0.095, 0.088, 0.085, 1.0), 0.9)
-m_gris.texture = "woven_linen"
+m_gris.color_map = "burro_manta_gris"
+m_gris.color_map_scale = 0.28
 m_cuerda = material("BUR_Cuerda", (0.26, 0.17, 0.08, 1.0), 0.95)
-m_cuerda.texture = "woven_linen"
+m_cuerda.color_map = "burro_cuerda"
+m_cuerda.color_map_scale = 0.12
 m_metal = material("BUR_Metal", (0.32, 0.32, 0.33, 1.0), 0.35, metalico=1.0)
-m_metal.texture = "brushed_metal"
+m_metal.color_map = "burro_metal"
+m_metal.color_map_scale = 0.18
 m_hierro = material("BUR_Hierro", (0.03, 0.028, 0.026, 1.0), 0.5, metalico=0.6)
 m_luz = material("BUR_Luz_Farol", (1.0, 0.72, 0.35, 1.0), 0.3, emision=2.5)
 
@@ -131,7 +145,7 @@ m_luz = material("BUR_Luz_Farol", (1.0, 0.72, 0.35, 1.0), 0.3, emision=2.5)
 esfera("BUR_Barriga", (0, 0.0, 0.86), m_pelo, escala=(0.25, 0.50, 0.27), segmentos=18, anillos=12)
 esfera("BUR_Pecho", (0, -0.40, 0.90), m_pelo, escala=(0.21, 0.24, 0.27), segmentos=16, anillos=10)
 esfera("BUR_Grupa", (0, 0.42, 0.93), m_pelo, escala=(0.235, 0.27, 0.26), segmentos=16, anillos=10)
-esfera("BUR_Vientre", (0, 0.0, 0.70), m_claro, escala=(0.20, 0.40, 0.16), segmentos=16, anillos=10)
+esfera("BUR_Vientre", (0, 0.0, 0.70), m_barriga, escala=(0.20, 0.40, 0.16), segmentos=16, anillos=10)
 
 # ==========================================
 # 3. CUELLO Y CABEZA
