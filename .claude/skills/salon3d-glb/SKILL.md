@@ -96,9 +96,16 @@ node .claude/skills/salon3d-glb/scripts/capturar_y_exportar.cjs <tema>/<tema>.py
 
 ## Presupuesto y rendimiento
 
-- La exportación Completo junta en una pieza todo lo que comparte material, así que los draw
-  calls dependen del número de materiales (10–15 es lo habitual). Usa pocos materiales y
-  compártelos.
+- Ojo: la exportación de la app (Completo y Minimum) sale con una pieza y un material por objeto
+  (970 en el muelle de Riotinto) y las cajas con bisel sin UV. Para un juego, pásala después por
+  `scripts/optimizar_juego.mjs`: junta los materiales iguales, deja una malla por material
+  (12 llamadas de dibujo), rehace las UV en proyección de caja a densidad fija, quita la
+  transmisión (en three.js obliga a una pasada de render extra) y pasa las texturas a JPEG.
+  Necesita `npm i @gltf-transform/cli@4 sharp` en una carpeta aparte, desde la que se ejecuta:
+  `node optimizar_juego.mjs completo.glb juego.glb [uv_por_metro]`. Los nombres de material los
+  saca de una tabla de colores del script (la del muelle): cámbiala para otro modelo.
+  Después, `npx gltf-transform meshopt juego.glb juego_web.glb` reduce a la mitad para web.
+  Usa pocos materiales y compártelos.
 - Referencias: objetos sueltos 5–15 k triángulos; edificios 15–40 k; escenas grandes (plaza,
   muelle de 500 m) 40–80 k y 2–4 MB. Para juego en navegador eso va bien.
 - Escenas muy grandes (mazmorras de miles de m²): divídelas en sectores exportados por separado
