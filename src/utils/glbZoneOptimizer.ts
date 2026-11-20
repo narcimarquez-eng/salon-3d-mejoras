@@ -638,8 +638,11 @@ export async function optimizeGlb(
         if (bump?.image) bumpCanvas = sourceToCanvas(bump.image as CanvasImageSource, 512, 512);
         if (choice.natural) pbr.baseColorFactor = [1, 1, 1, (pbr.baseColorFactor || [1, 1, 1, 1])[3]];
       } else {
-        const img = getColorMapSet(choice.id)?.color.image as HTMLImageElement | undefined;
-        if (!img) { notes.push(`No se encontró la imagen "${choice.id}" para ${mat.name || 'una zona'}.`); continue; }
+        const img = getColorMapSet(choice.id)?.color?.image as HTMLImageElement | undefined;
+        if (!img || !img.complete || img.naturalWidth <= 0 || img.naturalHeight <= 0) {
+          notes.push(`No se encontró la imagen "${choice.id}" para ${mat.name || 'una zona'}.`);
+          continue;
+        }
         const side = Math.min(1024, Math.max(img.naturalWidth, img.naturalHeight));
         colorCanvas = sourceToCanvas(img, side, side);
         pbr.baseColorFactor = [1, 1, 1, (pbr.baseColorFactor || [1, 1, 1, 1])[3]];
@@ -825,8 +828,12 @@ export async function optimizeGlb(
   const viewRemap = new Map<number, number>();
   const keptViewJson: Json[] = [];
   const keptViewBytes: Uint8Array[] = [];
-  json.bufferViews.forEach((bv: Json, i: number) => {
-    if (usedViews.has(i)) { viewRemap.set(i, keptViewJson.length); keptViewJson.push(bv); keptViewBytes.push(views[i]); }
+  (json.bufferViews || []).forEach((bv: Json, i: number) => {
+    if (usedViews.has(i) && views[i]) {
+      viewRemap.set(i, keptViewJson.length);
+      keptViewJson.push(bv);
+      keptViewBytes.push(views[i]);
+    }
   });
   for (const r of viewRefs) r.bufferView = viewRemap.get(r.bufferView);
   json.bufferViews = keptViewJson;

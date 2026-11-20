@@ -28,8 +28,13 @@ import {
   clearBlenderAnimations,
 } from './blenderAnimation';
 import {
+  BUILTIN_COLOR_MAP_TEXTURES,
   applyBoxProjectedUv,
+  applyMosaicUvProjection,
+  findCatalogTextureOrSubTile,
   getColorMapSet,
+  loadPolyHavenColorMapSet,
+  parsePolyHavenSpec,
   preloadColorMapImages,
   slugifyTextureId,
 } from './textureLibrary';
@@ -1016,6 +1021,164 @@ bpy.ops.mesh.primitive_torus_add(major_radius=0.95, minor_radius=0.04, location=
 print("Obelisco construido desde cero usando verts + faces (from_pydata)!")
 `,
   },
+  {
+    id: 'gen_textured_quad_uv',
+    name: 'Malla UV con Textura Externa (ShaderNodeTexImage)',
+    category: 'generate',
+    description: 'Crea un plano 3D con from_pydata, mapea coordenadas UV en mesh.uv_layers y aplica una textura de imagen externa con ShaderNodeTexImage.',
+    code: `# PLANO 3D CON COORDENADAS UV Y TEXTURA DE IMAGEN EXTERNA (ShaderNodeTexImage)
+import bpy
+
+# Limpiar escena anterior
+bpy.ops.object.select_all(action='SELECT')
+bpy.ops.object.delete(use_global=False)
+
+# 1. Definir vertices y cara cuadrilatera (Plano en XZ o XY)
+verts = [
+    (-1.5, 0.0, -1.5),  # 0: Suroeste
+    ( 1.5, 0.0, -1.5),  # 1: Sureste
+    ( 1.5, 0.0,  1.5),  # 2: Noreste
+    (-1.5, 0.0,  1.5),  # 3: Noroeste
+]
+faces = [(0, 1, 2, 3)]
+
+# 2. Crear malla y ensamblar geometria con from_pydata
+mesh = bpy.data.meshes.new("Malla_UV_Textura")
+mesh.from_pydata(verts, [], faces)
+
+# 3. Crear capa de coordenadas UV y mapear cada loop de la cara
+uv_layer = mesh.uv_layers.new(name="UVMap")
+# Mapeo UV (u, v) para cada vertice/loop de la cara cuadrilatera
+uv_layer.data[0].uv = (0.0, 0.0)
+uv_layer.data[1].uv = (1.0, 0.0)
+uv_layer.data[2].uv = (1.0, 1.0)
+uv_layer.data[3].uv = (0.0, 1.0)
+
+# 4. Crear objeto en la escena y vincularlo
+obj = bpy.data.objects.new("Plano_Texturado", mesh)
+bpy.context.collection.objects.link(obj)
+
+# 5. Cargar imagen externa (prioriza window.uploadedTextures si subiste una)
+img = bpy.data.images.load("textura_exterior.png")
+
+# 6. Configurar material con nodos ShaderNodeTexImage -> Principled BSDF["Base Color"]
+mat = bpy.data.materials.new(name="Material_Textura_Externa")
+mat.use_nodes = True
+bsdf = mat.node_tree.nodes.get("Principled BSDF")
+
+tex_node = mat.node_tree.nodes.new('ShaderNodeTexImage')
+tex_node.image = img
+mat.node_tree.links.new(tex_node.outputs['Color'], bsdf.inputs['Base Color'])
+
+# Asignar material al objeto
+obj.data.materials.append(mat)
+
+print("¡Malla ensamblada con UVs personalizadas y ShaderNodeTexImage conectado a Base Color!")
+`,
+  },
+  {
+    id: 'gen_mosaic_dungeon_courtyard',
+    name: 'Santuario con Mosaicos y Atlas 5×2 (API Mosaicos)',
+    category: 'generate',
+    description:
+      'Demuestra la API de Mosaicos y Catálogos Atlas 5×2: aplica Mosaico Romano Imperial, Mural Nazarí, Mosaico Gótico y recorta sub-texturas individuales (T-01..T-10) en columnas, muros, agua y tejados.',
+    code: `# DEMOSTRACIÓN DE LA API DE MOSAICOS Y CATÁLOGOS ATLAS 5x2 (69 TEXTURAS INTEGRADAS)
+# COORD_MODE: Z_UP
+import bpy
+
+# 1. Limpiar escena
+bpy.ops.object.select_all(action='SELECT')
+bpy.ops.object.delete()
+
+# 2. Suelo Principal con MOSAICO ROMANO IMPERIAL Completo (Medallón Circular Estrellado)
+bpy.ops.mesh.primitive_cube_add(size=1.0, location=(0.0, 0.0, 0.08), scale=(5.2, 5.2, 0.16))
+suelo_romano = bpy.context.active_object
+suelo_romano.name = "Suelo_Mosaico_Romano"
+bpy.ops.material.set_mosaic_texture(
+    object=suelo_romano,
+    texture="mosaico_romano_imperial",
+    repeat=1,
+    projection="FLAT"
+)
+
+# 3. Plataforma de Altar Delantero con MOSAICO GÓTICO CARMESÍ (Cuadrícula 5x3)
+bpy.ops.mesh.primitive_cube_add(size=1.0, location=(0.0, -1.6, 0.24), scale=(2.4, 1.4, 0.18))
+altar_gotico = bpy.context.active_object
+altar_gotico.name = "Altar_Mosaico_Gotico"
+bpy.ops.material.set_mosaic_texture(
+    object=altar_gotico,
+    texture="mosaico_gotico_carmesi",
+    repeat=1,
+    projection="FLAT"
+)
+
+# 4. Muro Monumental Trasero con MURAL Y MOSAICO NAZARÍ (Triple Arco + Zócalo Alicatado 6x3)
+bpy.ops.mesh.primitive_cube_add(size=1.0, location=(0.0, 2.45, 1.65), scale=(5.2, 0.28, 3.1))
+muro_nazari = bpy.context.active_object
+muro_nazari.name = "Muro_Mosaico_Nazari"
+bpy.ops.material.set_mosaic_texture(
+    object=muro_nazari,
+    texture="mosaico_muro_nazari",
+    repeat=1,
+    projection="FLAT"
+)
+
+# 5. Muros Laterales usando Sub-Textura T-03 (Mosaicos Antiguos) del Catálogo de Paredes de Mazmorra
+for side_x, suffix in [(-2.45, "Izq"), (2.45, "Der")]:
+    bpy.ops.mesh.primitive_cube_add(size=1.0, location=(side_x, 0.0, 1.45), scale=(0.26, 4.8, 2.7))
+    muro_lat = bpy.context.active_object
+    muro_lat.name = f"Muro_Mazmorra_{suffix}"
+    bpy.ops.material.set_mosaic_texture(
+        object=muro_lat,
+        texture="catalogo_paredes_mazmorra",
+        tile="T-03",
+        repeat=2,
+        projection="BOX"
+    )
+
+# 6. Cuatro Columnas con Sub-Texturas del Catálogo de Columnas de Mazmorra (T-03 Runas y T-05 Espiral)
+col_positions = [(-1.65, -1.55, "T-03"), (1.65, -1.55, "T-03"), (-1.65, 1.25, "T-05"), (1.65, 1.25, "T-05")]
+for cx, cy, tile_code in col_positions:
+    bpy.ops.mesh.primitive_cylinder_add(radius=0.24, depth=2.6, location=(cx, cy, 1.45))
+    col_obj = bpy.context.active_object
+    col_obj.name = f"Columna_{tile_code}"
+    bpy.ops.material.set_mosaic_texture(
+        object=col_obj,
+        texture="catalogo_columnas_mazmorra",
+        tile=tile_code,
+        repeat=1,
+        projection="CYLINDER"
+    )
+
+# 7. Estanque Central con Sub-Textura T-24 (Cáusticas Solares) del Catálogo de Agua Cristalina
+bpy.ops.mesh.primitive_cylinder_add(radius=0.85, depth=0.14, location=(0.0, 0.25, 0.18))
+estanque = bpy.context.active_object
+estanque.name = "Estanque_Agua_T24"
+bpy.ops.material.set_mosaic_texture(
+    object=estanque,
+    texture="catalogo_agua_cristalina",
+    tile="T-24",
+    repeat=1,
+    projection="FLAT"
+)
+
+# 8. Cubierta Superior con Sub-Textura T-01 (Teja Árabe) del Catálogo de Tejados
+bpy.ops.mesh.primitive_cone_add(vertices=4, radius1=3.7, radius2=0.4, depth=1.1, location=(0.0, 2.45, 3.65), rotation=(0, 0, 0.7854))
+tejado = bpy.context.active_object
+tejado.name = "Cubierta_Tejado_T01"
+bpy.ops.material.set_mosaic_texture(
+    object=tejado,
+    texture="catalogo_tejados",
+    tile="T-01",
+    repeat=2,
+    projection="BOX"
+)
+
+bpy.context.scene.render.engine = 'EEVEE'
+bpy.ops.view3d.camera_preset(view='hero', zoom=115)
+print("¡Santuario generado con Mosaicos Romanos, Góticos, Nazaríes y Sub-Texturas de Catálogo!")
+`,
+  },
   // ============================================================================
   // CATEGORÍA 2: MODIFICACIÓN Y DEFORMACIÓN DE LA MALLA EXISTENTE
   // ============================================================================
@@ -1425,6 +1588,99 @@ function parsePythonColor(
   return new THREE.Color(fallbackHex);
 }
 
+declare global {
+  interface Window {
+    uploadedTextures?: Record<string, string>;
+    bpy?: any;
+    data?: any;
+    images?: any;
+  }
+}
+
+/**
+ * Resuelve una ruta o nombre de textura con prioridad para texturas subidas por el usuario
+ * (window.uploadedTextures) tanto por nombre de archivo como por clave 'default'.
+ */
+export function resolveTextureUrl(filepath: string): string {
+  const uploaded = typeof window !== 'undefined' ? window.uploadedTextures : undefined;
+  const raw = String(filepath || '').trim();
+  const cleanFilename = raw.replace(/^.*[\\/]/, '');
+
+  // 1. Coincidencia exacta con archivo subido por el usuario en memoria
+  if (uploaded) {
+    if (raw && uploaded[raw]) return uploaded[raw];
+    if (cleanFilename && uploaded[cleanFilename]) return uploaded[cleanFilename];
+  }
+
+  // 2. Coincidencia con cualquiera de los 9 Mosaicos/Catálogos integrados o sus 60 sub-texturas
+  const catalogMatch = findCatalogTextureOrSubTile(raw) || (cleanFilename ? findCatalogTextureOrSubTile(cleanFilename) : null);
+  if (catalogMatch) {
+    return catalogMatch.info.url;
+  }
+
+  // 3. Fallback a textura por defecto subida por el usuario
+  if (uploaded && uploaded['default']) {
+    return uploaded['default'];
+  }
+
+  if (/^(https?:|data:|blob:)/i.test(raw)) {
+    return raw;
+  }
+  if (raw.includes('Gemini_Generated_Image')) {
+    return '/assets/aistudio/Gemini_Generated_Image__5__1ae882e3.jpeg';
+  }
+  return raw;
+}
+
+// Inicialización defensiva de ámbito global (ECMA-262 § 20.2.1.1.1) para que llamadas dinámicas
+// vía eval o new Function("return bpy.data.images.load") resuelvan siempre una función válida
+if (typeof window !== 'undefined') {
+  const win = window as any;
+  if (!win.bpy) {
+    const defaultGlobalStore: any[] = [];
+    const defaultGlobalLoad = (...loadArgs: unknown[]) => {
+      const raw = typeof loadArgs[0] === 'string' ? loadArgs[0] : (loadArgs[0] as any)?.filepath || '';
+      const resolved = resolveTextureUrl(String(raw));
+      const name = String(raw).replace(/^.*[\\/]/, '') || 'Image';
+      const img = {
+        name,
+        filepath: String(raw),
+        source: 'FILE',
+        size: [1024, 1024],
+        depth: 32,
+        channels: 4,
+        colorspace_settings: { name: 'sRGB', is_data: false },
+        reload: () => {},
+        pack: () => {},
+        save: () => {},
+        _url: resolved,
+      };
+      defaultGlobalStore.push(img);
+      return img;
+    };
+    const defaultGlobalImages = Object.assign(defaultGlobalStore, {
+      load: defaultGlobalLoad,
+      new: (name = 'Image') => ({
+        name: String(name),
+        filepath: '',
+        source: 'GENERATED',
+        size: [1024, 1024],
+        depth: 32,
+        channels: 4,
+        _url: '',
+      }),
+      get: (n: string) => defaultGlobalStore.find((i) => i.name === n || i.filepath === n) || null,
+    });
+    win.bpy = {
+      data: {
+        images: defaultGlobalImages,
+      },
+    };
+    win.data = win.bpy.data;
+    win.images = defaultGlobalImages;
+  }
+}
+
 /**
  * Configura cualquier nueva malla creada por Python con todos los materiales del estudio.
  */
@@ -1433,6 +1689,8 @@ export interface ExtendedPBRMaterialProps {
   colorMapId?: string | null;
   /** Metros que ocupa una repetición de la imagen */
   colorMapTileMeters?: number;
+  /** Textura THREE.Texture de imagen externa cargada dinámicamente vía ShaderNodeTexImage o uploadedTextures */
+  customImageTexture?: THREE.Texture | null;
   metallic?: number;
   roughness?: number;
   emissionColor?: THREE.Color | null;
@@ -1690,28 +1948,76 @@ function applyMaterialToThreeMesh(
     mesh.userData.originalMap = procColorMap;
     mesh.userData.originalBumpMap = procBumpMap;
     mesh.userData.originalBumpScale = procBumpScale;
+
+    const geometry = mesh.geometry as THREE.BufferGeometry | undefined;
+    if (geometry && (!geometry.attributes.uv || !geometry.userData.hasCustomUV)) {
+      if (!geometry.attributes.uv || geometry.userData.isBMeshGeometry) {
+        const pos = geometry.attributes.position as THREE.BufferAttribute | undefined;
+        if (pos) {
+          if (!geometry.attributes.normal) geometry.computeVertexNormals();
+          const norm = geometry.attributes.normal as THREE.BufferAttribute | undefined;
+          const autoUvs = new Float32Array(pos.count * 2);
+          for (let i = 0; i < pos.count; i++) {
+            const x = pos.getX(i);
+            const y = pos.getY(i);
+            const z = pos.getZ(i);
+            const nx = norm ? Math.abs(norm.getX(i)) : 0;
+            const ny = norm ? Math.abs(norm.getY(i)) : 1;
+            const nz = norm ? Math.abs(norm.getZ(i)) : 0;
+            if (nx >= ny && nx >= nz) {
+              autoUvs[i * 2] = z;
+              autoUvs[i * 2 + 1] = y;
+            } else if (ny >= nx && ny >= nz) {
+              autoUvs[i * 2] = x;
+              autoUvs[i * 2 + 1] = z;
+            } else {
+              autoUvs[i * 2] = x;
+              autoUvs[i * 2 + 1] = y;
+            }
+          }
+          geometry.setAttribute('uv', new THREE.Float32BufferAttribute(autoUvs, 2));
+        }
+      }
+    }
   }
+
+  // Textura de imagen externa personalizada (ShaderNodeTexImage / uploadedTextures)
+  const customImageMap = extraPbr?.customImageTexture ?? null;
 
   // Mapa de color con imagen: tiene prioridad sobre el procedural y se proyecta en metros
   const imageSet = extraPbr?.colorMapId ? getColorMapSet(extraPbr.colorMapId) : null;
-  const imageColorMap = imageSet?.color ?? null;
-  if (extraPbr?.colorMapId && !imageColorMap) {
+  const imageColorMap = customImageMap ?? imageSet?.color ?? null;
+  if (extraPbr?.colorMapId && !imageColorMap && !customImageMap) {
     console.warn(`Textura de imagen "${extraPbr.colorMapId}" no cargada; se usa el color base.`);
   }
   const hadImageMap = Boolean(mesh.userData.imageMapApplied);
-  if (imageColorMap) {
+  if (customImageMap) {
+    mesh.userData.hasPerMeshTexture = true;
+    mesh.userData.originalMap = customImageMap;
+    mesh.userData.originalBumpMap = null;
+    mesh.userData.originalBumpScale = 0;
+    mesh.userData.originalNormalMap = imageSet?.normal ?? null;
+    mesh.userData.originalRoughnessMap = imageSet?.roughness ?? null;
+    mesh.userData.originalMetalnessMap = imageSet?.metalness ?? null;
+    mesh.userData.imageMapApplied = true;
+    mesh.userData.perMeshMapHasColor = true;
+  } else if (imageColorMap) {
     mesh.userData.hasPerMeshTexture = true;
     mesh.userData.originalMap = imageColorMap;
     mesh.userData.originalBumpMap = null;
     mesh.userData.originalBumpScale = 0;
     mesh.userData.originalNormalMap = imageSet?.normal ?? null;
     mesh.userData.originalRoughnessMap = imageSet?.roughness ?? null;
-    mesh.updateMatrix();
-    applyBoxProjectedUv(
-      mesh.geometry as THREE.BufferGeometry,
-      mesh.matrix,
-      extraPbr?.colorMapTileMeters ?? 3
-    );
+    mesh.userData.originalMetalnessMap = imageSet?.metalness ?? null;
+    const geometry = mesh.geometry as THREE.BufferGeometry;
+    if (!geometry.attributes.uv || !geometry.userData.hasCustomUV) {
+      mesh.updateMatrix();
+      applyBoxProjectedUv(
+        geometry,
+        mesh.matrix,
+        extraPbr?.colorMapTileMeters ?? 3
+      );
+    }
   } else if (hadImageMap) {
     // El script quitó el mapa de imagen: vuelve al procedural (o al color base)
     mesh.userData.hasPerMeshTexture = Boolean(texPattern);
@@ -1720,11 +2026,12 @@ function applyMaterialToThreeMesh(
     mesh.userData.originalBumpScale = procBumpScale;
     mesh.userData.originalNormalMap = null;
     mesh.userData.originalRoughnessMap = null;
+    mesh.userData.originalMetalnessMap = null;
   }
   mesh.userData.imageMapApplied = Boolean(imageColorMap);
   // ¿El mapa por malla ya trae su propio color? (imagen o patrón con color natural). Si no, la app debe
   // conservar el color base del material para teñir el patrón, como hace Blender.
-  mesh.userData.perMeshMapHasColor = Boolean(imageColorMap) || Boolean(texPattern && useNatColor);
+  mesh.userData.perMeshMapHasColor = Boolean(customImageMap) || Boolean(imageColorMap) || Boolean(texPattern && useNatColor);
 
   const resolvedRough =
     texPreset && roughness === 0.38 ? texPreset.pbr.roughness : roughness;
@@ -1781,16 +2088,21 @@ function applyMaterialToThreeMesh(
     stdMat.opacity = isTransparent ? Math.min(alphaVal, 1.0 - transVal * 0.55) : 1.0;
     stdMat.side = sideMode;
 
-    // Normal y rugosidad del mapa de imagen (la rugosidad del mapa sustituye al valor fijo)
+    // Normal, rugosidad y metalicidad del mapa de imagen (PBR CC0 / Poly Haven)
     stdMat.normalMap = imageSet?.normal ?? null;
     stdMat.roughnessMap = imageSet?.roughness ?? null;
+    stdMat.metalnessMap = imageSet?.metalness ?? null;
     if (imageSet?.roughness) stdMat.roughness = 1.0;
+    if (imageSet?.metalness) stdMat.metalness = 1.0;
     if (imageColorMap || procColorMap || hadImageMap) {
       stdMat.map = imageColorMap ?? procColorMap ?? null;
     }
-    if (procBumpMap) {
+    if (procBumpMap && !imageColorMap) {
       stdMat.bumpMap = procBumpMap;
       stdMat.bumpScale = procBumpScale;
+    } else if (imageColorMap) {
+      stdMat.bumpMap = null;
+      stdMat.bumpScale = 0;
     }
 
     if (emissionColor && emissionStrength > 0) {
@@ -1816,7 +2128,7 @@ function applyMaterialToThreeMesh(
 
   const eeveeMat = mesh.userData.eeveeMaterial as THREE.MeshPhysicalMaterial | undefined;
   if (eeveeMat) {
-    eeveeMat.color.copy(effectiveColor);
+    eeveeMat.color.copy(imageColorMap ? new THREE.Color('#ffffff') : effectiveColor);
     eeveeMat.metalness = clampedMetal;
     eeveeMat.roughness = Math.max(0.03, clampedRough * 0.92);
     if (resolvedClearcoat !== undefined) {
@@ -1838,12 +2150,20 @@ function applyMaterialToThreeMesh(
     eeveeMat.transparent = isTransparent;
     eeveeMat.opacity = isTransparent ? Math.min(alphaVal, 1.0 - transVal * 0.55) : 1.0;
     eeveeMat.side = sideMode;
-    if (procColorMap) {
-      eeveeMat.map = procColorMap;
+    eeveeMat.normalMap = imageSet?.normal ?? null;
+    eeveeMat.roughnessMap = imageSet?.roughness ?? null;
+    eeveeMat.metalnessMap = imageSet?.metalness ?? null;
+    if (imageSet?.roughness) eeveeMat.roughness = 1.0;
+    if (imageSet?.metalness) eeveeMat.metalness = 1.0;
+    if (imageColorMap || procColorMap || hadImageMap) {
+      eeveeMat.map = imageColorMap ?? procColorMap ?? null;
     }
-    if (procBumpMap) {
+    if (procBumpMap && !imageColorMap) {
       eeveeMat.bumpMap = procBumpMap;
       eeveeMat.bumpScale = procBumpScale;
+    } else if (imageColorMap) {
+      eeveeMat.bumpMap = null;
+      eeveeMat.bumpScale = 0;
     }
     if (emissionColor && emissionStrength > 0) {
       eeveeMat.emissive.copy(emissionColor);
@@ -1854,7 +2174,7 @@ function applyMaterialToThreeMesh(
 
   const cyclesMat = mesh.userData.cyclesMaterial as THREE.MeshPhysicalMaterial | undefined;
   if (cyclesMat) {
-    cyclesMat.color.copy(effectiveColor);
+    cyclesMat.color.copy(imageColorMap ? new THREE.Color('#ffffff') : effectiveColor);
     cyclesMat.metalness = clampedMetal;
     cyclesMat.roughness = Math.max(0.02, Math.min(1, clampedRough * 0.78));
     cyclesMat.clearcoat =
@@ -1874,8 +2194,13 @@ function applyMaterialToThreeMesh(
     cyclesMat.transparent = isTransparent;
     cyclesMat.opacity = isTransparent ? Math.min(alphaVal, 1.0 - transVal * 0.5) : 1.0;
     cyclesMat.side = sideMode;
-    if (procColorMap) {
-      cyclesMat.map = procColorMap;
+    cyclesMat.normalMap = imageSet?.normal ?? null;
+    cyclesMat.roughnessMap = imageSet?.roughness ?? null;
+    cyclesMat.metalnessMap = imageSet?.metalness ?? null;
+    if (imageSet?.roughness) cyclesMat.roughness = 1.0;
+    if (imageSet?.metalness) cyclesMat.metalness = 1.0;
+    if (imageColorMap || procColorMap || hadImageMap) {
+      cyclesMat.map = imageColorMap ?? procColorMap ?? null;
     }
     if (procBumpMap) {
       cyclesMat.bumpMap = procBumpMap;
@@ -1890,15 +2215,15 @@ function applyMaterialToThreeMesh(
 
   const toonMat = mesh.userData.toonMaterial as THREE.MeshToonMaterial | undefined;
   if (toonMat) {
-    toonMat.color.copy(effectiveColor);
+    toonMat.color.copy(imageColorMap ? new THREE.Color('#ffffff') : effectiveColor);
     toonMat.transparent = isTransparent;
     toonMat.opacity = isTransparent ? Math.min(alphaVal, 1.0 - transVal * 0.6) : 1.0;
     toonMat.side = sideMode;
     if (extraPbr?.customGradientMap) {
       toonMat.gradientMap = extraPbr.customGradientMap;
     }
-    if (procColorMap) {
-      toonMat.map = procColorMap;
+    if (imageColorMap || procColorMap || hadImageMap) {
+      toonMat.map = imageColorMap ?? procColorMap ?? null;
     }
     if (procBumpMap) {
       toonMat.bumpMap = procBumpMap;
@@ -1927,7 +2252,13 @@ function applyMaterialToThreeMesh(
   } else {
     const activeMat = Array.isArray(mesh.material) ? mesh.material[0] : mesh.material;
     if (activeMat && 'color' in activeMat) {
-      (activeMat as THREE.MeshStandardMaterial).color.copy(effectiveColor);
+      (activeMat as THREE.MeshStandardMaterial).color.copy(
+        customImageMap ? new THREE.Color('#ffffff') : effectiveColor
+      );
+    }
+    if (activeMat && 'map' in activeMat && customImageMap) {
+      (activeMat as THREE.MeshStandardMaterial).map = customImageMap;
+      (activeMat as THREE.Material).needsUpdate = true;
     }
   }
 
@@ -2734,7 +3065,7 @@ function parseTopLevelComprehension(inner: string): {
       depth = Math.max(0, depth - 1);
     } else if (depth === 0) {
       const rem = afterIn.slice(i);
-      if (/^\s+if\s+/.test(rem)) {
+      if (/^\s+if(?:\s+|(?=\())/.test(rem)) {
         ifIdx = i;
         break;
       }
@@ -2742,7 +3073,8 @@ function parseTopLevelComprehension(inner: string): {
   }
 
   const iterPart = (ifIdx !== -1 ? afterIn.slice(0, ifIdx) : afterIn).trim();
-  const condPart = ifIdx !== -1 ? afterIn.slice(ifIdx).replace(/^\s+if\s+/, '').trim() : undefined;
+  const condPart =
+    ifIdx !== -1 ? afterIn.slice(ifIdx).replace(/^\s+if(?:\s+|(?=\())/, '').trim() : undefined;
 
   const vClean = rawVars.replace(/^\(|\)$/g, '').trim();
   const param = vClean.includes(',') ? `[${vClean.replace(/\(/g, '[').replace(/\)/g, ']')}]` : vClean;
@@ -3060,7 +3392,7 @@ function rewritePythonSyntaxInLine(line: string, isForOrCompHeader: boolean = fa
         .replace(/\bis\b/g, '===')
         .replace(/\band\b/g, '&&')
         .replace(/\bor\b/g, '||')
-        .replace(/\bnot\s+/g, '!');
+        .replace(/\bnot(?:\s+|(?=\())/g, '!');
       return t;
     })
     .join('');
@@ -3205,7 +3537,10 @@ function extractBalancedOperandBackward(str: string, endIdx: number): { operand:
       depth++;
     } else if (ch === '(' || ch === '[' || ch === '{') {
       if (depth > 0) depth--;
-      else break;
+      else {
+        cursor++;
+        break;
+      }
     } else if (depth === 0) {
       if (/[\s,;:?!=<>&|^~+*/%([{]/.test(ch)) {
         cursor++;
@@ -3327,7 +3662,7 @@ function rewriteInlineTernaries(line: string): string {
     }
 
     const sub = line.slice(i);
-    const ifMatch = sub.match(/^\s+if\s+/);
+    const ifMatch = sub.match(/^\s+if(?:\s+|(?=\())/);
     if (ifMatch && i > 0) {
       const ifEnd = i + ifMatch[0].length;
       let depth = 0;
@@ -3827,6 +4162,7 @@ export async function executeBlenderPythonScript(
   let proxiesDirty = true;
   let objectsCreatedCount = 0;
   let totalVerticesModified = 0;
+  const pendingAsyncTasks: Promise<void>[] = [];
 
   const collectMeshes = () => {
     meshes = [];
@@ -3886,6 +4222,7 @@ export async function executeBlenderPythonScript(
     _bumpScale: number;
     _flipNormals: boolean;
     _customGradientMap: THREE.DataTexture | null;
+    _customImageTexture?: THREE.Texture | null;
     _texturePattern: TexturePatternType;
     _textureRepeat: number;
     _textureNaturalColor: boolean;
@@ -3963,6 +4300,266 @@ export async function executeBlenderPythonScript(
     return { tex, mainColor: brightestColor };
   };
 
+  /**
+   * Carga una textura de imagen externa con THREE.TextureLoader, priorizando texturas subidas en
+   * memoria (window.uploadedTextures), configurando texture.colorSpace = THREE.SRGBColorSpace y
+   * asignándola dinámicamente al material PBR.
+   */
+  const loadTextureForMaterial = (
+    targetMat: BlenderMaterialInstance,
+    rawUrlOrPath: string,
+    onLoadedMsg?: (msg: string) => void
+  ) => {
+    // 0. Verificar si es una textura PBR CC0 en directo de Poly Haven ("polyhaven:<asset_id>")
+    const polyHavenSpec = parsePolyHavenSpec(rawUrlOrPath);
+    if (polyHavenSpec) {
+      targetMat._colorMapId = polyHavenSpec.cacheKey;
+      const task = loadPolyHavenColorMapSet(polyHavenSpec.assetId, polyHavenSpec.resolution)
+        .then((set) => {
+          if (set.color) {
+            targetMat._colorMapId = polyHavenSpec.cacheKey;
+            targetMat._customImageTexture = null;
+            targetMat._sync();
+            const mapsSummary = [
+              'Diffuse',
+              set.normal ? 'Normal' : null,
+              set.roughness ? 'Roughness' : null,
+              set.metalness ? 'Metalness' : null,
+            ]
+              .filter(Boolean)
+              .join('+');
+            const loadedMsg = `Poly Haven PBR CC0 cargada: "${polyHavenSpec.assetId}" (${polyHavenSpec.resolution.toUpperCase()} — ${mapsSummary})`;
+            if (onLoadedMsg) onLoadedMsg(loadedMsg);
+            else logs.push(loadedMsg);
+          }
+        })
+        .catch((err) => {
+          logs.push(
+            `Aviso Poly Haven ("${polyHavenSpec.assetId}"): ${err instanceof Error ? err.message : String(err)}`
+          );
+        });
+      pendingAsyncTasks.push(task);
+      return;
+    }
+
+    // 1. Verificar si corresponde a un Mosaico/Catálogo o Sub-Textura integrada (ej. "suelo_mazmorra_t04")
+    const catalogHit = findCatalogTextureOrSubTile(rawUrlOrPath);
+    if (catalogHit) {
+      const targetId = catalogHit.subTile ? catalogHit.subTile.id : catalogHit.info.id;
+      const set = getColorMapSet(targetId);
+      if (set.color) {
+        targetMat._customImageTexture = set.color;
+        targetMat._colorMapId = targetId;
+        targetMat._sync();
+        if (onLoadedMsg) {
+          onLoadedMsg(
+            `Textura de catálogo/mosaico cargada: "${targetId}" (${catalogHit.subTile ? catalogHit.subTile.name : catalogHit.info.name})`
+          );
+        }
+        return;
+      }
+    }
+
+    const url = resolveTextureUrl(rawUrlOrPath);
+    if (!url) return;
+    const loader = new THREE.TextureLoader();
+    loader.load(
+      url,
+      (texture) => {
+        texture.colorSpace = THREE.SRGBColorSpace;
+        texture.wrapS = THREE.RepeatWrapping;
+        texture.wrapT = THREE.RepeatWrapping;
+        texture.needsUpdate = true;
+        targetMat._customImageTexture = texture;
+        targetMat._sync();
+        if (onLoadedMsg) {
+          onLoadedMsg(`Textura externa cargada con THREE.SRGBColorSpace: ${rawUrlOrPath || url}`);
+        }
+      },
+      undefined,
+      (err) => {
+        console.warn('Error cargando textura externa con THREE.TextureLoader:', err);
+      }
+    );
+  };
+
+  /**
+   * Colección de capas UV estilo Blender (mesh.uv_layers). Permite uv_layers.new(), uv_layers.active,
+   * uv_layer[loop_idx].uv = (u, v) y uv_layer.data[loop_idx].uv = (u, v), sincronizando directamente
+   * el atributo 'uv' de THREE.BufferGeometry en tiempo real.
+   */
+  const createUvLayersCollection = (
+    getGeometry: () => THREE.BufferGeometry | null,
+    getLoopMap?: () => number[][]
+  ) => {
+    interface UvLayerItem {
+      name: string;
+      active: boolean;
+      data: any;
+      [key: number]: any;
+    }
+
+    const layers: UvLayerItem[] = [];
+    let activeIndex = 0;
+
+    const createLayerInstance = (layerName: string = 'UVMap'): UvLayerItem => {
+      const layerObj: any = {
+        name: layerName,
+        active: true,
+      };
+
+      const getItemProxy = (loopIdx: number) => ({
+        get uv() {
+          const geo = getGeometry();
+          const uvAttr = geo?.getAttribute('uv') as THREE.BufferAttribute | undefined;
+          if (uvAttr) {
+            const loopMap = getLoopMap ? getLoopMap() : undefined;
+            const targetVerts = loopMap && loopMap[loopIdx] ? loopMap[loopIdx] : [loopIdx];
+            const v0 = targetVerts[0] ?? loopIdx;
+            if (v0 >= 0 && v0 < uvAttr.count) {
+              return [uvAttr.getX(v0), uvAttr.getY(v0)];
+            }
+          }
+          return [0, 0];
+        },
+        set uv(val: any) {
+          const u = Number(Array.isArray(val) ? val[0] : (val?.x ?? val?.[0])) || 0;
+          const v = Number(Array.isArray(val) ? val[1] : (val?.y ?? val?.[1])) || 0;
+          const geo = getGeometry();
+          const uvAttr = geo?.getAttribute('uv') as THREE.BufferAttribute | undefined;
+          if (geo && uvAttr) {
+            geo.userData.hasCustomUV = true;
+            const loopMap = getLoopMap ? getLoopMap() : undefined;
+            const targetVerts = loopMap && loopMap[loopIdx] ? loopMap[loopIdx] : [loopIdx];
+            for (const vIdx of targetVerts) {
+              if (vIdx >= 0 && vIdx < uvAttr.count) {
+                uvAttr.setXY(vIdx, u, v);
+              }
+            }
+            uvAttr.needsUpdate = true;
+          }
+        },
+      });
+
+      const dataProxy = new Proxy([], {
+        get(target, prop) {
+          if (prop === 'foreach_set') {
+            return (attr: string, flatValues: number[]) => {
+              if (attr === 'uv' && Array.isArray(flatValues)) {
+                const geo = getGeometry();
+                const uvAttr = geo?.getAttribute('uv') as THREE.BufferAttribute | undefined;
+                if (geo && uvAttr) {
+                  geo.userData.hasCustomUV = true;
+                  const loopMap = getLoopMap ? getLoopMap() : undefined;
+                  const totalLoops = Math.floor(flatValues.length / 2);
+                  for (let li = 0; li < totalLoops; li++) {
+                    const u = flatValues[li * 2];
+                    const v = flatValues[li * 2 + 1];
+                    const targetVerts = loopMap && loopMap[li] ? loopMap[li] : [li];
+                    for (const vIdx of targetVerts) {
+                      if (vIdx >= 0 && vIdx < uvAttr.count) {
+                        uvAttr.setXY(vIdx, u, v);
+                      }
+                    }
+                  }
+                  uvAttr.needsUpdate = true;
+                }
+              }
+            };
+          }
+          if (prop === 'length') {
+            const loopMap = getLoopMap ? getLoopMap() : undefined;
+            if (loopMap && loopMap.length > 0) return loopMap.length;
+            const geo = getGeometry();
+            return geo?.getAttribute('uv')?.count || 0;
+          }
+          const idx = Number(prop);
+          if (!Number.isNaN(idx)) {
+            return getItemProxy(idx);
+          }
+          return Reflect.get(target, prop);
+        },
+        set(_target, prop, val) {
+          const idx = Number(prop);
+          if (!Number.isNaN(idx)) {
+            const item = getItemProxy(idx);
+            if (val && typeof val === 'object' && 'uv' in val) {
+              item.uv = val.uv;
+            } else {
+              item.uv = val;
+            }
+            return true;
+          }
+          return true;
+        },
+      });
+
+      layerObj.data = dataProxy;
+
+      return new Proxy(layerObj, {
+        get(target, prop) {
+          const idx = Number(prop);
+          if (!Number.isNaN(idx)) {
+            return getItemProxy(idx);
+          }
+          return Reflect.get(target, prop);
+        },
+        set(target, prop, val) {
+          const idx = Number(prop);
+          if (!Number.isNaN(idx)) {
+            const item = getItemProxy(idx);
+            if (val && typeof val === 'object' && 'uv' in val) {
+              item.uv = val.uv;
+            } else {
+              item.uv = val;
+            }
+            return true;
+          }
+          return Reflect.set(target, prop, val);
+        },
+      });
+    };
+
+    const uvLayersProxy = new Proxy(layers, {
+      get(target, prop) {
+        if (prop === 'new') {
+          return (name: string = 'UVMap') => {
+            const l = createLayerInstance(name);
+            target.push(l);
+            activeIndex = target.length - 1;
+            return l;
+          };
+        }
+        if (prop === 'active') {
+          if (target.length === 0) {
+            const l = createLayerInstance('UVMap');
+            target.push(l);
+            activeIndex = 0;
+          }
+          return target[activeIndex] || target[0];
+        }
+        if (prop === 'get') {
+          return (name: string) => target.find((l) => l.name === name) || target[0] || null;
+        }
+        if (typeof prop === 'string' && Number.isNaN(Number(prop))) {
+          const found = target.find((l) => l.name === prop);
+          if (found) return found;
+        }
+        return Reflect.get(target, prop);
+      },
+      set(target, prop, val) {
+        if (prop === 'active') {
+          const idx = target.indexOf(val);
+          if (idx !== -1) activeIndex = idx;
+          return true;
+        }
+        return Reflect.set(target, prop, val);
+      },
+    });
+
+    return uvLayersProxy;
+  };
+
   const createBlenderMaterial = (matName: string = 'Material'): BlenderMaterialInstance => {
     // Inferencia automática de textura procedural si el nombre del material indica piedra, madera, mármol, ladrillo, agua, etc.
     // Como en Blender, el nombre del material no asigna textura: solo `mat.texture = "..."` en el script
@@ -3997,6 +4594,7 @@ export async function executeBlenderPythonScript(
       _textureNaturalColor: false,
       _colorMapId: null,
       _colorMapTile: 3,
+      _customImageTexture: null as THREE.Texture | null,
       _linkedMeshes: new Set<THREE.Mesh>(),
       _sync() {
         const extraPbr: ExtendedPBRMaterialProps = {
@@ -4012,6 +4610,7 @@ export async function executeBlenderPythonScript(
           useBackfaceCulling: this.use_backface_culling,
           flipNormals: this._flipNormals || this.use_backface_culling,
           customGradientMap: this._customGradientMap,
+          customImageTexture: this._customImageTexture,
           texturePattern: this._texturePattern,
           textureRepeat: this._textureRepeat,
           textureNaturalColor: this._textureNaturalColor,
@@ -4034,9 +4633,30 @@ export async function executeBlenderPythonScript(
         nodes: null,
         links: {
           new: (...linkArgs: any[]) => {
+            let hasTexImageNode: any = null;
+            let connectsToBaseColor = false;
+
             for (const arg of linkArgs) {
               const sName = String(arg?.name || '').toLowerCase();
               const nType = String(arg?._nodeType || '').toLowerCase();
+              const ownerNode = arg?._node;
+
+              if (
+                nType.includes('teximage') ||
+                nType.includes('tex_image') ||
+                ownerNode?.type?.toLowerCase?.().includes('teximage') ||
+                ownerNode?.type?.toLowerCase?.().includes('tex_image')
+              ) {
+                hasTexImageNode = ownerNode || arg;
+              }
+              if (
+                sName === 'base color' ||
+                sName === 'color' ||
+                sName === '0' ||
+                sName === 'shadersocket0'
+              ) {
+                connectsToBaseColor = true;
+              }
               if (
                 sName.includes('normal') ||
                 sName.includes('height') ||
@@ -4056,6 +4676,19 @@ export async function executeBlenderPythonScript(
                 matObj._texturePattern = 'stained_glass';
               }
             }
+
+            if (hasTexImageNode && connectsToBaseColor) {
+              hasTexImageNode._connectedToBaseColor = true;
+              const targetImg = hasTexImageNode._image ?? hasTexImageNode.image;
+              const path =
+                (targetImg?.filepath && findCatalogTextureOrSubTile(targetImg.filepath)
+                  ? targetImg.filepath
+                  : targetImg?._url || targetImg?.filepath) ||
+                (typeof targetImg === 'string' ? targetImg : '') ||
+                'default';
+              loadTextureForMaterial(matObj, path, (msg) => logs.push(msg));
+            }
+
             matObj._sync();
             return {};
           },
@@ -4264,23 +4897,53 @@ export async function executeBlenderPythonScript(
         syncRampToMaterial();
       }
 
-      return {
+      let _nodeImage: any = null;
+      let _nodeConnectedToBaseColor = false;
+
+      const nodeObj: any = {
         name: nodeName,
         type: nodeType,
+        _nodeType: nodeType,
         location: [0, 0],
         inputs: nodeInputsProxy,
-        outputs: new Proxy(
-          {},
-          {
-            get: (_t, outProp) => ({
-              name: String(outProp),
-              _nodeType: nodeType,
-              default_value: [1, 1, 1, 1],
-            }),
-          }
-        ),
         color_ramp: colorRampProxy,
+        get _image() {
+          return _nodeImage;
+        },
+        get _connectedToBaseColor() {
+          return _nodeConnectedToBaseColor;
+        },
+        set _connectedToBaseColor(v: boolean) {
+          _nodeConnectedToBaseColor = v;
+        },
+        get image() {
+          return _nodeImage;
+        },
+        set image(img: any) {
+          _nodeImage = img;
+          const path =
+            (img?.filepath && findCatalogTextureOrSubTile(img.filepath)
+              ? img.filepath
+              : img?._url || img?.filepath) ||
+            (typeof img === 'string' ? img : '') ||
+            'default';
+          loadTextureForMaterial(matObj, path, (msg) => logs.push(msg));
+        },
       };
+
+      nodeObj.outputs = new Proxy(
+        {},
+        {
+          get: (_t, outProp) => ({
+            name: String(outProp),
+            _nodeType: nodeType,
+            _node: nodeObj,
+            default_value: [1, 1, 1, 1],
+          }),
+        }
+      );
+
+      return nodeObj;
     };
 
     const nodesDict: Record<string, any> = {
@@ -4354,6 +5017,36 @@ export async function executeBlenderPythonScript(
           return true;
         }
         if (prop === 'texture' || prop === 'pattern' || prop === 'textura') {
+          const phSpec = parsePolyHavenSpec(String(value));
+          if (phSpec) {
+            target._colorMapId = phSpec.cacheKey;
+            target._customImageTexture = null;
+            const cachedPh = getColorMapSet(phSpec.cacheKey);
+            if (cachedPh.color) {
+              target._sync();
+            } else {
+              pendingAsyncTasks.push(
+                loadPolyHavenColorMapSet(phSpec.assetId, phSpec.resolution)
+                  .then(() => {
+                    target._colorMapId = phSpec.cacheKey;
+                    target._customImageTexture = null;
+                    target._sync();
+                  })
+                  .catch((err) => {
+                    logs.push(
+                      `Aviso Poly Haven ("${phSpec.assetId}"): ${err instanceof Error ? err.message : String(err)}`
+                    );
+                  })
+              );
+            }
+            return true;
+          }
+          const catalogMatch = findCatalogTextureOrSubTile(String(value));
+          if (catalogMatch) {
+            target._colorMapId = catalogMatch.subTile ? catalogMatch.subTile.id : catalogMatch.info.id;
+            target._sync();
+            return true;
+          }
           target._texturePattern = resolveTexturePatternId(String(value));
           // Como al crear un material con patrón: el relieve toma el valor del patrón si no se fijó otro
           if (target._texturePattern !== 'none' && target._bumpScale === 0.035) {
@@ -4372,10 +5065,44 @@ export async function executeBlenderPythonScript(
           target._sync();
           return true;
         }
-        // Mapa de color con imagen: mat.color_map = "cal_blanca" (o un nombre de "Mis texturas")
-        if (prop === 'color_map' || prop === 'textura_imagen' || prop === 'imagen') {
-          target._colorMapId = value == null || value === '' ? null : slugifyTextureId(String(value));
-          target._sync();
+        // Mapa de color con imagen: mat.color_map = "mosaico_romano_imperial", "suelo_mazmorra_t04" o "polyhaven:brick_wall_001"
+        if (prop === 'color_map' || prop === 'textura_imagen' || prop === 'imagen' || prop === 'mosaic') {
+          if (value == null || value === '') {
+            target._colorMapId = null;
+            target._sync();
+          } else {
+            const phSpec = parsePolyHavenSpec(String(value));
+            if (phSpec) {
+              target._colorMapId = phSpec.cacheKey;
+              target._customImageTexture = null;
+              const cachedPh = getColorMapSet(phSpec.cacheKey);
+              if (cachedPh.color) {
+                target._sync();
+              } else {
+                pendingAsyncTasks.push(
+                  loadPolyHavenColorMapSet(phSpec.assetId, phSpec.resolution)
+                    .then(() => {
+                      target._colorMapId = phSpec.cacheKey;
+                      target._customImageTexture = null;
+                      target._sync();
+                    })
+                    .catch((err) => {
+                      logs.push(
+                        `Aviso Poly Haven ("${phSpec.assetId}"): ${err instanceof Error ? err.message : String(err)}`
+                      );
+                    })
+                );
+              }
+            } else {
+              const catalogMatch = findCatalogTextureOrSubTile(String(value));
+              target._colorMapId = catalogMatch
+                ? catalogMatch.subTile
+                  ? catalogMatch.subTile.id
+                  : catalogMatch.info.id
+                : slugifyTextureId(String(value));
+              target._sync();
+            }
+          }
           return true;
         }
         // Metros por repetición de la imagen: mat.color_map_scale = 2.5
@@ -4557,6 +5284,9 @@ export async function executeBlenderPythonScript(
       return list;
     };
 
+    let _internalUvLayers: any = null;
+    let _internalLoops: any[] | null = null;
+    let _internalPolygons: any[] | null = null;
     const objData = {
       _geometry: mesh.geometry,
       _threeMesh: mesh,
@@ -4568,10 +5298,53 @@ export async function executeBlenderPythonScript(
       energy: 1000,
       color: [1, 1, 1],
       size: 2.0,
+      get uv_layers() {
+        const customMeshData = (rawObj as any)?._meshData;
+        if (customMeshData && customMeshData.uv_layers) {
+          return customMeshData.uv_layers;
+        }
+        if (!_internalUvLayers) {
+          _internalUvLayers = createUvLayersCollection(() => mesh.geometry as THREE.BufferGeometry);
+        }
+        return _internalUvLayers;
+      },
+      set uv_layers(val: any) {
+        _internalUvLayers = val;
+      },
+      get loops() {
+        const customMeshData = (rawObj as any)?._meshData;
+        if (customMeshData && customMeshData.loops && customMeshData.loops.length > 0) {
+          return customMeshData.loops;
+        }
+        if (_internalLoops && _internalLoops.length > 0) {
+          return _internalLoops;
+        }
+        const pos = mesh.geometry.attributes.position;
+        const count = pos ? pos.count : 0;
+        const list: any[] = [];
+        for (let i = 0; i < count; i++) {
+          list.push({ index: i, vertex_index: i });
+        }
+        return list;
+      },
+      set loops(val: any[]) {
+        _internalLoops = val;
+      },
       get vertices() {
+        const customMeshData = (rawObj as any)?._meshData;
+        if (customMeshData && Array.isArray(customMeshData.vertices) && customMeshData.vertices.length > 0) {
+          return customMeshData.vertices;
+        }
         return getMeshVertexProxies();
       },
       get polygons() {
+        const customMeshData = (rawObj as any)?._meshData;
+        if (customMeshData && customMeshData.polygons && customMeshData.polygons.length > 0) {
+          return customMeshData.polygons;
+        }
+        if (_internalPolygons && _internalPolygons.length > 0) {
+          return _internalPolygons;
+        }
         const pos = mesh.geometry.attributes.position;
         const count = pos ? Math.floor(pos.count / 3) : 0;
         const polyArr: any[] = [];
@@ -4581,10 +5354,23 @@ export async function executeBlenderPythonScript(
             use_smooth: true,
             material_index: 0,
             vertices: [pIdx * 3, pIdx * 3 + 1, pIdx * 3 + 2],
+            loop_start: pIdx * 3,
+            loop_total: 3,
+            loop_indices: [pIdx * 3, pIdx * 3 + 1, pIdx * 3 + 2],
+            get normal() {
+              const verts = objData.vertices;
+              return computeNormalFromCoords(
+                this.vertices.map((idx: number) => verts[idx]?.co)
+              );
+            },
+            set normal(_val: any) {},
           });
         }
         (polyArr as any).foreach_set = () => {};
         return polyArr;
+      },
+      set polygons(val: any[]) {
+        _internalPolygons = val;
       },
       update: () => {
         mesh.geometry.computeVertexNormals();
@@ -5079,13 +5865,88 @@ export async function executeBlenderPythonScript(
     }
   };
 
-  // Crear colección iterable estilo Blender (`bpy.data.objects`, `bpy.data.meshes`, `bpy.data.materials`)
-  const createDataCollection = (items: any[], createFn: (...args: any[]) => any) => {
+  // Crear colección iterable estilo Blender (`bpy.data.objects`, `bpy.data.meshes`, `bpy.data.materials`, `bpy.data.images`)
+  const createDataCollection = (
+    items: any[],
+    createFn: (...args: any[]) => any,
+    extraMethods: Record<string, any> = {}
+  ) => {
+    // Asignar métodos extra directamente al array target para que existan tanto en target como en el proxy
+    Object.assign(items, extraMethods);
+
     return new Proxy(items, {
+      has(target, prop) {
+        if (prop in extraMethods) return true;
+        if (
+          prop === 'new' ||
+          prop === 'get' ||
+          prop === 'load' ||
+          prop === 'remove' ||
+          prop === 'keys' ||
+          prop === 'values' ||
+          prop === 'items' ||
+          prop === 'clear'
+        ) {
+          return true;
+        }
+        return prop in target || typeof prop === 'string';
+      },
       get(target, prop) {
+        // 1. Símbolos de JavaScript (Symbol.iterator, Symbol.toStringTag, etc.)
+        if (typeof prop === 'symbol') {
+          return Reflect.get(target, prop);
+        }
+
+        // 2. Métodos explícitos de la colección (load, new, get, remove, etc.)
+        if (extraMethods && prop in extraMethods && typeof extraMethods[prop as string] !== 'undefined') {
+          return extraMethods[prop as string];
+        }
+        if (prop === 'load') {
+          if (extraMethods && typeof extraMethods.load === 'function') {
+            return extraMethods.load;
+          }
+          if (typeof (target as any).load === 'function') {
+            return (target as any).load;
+          }
+          return (...loadArgs: unknown[]) => {
+            const raw = typeof loadArgs[0] === 'string' ? loadArgs[0] : (loadArgs[0] as any)?.filepath || '';
+            const resolved = resolveTextureUrl(String(raw));
+            const name = String(raw).replace(/^.*[\\/]/, '') || 'Image';
+            const img = {
+              name,
+              filepath: String(raw),
+              source: 'FILE',
+              size: [1024, 1024],
+              depth: 32,
+              channels: 4,
+              colorspace_settings: { name: 'sRGB', is_data: false },
+              reload: () => {},
+              pack: () => {},
+              save: () => {},
+              _url: resolved,
+            };
+            target.push(img);
+            return img;
+          };
+        }
         if (prop === 'new') return createFn;
         if (prop === 'get') {
-          return (name: string) => target.find((it) => it?.name === name) || null;
+          return (name: string, defaultVal: any = null) =>
+            target.find((it) => it?.name === name || it?.filepath === name) || defaultVal;
+        }
+        if (prop === 'keys') {
+          return () => target.map((it) => it?.name || '');
+        }
+        if (prop === 'values') {
+          return () => [...target];
+        }
+        if (prop === 'items') {
+          return () => target.map((it) => [it?.name || '', it]);
+        }
+        if (prop === 'clear') {
+          return () => {
+            target.length = 0;
+          };
         }
         if (prop === 'remove') {
           return (...rawRemoveArgs: any[]) => {
@@ -5104,10 +5965,29 @@ export async function executeBlenderPythonScript(
             }
           };
         }
-        if (typeof prop === 'string' && Number.isNaN(Number(prop)) && prop !== 'length' && prop !== '__isKw') {
-          const byName = target.find((it) => it?.name === prop);
+
+        // 3. Propiedades y métodos nativos del Array (length, slice, map, filter, push, indexOf, etc.)
+        if (prop in target || prop === 'length') {
+          const val = (target as any)[prop];
+          if (typeof val === 'function') {
+            return val.bind(target);
+          }
+          return val;
+        }
+
+        // 4. Búsqueda por nombre de objeto/material/imagen existente
+        if (typeof prop === 'string' && Number.isNaN(Number(prop)) && prop !== '__isKw') {
+          const byName = target.find((it) => it?.name === prop || it?.filepath === prop);
           if (byName) return byName;
-          if (typeof createFn === 'function') {
+          const isReserved =
+            prop === 'then' ||
+            prop === 'catch' ||
+            prop === 'finally' ||
+            prop === 'valueOf' ||
+            prop === 'toString' ||
+            prop === 'toJSON' ||
+            prop === 'constructor';
+          if (!isReserved && typeof createFn === 'function') {
             const autoCreated = createFn({ name: prop, __isKw: true });
             if (autoCreated) {
               if (autoCreated.name === undefined) autoCreated.name = prop;
@@ -5115,7 +5995,18 @@ export async function executeBlenderPythonScript(
             }
           }
         }
+
         return Reflect.get(target, prop);
+      },
+      set(target, prop, value) {
+        if (prop === 'load' && typeof value !== 'function') {
+          return true; // Prohibir sobreescritura de load con no-funciones
+        }
+        if (prop in extraMethods) {
+          extraMethods[prop as string] = value;
+        }
+        (target as any)[prop] = value;
+        return true;
       },
     });
   };
@@ -5193,6 +6084,14 @@ export async function executeBlenderPythonScript(
       }
     };
 
+    const loopToBufferMap: number[][] = [];
+    const loopsList: { index: number; vertex_index: number }[] = [];
+    const polygonsList: any[] = [];
+    const uvLayers = createUvLayersCollection(
+      () => meshDataObj._threeGeometry || meshDataObj._geometry,
+      () => loopToBufferMap
+    );
+
     const meshDataObj = {
       name: String(meshName),
       users: 1,
@@ -5202,8 +6101,11 @@ export async function executeBlenderPythonScript(
       _ownerProxy: null as any,
       _needsRebuild: false,
       materials: meshMaterialsProxy,
-      polygons: [] as any[],
+      polygons: polygonsList,
+      loops: loopsList,
+      uv_layers: uvLayers,
       vertices: [] as any[],
+      _loopToBufferMap: loopToBufferMap,
       _syncGeometryToBoundMesh: syncGeometryToBoundMesh,
       from_pydata: (...fdArgs: unknown[]) => {
         const { vertices: rawVerts, faces: rawFaces } = extractPyArgs(
@@ -5215,6 +6117,23 @@ export async function executeBlenderPythonScript(
         const faces: any[] = Array.isArray(rawFaces) ? rawFaces : [];
         const positions: number[] = [];
         const uvs: number[] = [];
+
+        loopToBufferMap.length = 0;
+        loopsList.length = 0;
+        polygonsList.length = 0;
+        meshDataObj.vertices.length = 0;
+
+        for (let vIdx = 0; vIdx < verts.length; vIdx++) {
+          const v = verts[vIdx];
+          const vx = Number(v?.[0] ?? v?.x) || 0;
+          const vy = Number(v?.[1] ?? v?.y) || 0;
+          const vz = Number(v?.[2] ?? v?.z) || 0;
+          meshDataObj.vertices.push({
+            index: vIdx,
+            co: createMathutilsVector([vx, vy, vz]),
+            normal: createMathutilsVector([0, 0, 1]),
+          });
+        }
 
         const transformedVerts: [number, number, number][] = verts.map((v: any) => {
           const vx = Number(v?.[0] ?? v?.x) || 0;
@@ -5232,6 +6151,9 @@ export async function executeBlenderPythonScript(
           uvs.push(a[0], a[2], b[0], b[2], c[0], c[2]);
         };
 
+        let totalLoopCount = 0;
+        let polyIndex = 0;
+
         for (const rawFace of faces) {
           const faceIndices: number[] = Array.isArray(rawFace)
             ? rawFace.map((idxOrV: any) => Number(typeof idxOrV === 'object' ? idxOrV?.index : idxOrV))
@@ -5239,17 +6161,75 @@ export async function executeBlenderPythonScript(
               ? rawFace.verts.map((v: any) => Number(v?.index ?? v))
               : [];
 
+          const loopStart = totalLoopCount;
+          const loopCount = faceIndices.length;
+          totalLoopCount += loopCount;
+
+          const polyLoopIndices: number[] = [];
+          for (let li = 0; li < loopCount; li++) {
+            const globalLoopIdx = loopStart + li;
+            polyLoopIndices.push(globalLoopIdx);
+            loopsList.push({
+              index: globalLoopIdx,
+              vertex_index: faceIndices[li],
+            });
+            if (!loopToBufferMap[globalLoopIdx]) {
+              loopToBufferMap[globalLoopIdx] = [];
+            }
+          }
+
+          polygonsList.push({
+            index: polyIndex++,
+            vertices: [...faceIndices],
+            loop_start: loopStart,
+            loop_total: loopCount,
+            loop_indices: polyLoopIndices,
+            use_smooth: true,
+            material_index: 0,
+            get normal() {
+              return computeNormalFromCoords(
+                this.vertices.map((idx: number) => meshDataObj.vertices[idx]?.co)
+              );
+            },
+            set normal(_val: any) {},
+            get center() {
+              const coords = this.vertices
+                .map((idx: number) => meshDataObj.vertices[idx]?.co)
+                .filter(Boolean);
+              if (coords.length === 0) return createMathutilsVector([0, 0, 0]);
+              let sx = 0, sy = 0, sz = 0;
+              for (const c of coords) {
+                sx += Number(c?.x ?? c?.[0] ?? 0);
+                sy += Number(c?.y ?? c?.[1] ?? 0);
+                sz += Number(c?.z ?? c?.[2] ?? 0);
+              }
+              return createMathutilsVector([sx / coords.length, sy / coords.length, sz / coords.length]);
+            },
+          });
+
           if (faceIndices.length === 3) {
             const v0 = transformedVerts[faceIndices[0]];
             const v1 = transformedVerts[faceIndices[1]];
             const v2 = transformedVerts[faceIndices[2]];
-            if (v0 && v1 && v2) pushTriangle(v0, v1, v2);
+            if (v0 && v1 && v2) {
+              const baseVertIdx = positions.length / 3;
+              loopToBufferMap[loopStart + 0].push(baseVertIdx + 0);
+              loopToBufferMap[loopStart + 1].push(baseVertIdx + 1);
+              loopToBufferMap[loopStart + 2].push(baseVertIdx + 2);
+              pushTriangle(v0, v1, v2);
+            }
           } else if (faceIndices.length >= 4) {
             const v0 = transformedVerts[faceIndices[0]];
             for (let k = 1; k < faceIndices.length - 1; k++) {
               const v1 = transformedVerts[faceIndices[k]];
               const v2 = transformedVerts[faceIndices[k + 1]];
-              if (v0 && v1 && v2) pushTriangle(v0, v1, v2);
+              if (v0 && v1 && v2) {
+                const baseVertIdx = positions.length / 3;
+                loopToBufferMap[loopStart + 0].push(baseVertIdx + 0);
+                loopToBufferMap[loopStart + k].push(baseVertIdx + 1);
+                loopToBufferMap[loopStart + k + 1].push(baseVertIdx + 2);
+                pushTriangle(v0, v1, v2);
+              }
             }
           }
         }
@@ -5273,7 +6253,7 @@ export async function executeBlenderPythonScript(
         builtGeo.computeVertexNormals();
         syncGeometryToBoundMesh(builtGeo);
         logs.push(
-          `mesh.from_pydata: ${transformedVerts.length} vértices y ${faces.length} caras ensambladas.`
+          `mesh.from_pydata: ${transformedVerts.length} vértices y ${faces.length} caras ensambladas (con soporte UV y loops).`
         );
       },
       update: () => {
@@ -5908,6 +6888,234 @@ export async function executeBlenderPythonScript(
     orbit: (...args: unknown[]) => handleAnimLoop(...args, { __isKw: true, type: 'ORBIT' }),
   });
 
+  // Almacén e instancia canónica de bpy.data.images (ISO/IEC 25010 & ECMA-262)
+  const imagesStore: any[] = [];
+  const newImageFn = (...rawArgs: unknown[]) => {
+    const { filepath, name } = extractPyArgs(rawArgs, ['filepath', 'name'], {
+      filepath: '',
+      name: 'Image',
+    });
+    const strPath = String(filepath || name || '');
+    const resolvedUrl = resolveTextureUrl(strPath);
+    const imgName = String(name || strPath.replace(/^.*[\\/]/, '') || 'Image');
+    const existing = imagesStore.find((im) => im.name === imgName || (strPath && im.filepath === strPath));
+    if (existing) return existing;
+    const imgObj = {
+      name: imgName,
+      filepath: strPath,
+      source: 'FILE',
+      size: [1024, 1024],
+      depth: 32,
+      channels: 4,
+      colorspace_settings: { name: 'sRGB', is_data: false },
+      reload: () => {},
+      pack: () => {},
+      save: () => {},
+      _url: resolvedUrl,
+    };
+    imagesStore.push(imgObj);
+    return imgObj;
+  };
+
+  const loadImageFn = (...loadArgs: unknown[]) => {
+    const { filepath, check_existing } = extractPyArgs(
+      loadArgs,
+      ['filepath', 'check_existing'],
+      { filepath: '', check_existing: false }
+    );
+    const strPath = String(filepath || (typeof loadArgs[0] === 'string' ? loadArgs[0] : ''));
+    const resolvedUrl = resolveTextureUrl(strPath);
+    const imgName = strPath.replace(/^.*[\\/]/, '') || 'Image';
+    if (check_existing) {
+      const existing = imagesStore.find((im) => im.filepath === strPath || im.name === imgName);
+      if (existing) return existing;
+    }
+    const imgObj = {
+      name: imgName,
+      filepath: strPath,
+      source: 'FILE',
+      size: [1024, 1024],
+      depth: 32,
+      channels: 4,
+      colorspace_settings: { name: 'sRGB', is_data: false },
+      reload: () => {},
+      pack: () => {},
+      save: () => {},
+      _url: resolvedUrl,
+    };
+    imagesStore.push(imgObj);
+    logs.push(`bpy.data.images.load: imagen cargada "${imgName}" (${resolvedUrl.substring(0, 48)}...)`);
+    return imgObj;
+  };
+
+  const imagesExtraMethods: Record<string, any> = {
+    load: loadImageFn,
+    new: newImageFn,
+  };
+
+  const imagesCollectionInstance = createDataCollection(imagesStore, newImageFn, imagesExtraMethods);
+  (imagesCollectionInstance as any).load = loadImageFn;
+  (imagesStore as any).load = loadImageFn;
+  try {
+    Object.defineProperty(imagesCollectionInstance, 'load', {
+      value: loadImageFn,
+      writable: false,
+      configurable: false,
+      enumerable: true,
+    });
+    Object.defineProperty(imagesStore, 'load', {
+      value: loadImageFn,
+      writable: false,
+      configurable: false,
+      enumerable: true,
+    });
+  } catch {
+    // Entornos que restrinjan defineProperty en Proxies
+  }
+
+  const rawBpyData: Record<string, any> = {
+    scenes: createDataCollection([sceneProxyObj], () => sceneProxyObj),
+    meshes: createDataCollection(meshesStore, createCustomMeshData),
+    materials: createDataCollection(materialsStore, (...rawArgs: unknown[]) => {
+      const { name } = extractPyArgs(rawArgs, ['name'], { name: 'Material' });
+      const mat = createBlenderMaterial(String(name));
+      materialsStore.push(mat);
+      return mat;
+    }),
+    objects: createDataCollection(allObjectProxies, (...rawArgs: unknown[]) => {
+      const opts = extractPyArgs(
+        rawArgs,
+        ['name', 'object_data', 'color', 'data', 'mesh'],
+        { name: 'Object', object_data: null, color: '#38bdf8' }
+      );
+      const objName = opts.name;
+      const meshData = opts.object_data ?? opts.data ?? opts.mesh ?? null;
+      const color = opts.color;
+      if (meshData && meshData._threeLight) {
+        return createBlenderLightObject(String(objName), meshData.type || 'SUN');
+      }
+      const geo = meshData?._threeGeometry || meshData?._geometry || new THREE.BufferGeometry();
+      const col = parsePythonColor(color, '#38bdf8');
+      const mesh = new THREE.Mesh(geo);
+      mesh.name = String(objName);
+      configureNewlySpawnedMesh(mesh, col, gradientTex, outThick, outOpac);
+      const proxy = createBlenderObjectProxy(mesh);
+      (proxy as any)._color = col;
+      (proxy as any)._threeObject = mesh;
+      (proxy as any)._meshData = meshData;
+      if (meshData) {
+        meshData._threeMesh = mesh;
+        meshData._geometry = mesh.geometry;
+        meshData._ownerProxy = proxy;
+        if (typeof meshData.from_pydata === 'function') {
+          (proxy.data as any).from_pydata = meshData.from_pydata;
+          (proxy.data as any)._syncGeometryToBoundMesh = meshData._syncGeometryToBoundMesh;
+        }
+      }
+      if (Array.isArray(meshData?.materials) && meshData.materials.length > 0) {
+        (proxy as any)._pendingMaterials = [...meshData.materials];
+        meshData.materials.forEach((m: any) => (proxy.data.materials as any).append(m));
+      }
+      return proxy;
+    }),
+    collections: createDataCollection(
+      [
+        {
+          name: 'Collection',
+          objects: sceneObjectsProxy,
+        },
+      ],
+      (...rawArgs: unknown[]) => {
+        const { name } = extractPyArgs(rawArgs, ['name'], { name: 'Collection' });
+        return {
+          name: String(name),
+          objects: sceneObjectsProxy,
+        };
+      }
+    ),
+    curves: createDataCollection([], (...rawArgs: unknown[]) => {
+      const { name } = extractPyArgs(rawArgs, ['name', 'type'], { name: 'Curve', type: 'CURVE' });
+      const geo = new THREE.TorusGeometry(0.6, 0.05, 12, 32);
+      return {
+        name: String(name),
+        _geometry: geo,
+        dimensions: '3D',
+        bevel_depth: 0.05,
+        splines: {
+          new: () => ({
+            points: {
+              add: () => {},
+              0: { co: [0, 0, 0, 1] },
+            },
+            bezier_points: {
+              add: () => {},
+              0: { co: [0, 0, 0], handle_left: [0, 0, 0], handle_right: [0, 0, 0] },
+            },
+          }),
+        },
+      };
+    }),
+    armatures: createDataCollection([], () => createSafeNoopProxy()),
+    lights: createDataCollection([], (...rawArgs: unknown[]) => {
+      const { name, type } = extractPyArgs(rawArgs, ['name', 'type'], { name: 'Light', type: 'SUN' });
+      const lightObj = createBlenderLightObject(String(name), String(type));
+      return lightObj.data;
+    }),
+    cameras: createDataCollection([], () => createSafeNoopProxy()),
+    worlds: createDataCollection([worldProxyObj], () => worldProxyObj),
+  };
+
+  Object.defineProperty(rawBpyData, 'images', {
+    get() {
+      if (typeof (imagesCollectionInstance as any).load !== 'function') {
+        (imagesCollectionInstance as any).load = loadImageFn;
+      }
+      return imagesCollectionInstance;
+    },
+    set(newVal: any) {
+      if (Array.isArray(newVal)) {
+        imagesStore.length = 0;
+        for (const item of newVal) imagesStore.push(item);
+      }
+      (imagesStore as any).load = loadImageFn;
+      (imagesCollectionInstance as any).load = loadImageFn;
+    },
+    enumerable: true,
+    configurable: false,
+  });
+
+  const bpyDataProxy = new Proxy(rawBpyData, {
+    has(target, prop) {
+      if (prop === 'images') return true;
+      return prop in target;
+    },
+    get(target, prop) {
+      if (prop === 'images') {
+        if (typeof (imagesCollectionInstance as any).load !== 'function') {
+          (imagesCollectionInstance as any).load = loadImageFn;
+        }
+        return imagesCollectionInstance;
+      }
+      return Reflect.get(target, prop);
+    },
+    set(target, prop, value) {
+      if (prop === 'images') {
+        if (Array.isArray(value)) {
+          imagesStore.length = 0;
+          for (const item of value) imagesStore.push(item);
+        }
+        (imagesStore as any).load = loadImageFn;
+        (imagesCollectionInstance as any).load = loadImageFn;
+        return true;
+      }
+      return Reflect.set(target, prop, value);
+    },
+    deleteProperty(_target, prop) {
+      if (prop === 'images') return false;
+      return Reflect.deleteProperty(_target, prop);
+    },
+  });
+
   const bpy = {
     _extractArgs: extractPyArgs,
     // Animaciones en vivo a 60 FPS: bpy.anim.water / bpy.anim.agua y bpy.anim.loop
@@ -6194,97 +7402,7 @@ export async function executeBlenderPythonScript(
       scene: sceneProxyObj,
       evaluated_depsgraph_get: () => createSafeNoopProxy(),
     },
-    data: {
-      scenes: createDataCollection([sceneProxyObj], () => sceneProxyObj),
-      meshes: createDataCollection(meshesStore, createCustomMeshData),
-      materials: createDataCollection(materialsStore, (...rawArgs: unknown[]) => {
-        const { name } = extractPyArgs(rawArgs, ['name'], { name: 'Material' });
-        const mat = createBlenderMaterial(String(name));
-        materialsStore.push(mat);
-        return mat;
-      }),
-      objects: createDataCollection(allObjectProxies, (...rawArgs: unknown[]) => {
-        const opts = extractPyArgs(
-          rawArgs,
-          ['name', 'object_data', 'color', 'data', 'mesh'],
-          { name: 'Object', object_data: null, color: '#38bdf8' }
-        );
-        const objName = opts.name;
-        const meshData = opts.object_data ?? opts.data ?? opts.mesh ?? null;
-        const color = opts.color;
-        if (meshData && meshData._threeLight) {
-          return createBlenderLightObject(String(objName), meshData.type || 'SUN');
-        }
-        const geo = meshData?._threeGeometry || meshData?._geometry || new THREE.BufferGeometry();
-        const col = parsePythonColor(color, '#38bdf8');
-        const mesh = new THREE.Mesh(geo);
-        mesh.name = String(objName);
-        configureNewlySpawnedMesh(mesh, col, gradientTex, outThick, outOpac);
-        const proxy = createBlenderObjectProxy(mesh);
-        (proxy as any)._color = col;
-        (proxy as any)._threeObject = mesh;
-        (proxy as any)._meshData = meshData;
-        if (meshData) {
-          meshData._threeMesh = mesh;
-          meshData._geometry = mesh.geometry;
-          meshData._ownerProxy = proxy;
-          if (typeof meshData.from_pydata === 'function') {
-            (proxy.data as any).from_pydata = meshData.from_pydata;
-            (proxy.data as any)._syncGeometryToBoundMesh = meshData._syncGeometryToBoundMesh;
-          }
-        }
-        if (Array.isArray(meshData?.materials) && meshData.materials.length > 0) {
-          (proxy as any)._pendingMaterials = [...meshData.materials];
-          meshData.materials.forEach((m: any) => (proxy.data.materials as any).append(m));
-        }
-        return proxy;
-      }),
-      collections: createDataCollection(
-        [
-          {
-            name: 'Collection',
-            objects: sceneObjectsProxy,
-          },
-        ],
-        (...rawArgs: unknown[]) => {
-          const { name } = extractPyArgs(rawArgs, ['name'], { name: 'Collection' });
-          return {
-            name: String(name),
-            objects: sceneObjectsProxy,
-          };
-        }
-      ),
-      curves: createDataCollection([], (...rawArgs: unknown[]) => {
-        const { name } = extractPyArgs(rawArgs, ['name', 'type'], { name: 'Curve', type: 'CURVE' });
-        const geo = new THREE.TorusGeometry(0.6, 0.05, 12, 32);
-        return {
-          name: String(name),
-          _geometry: geo,
-          dimensions: '3D',
-          bevel_depth: 0.05,
-          splines: {
-            new: () => ({
-              points: {
-                add: () => {},
-                0: { co: [0, 0, 0, 1] },
-              },
-              bezier_points: {
-                add: () => {},
-                0: { co: [0, 0, 0], handle_left: [0, 0, 0], handle_right: [0, 0, 0] },
-              },
-            }),
-          },
-        };
-      }),
-      armatures: createDataCollection([], () => createSafeNoopProxy()),
-      lights: createDataCollection([], (...rawArgs: unknown[]) => {
-        const { name, type } = extractPyArgs(rawArgs, ['name', 'type'], { name: 'Light', type: 'SUN' });
-        const lightObj = createBlenderLightObject(String(name), String(type));
-        return lightObj.data;
-      }),
-      cameras: createDataCollection([], () => createSafeNoopProxy()),
-      worlds: createDataCollection([worldProxyObj], () => worldProxyObj),
-    },
+    data: bpyDataProxy,
     ops: {
       object: {
         select_all: (_opts?: { action?: string }) => {},
@@ -7368,6 +8486,297 @@ export async function executeBlenderPythonScript(
             );
           }
         },
+        set_mosaic_texture: (...rawArgs: unknown[]) => {
+          const options = extractPyArgs(
+            rawArgs,
+            [
+              'object',
+              'objects',
+              'zone',
+              'texture',
+              'tile',
+              'repeat',
+              'projection',
+              'cols',
+              'rows',
+              'col',
+              'row',
+              'bump',
+            ],
+            {
+              object: null,
+              objects: null,
+              zone: null,
+              texture: 'mosaico_romano_imperial',
+              tile: null,
+              repeat: 1,
+              projection: 'FLAT',
+              cols: 0,
+              rows: 0,
+              col: 0,
+              row: 0,
+              bump: 1.2,
+            }
+          );
+          const rawTexName = String(
+            options.texture ?? options.name ?? options.id ?? 'mosaico_romano_imperial'
+          );
+          const tileParam = options.tile ? String(options.tile).trim() : '';
+          const phSpec = parsePolyHavenSpec(rawTexName);
+          const lookupKey = tileParam ? `${rawTexName}:${tileParam}` : rawTexName;
+          const match = !phSpec
+            ? findCatalogTextureOrSubTile(lookupKey) || findCatalogTextureOrSubTile(rawTexName)
+            : null;
+          const resolvedId = phSpec
+            ? phSpec.cacheKey
+            : match
+            ? match.subTile
+              ? match.subTile.id
+              : match.info.id
+            : slugifyTextureId(rawTexName);
+
+          const repeatRaw = options.repeat;
+          const repeatVal = Array.isArray(repeatRaw)
+            ? Math.max(0.25, Math.min(32, Number(repeatRaw[0]) || 1))
+            : Math.max(0.25, Math.min(32, Number(repeatRaw ?? 1) || 1));
+          const projMode = String(options.projection ?? 'FLAT').toUpperCase() as
+            | 'FLAT'
+            | 'BOX'
+            | 'CYLINDER';
+          const colorSet = getColorMapSet(resolvedId);
+          if (colorSet.color) {
+            colorSet.color.wrapS = THREE.RepeatWrapping;
+            colorSet.color.wrapT = THREE.RepeatWrapping;
+            colorSet.color.repeat.set(1, 1);
+            colorSet.color.needsUpdate = true;
+          }
+
+          // Comprobar también si es una de las 38+ texturas PBR procedurales con relieve Bump
+          const procPatternId = !phSpec && !colorSet.color ? resolveTexturePatternId(rawTexName) : 'none';
+          const procPreset =
+            procPatternId !== 'none' ? getTexturePresetInfo(procPatternId) : null;
+
+          // Si el usuario especificó una celda de cuadrícula (cols, rows, col, row) sobre un mosaico
+          let cellUvRect: [number, number, number, number] | undefined;
+          const gridCols = Number(options.cols) || 0;
+          const gridRows = Number(options.rows) || 0;
+          if (gridCols > 0 && gridRows > 0) {
+            const c = Math.max(0, Math.min(gridCols - 1, Number(options.col) || 0));
+            const r = Math.max(0, Math.min(gridRows - 1, Number(options.row) || 0));
+            const u0 = c / gridCols;
+            const u1 = (c + 1) / gridCols;
+            const v1 = 1 - r / gridRows;
+            const v0 = 1 - (r + 1) / gridRows;
+            cellUvRect = [u0, v0, u1, v1];
+          }
+
+          const applyPolyHavenSetToMesh = (m: THREE.Mesh, phCacheKey: string, assetLabel: string) => {
+            if (!m || !m.isMesh || m.userData?.isOutlineMesh) return;
+            applyMaterialToThreeMesh(m, new THREE.Color('#ffffff'), 0.08, 0.55, null, 0, {
+              ...(m.userData.pbrProps || {}),
+              colorMapId: phCacheKey,
+              customImageTexture: null,
+            });
+            m.userData.appliedTextureId = phCacheKey;
+            m.userData.appliedTextureName = `Poly Haven: ${assetLabel}`;
+          };
+
+          const applyToSingleMesh = (m: THREE.Mesh) => {
+            if (!m || !m.isMesh || m.userData?.isOutlineMesh) return;
+            const geo = m.geometry as THREE.BufferGeometry;
+            if (geo) {
+              applyMosaicUvProjection(geo, {
+                projection: projMode,
+                repeat: repeatVal,
+                uvRect: cellUvRect,
+              });
+            }
+            if (phSpec && colorSet.color) {
+              applyPolyHavenSetToMesh(m, phSpec.cacheKey, phSpec.assetId);
+            } else if (!phSpec && colorSet.color) {
+              applyMaterialToThreeMesh(m, new THREE.Color('#ffffff'), 0.08, 0.42, null, 0, {
+                ...(m.userData.pbrProps || {}),
+                colorMapId: resolvedId,
+                customImageTexture: colorSet.color,
+              });
+              m.userData.appliedTextureId = resolvedId;
+              m.userData.appliedTextureName = match?.subTile
+                ? `${match.info.name.replace(/^Catálogo:\s*/i, '')} — ${match.subTile.name}`
+                : match?.info.name || resolvedId;
+            } else if (procPreset && procPatternId !== 'none') {
+              const bumpMult = Math.max(0, Math.min(2.5, Number(options.bump ?? 1.2)));
+              applyMaterialToThreeMesh(
+                m,
+                new THREE.Color('#ffffff'),
+                procPreset.pbr.metalness,
+                procPreset.pbr.roughness,
+                null,
+                0,
+                {
+                  ...(m.userData.pbrProps || {}),
+                  texturePattern: procPatternId,
+                  textureRepeat: repeatVal,
+                  textureNaturalColor: true,
+                  bumpScale: procPreset.pbr.bumpScale * bumpMult,
+                  clearcoat: procPreset.pbr.clearcoat,
+                  ior: procPreset.pbr.ior,
+                  transmission: procPreset.pbr.transmission,
+                }
+              );
+              m.userData.appliedTextureId = procPatternId;
+              m.userData.appliedTextureName = procPreset.name;
+            }
+          };
+
+          collectMeshes();
+          const targetMeshes: THREE.Mesh[] = [];
+          const resolveItemToMeshes = (item: any) => {
+            if (!item) return;
+            if (item._threeMesh && (item._threeMesh as THREE.Mesh).isMesh) {
+              targetMeshes.push(item._threeMesh as THREE.Mesh);
+            } else if ((item as THREE.Mesh).isMesh) {
+              targetMeshes.push(item as THREE.Mesh);
+            } else if (typeof item === 'string') {
+              const needle = item.trim().toLowerCase();
+              for (const m of meshes) {
+                if (
+                  m.name.toLowerCase() === needle ||
+                  m.name.toLowerCase().includes(needle)
+                ) {
+                  if (!targetMeshes.includes(m)) targetMeshes.push(m);
+                }
+              }
+            }
+          };
+
+          const rawObjectsList = options.objects ?? options.pieces ?? options.piezas;
+          const rawZone = options.zone ?? options.zona;
+          const targetObj = options.object ?? options.objeto;
+
+          if (Array.isArray(rawObjectsList) && rawObjectsList.length > 0) {
+            rawObjectsList.forEach((it) => resolveItemToMeshes(it));
+          } else if (Array.isArray(targetObj)) {
+            targetObj.forEach((it) => resolveItemToMeshes(it));
+          } else if (typeof rawZone === 'string' && rawZone.trim() !== '') {
+            const zLower = rawZone.trim().toLowerCase();
+            if (zLower === 'all' || zLower === '*' || zLower === 'todas' || zLower === 'todo') {
+              targetMeshes.push(...meshes);
+            } else {
+              for (const m of meshes) {
+                if (m.name.toLowerCase().includes(zLower)) {
+                  targetMeshes.push(m);
+                }
+              }
+            }
+          } else if (targetObj) {
+            resolveItemToMeshes(targetObj);
+          } else if (currentActiveObjProxy?._threeMesh) {
+            targetMeshes.push(currentActiveObjProxy._threeMesh as THREE.Mesh);
+          } else {
+            targetMeshes.push(...meshes);
+          }
+
+          targetMeshes.forEach((m) => applyToSingleMesh(m));
+
+          if (phSpec && !colorSet.color) {
+            const capturedTargets = [...targetMeshes];
+            pendingAsyncTasks.push(
+              loadPolyHavenColorMapSet(phSpec.assetId, phSpec.resolution)
+                .then((loadedSet) => {
+                  capturedTargets.forEach((m) =>
+                    applyPolyHavenSetToMesh(m, phSpec.cacheKey, phSpec.assetId)
+                  );
+                  const mapsList = [
+                    'Diffuse',
+                    loadedSet.normal ? 'Normal' : null,
+                    loadedSet.roughness ? 'Roughness' : null,
+                    loadedSet.metalness ? 'Metalness' : null,
+                  ]
+                    .filter(Boolean)
+                    .join('+');
+                  logs.push(
+                    `Poly Haven CC0 PBR aplicado: '${phSpec.assetId}' (${phSpec.resolution.toUpperCase()} — ${mapsList}) en ${capturedTargets.length} pieza(s).`
+                  );
+                })
+                .catch((err) => {
+                  logs.push(
+                    `Error cargando Poly Haven '${phSpec.assetId}': ${err instanceof Error ? err.message : String(err)}`
+                  );
+                })
+            );
+          } else {
+            logs.push(
+              `bpy.ops.material.set_mosaic_texture: aplicado '${resolvedId}' a ${targetMeshes.length} pieza(s) [${targetMeshes.map((m) => m.name).join(', ')}] (projection=${projMode}, repeat=${repeatVal}${cellUvRect ? `, cell=[${options.col},${options.row}]` : ''}).`
+            );
+          }
+        },
+        paint_zone: (...rawArgs: unknown[]) => {
+          return (bpy.ops.material as any).set_mosaic_texture(...rawArgs);
+        },
+        set_polyhaven_texture: (...rawArgs: unknown[]) => {
+          const opts = extractPyArgs(
+            rawArgs,
+            ['object', 'objects', 'zone', 'asset', 'resolution', 'repeat', 'projection'],
+            {
+              object: null,
+              objects: null,
+              zone: null,
+              asset: 'brick_wall_001',
+              resolution: '1k',
+              repeat: 2,
+              projection: 'BOX',
+            }
+          );
+          const rawAsset = String(opts.asset ?? opts.texture ?? opts.id ?? 'brick_wall_001').trim();
+          const res = String(opts.resolution ?? '1k').toLowerCase() === '2k' ? '2k' : '1k';
+          const cleanAsset = rawAsset.replace(/^polyhaven:/i, '').replace(/@(1k|2k)$/i, '');
+          return (bpy.ops.material as any).set_mosaic_texture({
+            object: opts.object ?? opts.objeto,
+            objects: opts.objects ?? opts.pieces ?? opts.piezas,
+            zone: opts.zone ?? opts.zona,
+            texture: `polyhaven:${cleanAsset}@${res}`,
+            repeat: opts.repeat ?? 2,
+            projection: opts.projection ?? 'BOX',
+          });
+        },
+        list_mosaics: () => {
+          const summary = BUILTIN_COLOR_MAP_TEXTURES.map((t) => ({
+            id: t.id,
+            name: t.name,
+            kind: t.kind,
+            isMosaic: Boolean(t.isMosaic),
+            gridLayout: t.gridLayout,
+            subTiles: t.subTiles?.map((s) => s.id) || [],
+          }));
+          const subCount = summary.reduce((acc, item) => acc + item.subTiles.length, 0);
+          logs.push(
+            `Catálogo de Mosaicos y Atlas disponible (${BUILTIN_COLOR_MAP_TEXTURES.length} láminas principales, ${subCount} sub-texturas): ${BUILTIN_COLOR_MAP_TEXTURES.map((t) => t.id).join(', ')} + Poly Haven CC0 en vivo ("polyhaven:<asset_id>@1k|2k")`
+          );
+          return summary;
+        },
+        list_polyhaven_api: () => {
+          const info = {
+            provider: 'Poly Haven (CC0 Public Domain — 871+ texturas PBR)',
+            mapsSupported: ['Diffuse (sRGB)', 'Normal GL', 'Roughness', 'Metalness'],
+            resolutions: ['1k', '2k'],
+            restEndpoints: {
+              docs: '/api/textures/docs',
+              search: '/api/polyhaven/textures?q=<termino>&category=<cat>&limit=36',
+              files: '/api/polyhaven/files/<asset_id>?res=1k',
+              imageProxy: '/api/polyhaven/image?url=<url>',
+            },
+            pythonUsage: [
+              'bpy.ops.material.set_polyhaven_texture(zone="Muro", asset="brick_wall_001", resolution="1k", projection="BOX", repeat=2)',
+              'bpy.ops.material.paint_zone(objects=["Suelo"], texture="polyhaven:cobblestone_floor_08@1k", projection="FLAT", repeat=3)',
+              'mat.color_map = "polyhaven:wood_planks_dirt@2k"',
+              'img = bpy.data.images.load("polyhaven:medieval_blocks_05@1k")',
+            ],
+          };
+          logs.push(
+            `API Poly Haven CC0 activa: usa set_polyhaven_texture(asset=...) o prefijo "polyhaven:<asset_id>@1k|2k" (REST: /api/textures/docs y /api/polyhaven/textures).`
+          );
+          return info;
+        },
         set_cel_shading: (...rawArgs: unknown[]) => {
           const options = extractPyArgs(rawArgs, ['tones', 'outline_thickness', 'outline_opacity'], {
             tones: 3,
@@ -7386,6 +8795,50 @@ export async function executeBlenderPythonScript(
           logs.push(`bpy.ops.material.set_cel_shading(tones=${options.tones}): Cel-Shading activo.`);
         },
       },
+      uv: createSafeNoopProxy({
+        project_mosaic: (...rawArgs: unknown[]) => {
+          const opts = extractPyArgs(
+            rawArgs,
+            ['object', 'projection', 'repeat', 'cols', 'rows', 'col', 'row', 'uv_rect'],
+            {
+              object: null,
+              projection: 'FLAT',
+              repeat: 1,
+              cols: 0,
+              rows: 0,
+              col: 0,
+              row: 0,
+              uv_rect: null,
+            }
+          );
+          const targetObj = opts.object ?? opts.objeto ?? currentActiveObjProxy;
+          const m: THREE.Mesh | undefined = targetObj?._threeMesh;
+          if (!m || !m.geometry) return;
+          let uvRect: [number, number, number, number] | undefined;
+          if (Array.isArray(opts.uv_rect) && opts.uv_rect.length >= 4) {
+            uvRect = [
+              Number(opts.uv_rect[0]) || 0,
+              Number(opts.uv_rect[1]) || 0,
+              Number(opts.uv_rect[2]) || 1,
+              Number(opts.uv_rect[3]) || 1,
+            ];
+          } else if (Number(opts.cols) > 0 && Number(opts.rows) > 0) {
+            const cols = Number(opts.cols);
+            const rows = Number(opts.rows);
+            const c = Math.max(0, Math.min(cols - 1, Number(opts.col) || 0));
+            const r = Math.max(0, Math.min(rows - 1, Number(opts.row) || 0));
+            uvRect = [c / cols, 1 - (r + 1) / rows, (c + 1) / cols, 1 - r / rows];
+          }
+          applyMosaicUvProjection(m.geometry as THREE.BufferGeometry, {
+            projection: String(opts.projection || 'FLAT').toUpperCase() as 'FLAT' | 'BOX' | 'CYLINDER',
+            repeat: Number(opts.repeat) || 1,
+            uvRect,
+          });
+          logs.push(
+            `bpy.ops.uv.project_mosaic: proyección UV '${opts.projection || 'FLAT'}' aplicada a '${m.name}'.`
+          );
+        },
+      }),
       view3d: {
         camera_preset: (...rawArgs: unknown[]) => {
           const opts = extractPyArgs(rawArgs, ['view', 'preset', 'zoom'], { view: 'hero' });
@@ -7557,10 +9010,44 @@ export async function executeBlenderPythonScript(
     },
   };
 
+  try {
+    Object.defineProperty(bpy, 'data', {
+      get() {
+        return bpyDataProxy;
+      },
+      set(newVal: any) {
+        if (newVal && typeof newVal === 'object') {
+          if ('images' in newVal && Array.isArray(newVal.images)) {
+            imagesStore.length = 0;
+            for (const item of newVal.images) imagesStore.push(item);
+            (imagesStore as any).load = loadImageFn;
+            (imagesCollectionInstance as any).load = loadImageFn;
+          }
+        }
+      },
+      enumerable: true,
+      configurable: false,
+    });
+  } catch {
+    // Definición defensiva
+  }
+
+  // Exposición en ámbitos globales de ejecución dinámica para eval / new Function (ECMA-262 § 20.2.1.1.1)
+  if (typeof window !== 'undefined') {
+    (window as any).bpy = bpy;
+    (window as any).data = bpyDataProxy;
+    (window as any).images = imagesCollectionInstance;
+  }
+  if (typeof globalThis !== 'undefined') {
+    (globalThis as any).bpy = bpy;
+    (globalThis as any).data = bpyDataProxy;
+    (globalThis as any).images = imagesCollectionInstance;
+  }
+
   // ==========================================================================
   // MÓDULOS COMPLEMENTARIOS DE BLENDER 5.2: `bmesh`, `mathutils`, `random`
   // ==========================================================================
-  const createMathutilsVector = (init?: any, y?: number, z?: number): any => {
+  function createMathutilsVector(init?: any, y?: number, z?: number): any {
     let _0 = 0;
     let _1 = 0;
     let _2 = 0;
@@ -7810,34 +9297,220 @@ export async function executeBlenderPythonScript(
     Matrix: createMathutilsMatrix,
   };
 
+  class BMLayerUV {
+    name: string;
+    constructor(name: string = 'UVMap') {
+      this.name = String(name || 'UVMap');
+    }
+    toString(): string {
+      return this.name;
+    }
+    valueOf(): string {
+      return this.name;
+    }
+    [Symbol.toPrimitive](): string {
+      return this.name;
+    }
+  }
+
+  function computeNormalFromCoords(coords: any[]): any {
+    if (!Array.isArray(coords) || coords.length < 3) {
+      return createMathutilsVector([0, 0, 1]);
+    }
+    let nx = 0;
+    let ny = 0;
+    let nz = 0;
+    const n = coords.length;
+    for (let i = 0; i < n; i++) {
+      const curr = coords[i];
+      const next = coords[(i + 1) % n];
+      const cx = Number(curr?.x ?? curr?.[0] ?? 0);
+      const cy = Number(curr?.y ?? curr?.[1] ?? 0);
+      const cz = Number(curr?.z ?? curr?.[2] ?? 0);
+      const nxCoord = Number(next?.x ?? next?.[0] ?? 0);
+      const nyCoord = Number(next?.y ?? next?.[1] ?? 0);
+      const nzCoord = Number(next?.z ?? next?.[2] ?? 0);
+      nx += (cy - nyCoord) * (cz + nzCoord);
+      ny += (cz - nzCoord) * (cx + nxCoord);
+      nz += (cx - nxCoord) * (cy + nyCoord);
+    }
+    const len = Math.hypot(nx, ny, nz);
+    if (len > 1e-8) {
+      return createMathutilsVector([nx / len, ny / len, nz / len]);
+    }
+    return createMathutilsVector([0, 0, 1]);
+  }
+
+  const computeBMFaceNormal = (vObjs: any[]) =>
+    computeNormalFromCoords(Array.isArray(vObjs) ? vObjs.map((v: any) => v?.co ?? v) : []);
+
+  const createBMLoop = (vert: any, faceRef?: any) => {
+    const layerStore: Record<string, { uv: any }> = {};
+    const createLayerUvSlot = () => {
+      const uvArr: any = [0.0, 0.0];
+      Object.defineProperties(uvArr, {
+        x: {
+          get: () => uvArr[0],
+          set: (val: number) => {
+            uvArr[0] = Number(val) || 0;
+          },
+        },
+        y: {
+          get: () => uvArr[1],
+          set: (val: number) => {
+            uvArr[1] = Number(val) || 0;
+          },
+        },
+      });
+      return {
+        get uv() {
+          return uvArr;
+        },
+        set uv(val: any) {
+          uvArr[0] = Number(val?.[0] ?? val?.x ?? 0);
+          uvArr[1] = Number(val?.[1] ?? val?.y ?? 0);
+        },
+      };
+    };
+
+    const baseLoop: Record<string, any> = {
+      vert,
+      face: faceRef,
+      edge: null,
+      link_loop_next: null,
+      link_loop_prev: null,
+    };
+
+    return new Proxy(baseLoop, {
+      get(target, prop) {
+        if (prop in target) {
+          return target[prop as string];
+        }
+        if (typeof prop === 'string') {
+          if (!layerStore[prop]) {
+            layerStore[prop] = createLayerUvSlot();
+          }
+          return layerStore[prop];
+        }
+        return Reflect.get(target, prop);
+      },
+      set(target, prop, value) {
+        if (typeof prop === 'string' && !(prop in target)) {
+          if (!layerStore[prop]) {
+            layerStore[prop] = createLayerUvSlot();
+          }
+          if (value && typeof value === 'object' && 'uv' in value) {
+            layerStore[prop].uv = value.uv;
+          } else {
+            layerStore[prop].uv = value;
+          }
+          return true;
+        }
+        target[prop as string] = value;
+        return true;
+      },
+    });
+  };
+
   const bmesh = {
+    types: createSafeNoopProxy(),
     new: () => {
       const bmVerts: { index: number; co: any; normal: any; select?: boolean }[] = [];
       const bmFaces: any[] = [];
       let internalGeo: THREE.BufferGeometry | null = null;
 
-      const makeBMFace = (idx: number, vObjs: any[]) => ({
-        index: idx,
-        verts: vObjs,
-        material_index: 0,
-        smooth: true,
-        normal: createMathutilsVector([0, 1, 0]),
-        normal_update: () => {},
-        select: true,
-        calc_center_median: () => {
-          if (!vObjs || vObjs.length === 0) return createMathutilsVector([0, 0, 0]);
-          let sx = 0, sy = 0, sz = 0;
-          for (const v of vObjs) {
-            sx += Number(v?.co?.x ?? v?.co?.[0] ?? 0);
-            sy += Number(v?.co?.y ?? v?.co?.[1] ?? 0);
-            sz += Number(v?.co?.z ?? v?.co?.[2] ?? 0);
+      const uvLayersMap: Record<string, BMLayerUV> = {};
+      const uvLayersManager: any = {
+        active: null as BMLayerUV | null,
+        new: (...rawArgs: unknown[]) => {
+          const { name } = extractPyArgs(rawArgs, ['name'], { name: 'UVMap' });
+          const layerName = String(name || (typeof rawArgs[0] === 'string' ? rawArgs[0] : 'UVMap'));
+          const layer = new BMLayerUV(layerName);
+          uvLayersMap[layerName] = layer;
+          uvLayersManager.active = layer;
+          return layer;
+        },
+        verify: () => {
+          if (!uvLayersManager.active) {
+            return uvLayersManager.new('UVMap');
           }
-          return createMathutilsVector([sx / vObjs.length, sy / vObjs.length, sz / vObjs.length]);
+          return uvLayersManager.active;
+        },
+        get: (name: string) => uvLayersMap[String(name)] || uvLayersManager.active || null,
+        values: () => Object.values(uvLayersMap),
+        keys: () => Object.keys(uvLayersMap),
+        items: () => Object.entries(uvLayersMap),
+      };
+
+      const uvLayersProxy = new Proxy(uvLayersManager, {
+        get(target, prop) {
+          if (prop in target) {
+            const val = target[prop];
+            return typeof val === 'function' ? val.bind(target) : val;
+          }
+          if (typeof prop === 'string') {
+            if (uvLayersMap[prop]) return uvLayersMap[prop];
+            const idx = Number(prop);
+            if (!Number.isNaN(idx)) {
+              const vals = Object.values(uvLayersMap);
+              return vals[idx] || target.active;
+            }
+          }
+          return Reflect.get(target, prop);
+        },
+        set(target, prop, value) {
+          target[prop] = value;
+          return true;
         },
       });
 
+      const makeBMFace = (idx: number, vObjs: any[]) => {
+        const faceObj: any = {
+          index: idx,
+          verts: vObjs,
+          loops: [] as any[],
+          material_index: 0,
+          smooth: true,
+          get normal() {
+            return computeNormalFromCoords(
+              Array.isArray(this.verts) ? this.verts.map((v: any) => v?.co) : []
+            );
+          },
+          set normal(_val: any) {},
+          normal_update: () => {},
+          select: true,
+          calc_center_median: () => {
+            if (!faceObj.verts || faceObj.verts.length === 0) return createMathutilsVector([0, 0, 0]);
+            let sx = 0, sy = 0, sz = 0;
+            for (const v of faceObj.verts) {
+              sx += Number(v?.co?.x ?? v?.co?.[0] ?? 0);
+              sy += Number(v?.co?.y ?? v?.co?.[1] ?? 0);
+              sz += Number(v?.co?.z ?? v?.co?.[2] ?? 0);
+            }
+            return createMathutilsVector([
+              sx / faceObj.verts.length,
+              sy / faceObj.verts.length,
+              sz / faceObj.verts.length,
+            ]);
+          },
+        };
+        faceObj.loops = vObjs.map((vert) => createBMLoop(vert, faceObj));
+        for (let i = 0; i < faceObj.loops.length; i++) {
+          faceObj.loops[i].link_loop_next = faceObj.loops[(i + 1) % faceObj.loops.length];
+          faceObj.loops[i].link_loop_prev = faceObj.loops[(i - 1 + faceObj.loops.length) % faceObj.loops.length];
+        }
+        return faceObj;
+      };
+
       const bmObj = {
         _isBMesh: true,
+        loops: {
+          layers: {
+            uv: uvLayersProxy,
+          },
+          ensure_lookup_table: () => {},
+          index_update: () => {},
+        },
         verts: new Proxy(bmVerts, {
           get(target, prop) {
             if (prop === 'new') {
@@ -7882,7 +9555,7 @@ export async function executeBlenderPythonScript(
           get(target, prop) {
             if (prop === 'new') {
               return (vList: any[]) => {
-                const vObjs = Array.isArray(vList) ? vList : [];
+                const vObjs = Array.isArray(vList) ? vList : Array.from(vList || []);
                 const faceObj = makeBMFace(target.length, vObjs);
                 target.push(faceObj);
                 return faceObj;
@@ -7920,43 +9593,136 @@ export async function executeBlenderPythonScript(
         to_mesh: (targetMeshObj: any) => {
           if (!targetMeshObj) return;
           if (bmVerts.length > 0 && bmFaces.length > 0) {
-            // Re-indexar los vértices secuencialmente y extraer sus posiciones actualizadas (tras deformaciones math.sin/cos)
             const positions: number[] = [];
             const uvs: number[] = [];
-            const indices: number[] = [];
+            const activeUV = bmObj.loops?.layers?.uv?.active ?? null;
+
+            const meshVertsList: any[] = Array.isArray(targetMeshObj.vertices)
+              ? targetMeshObj.vertices
+              : [];
+            meshVertsList.length = 0;
 
             for (let i = 0; i < bmVerts.length; i++) {
               bmVerts[i].index = i;
               const vx = Number(bmVerts[i].co?.x ?? bmVerts[i].co?.[0] ?? 0);
               const vy = Number(bmVerts[i].co?.y ?? bmVerts[i].co?.[1] ?? 0);
               const vz = Number(bmVerts[i].co?.z ?? bmVerts[i].co?.[2] ?? 0);
-              if (isZUp) {
-                positions.push(vx, vz, -vy);
-              } else {
-                positions.push(vx, vy, vz);
-              }
-              uvs.push(vx, vy);
+              meshVertsList.push({
+                index: i,
+                co: createMathutilsVector([vx, vy, vz]),
+                normal: createMathutilsVector([0, 0, 1]),
+              });
             }
 
-            // Triangular caras para WebGL (triángulos, cuadriláteros -> 2 triángulos, y N-gonos)
+            const targetPolygons: any[] = Array.isArray(targetMeshObj.polygons)
+              ? targetMeshObj.polygons
+              : [];
+            const targetLoops: any[] = Array.isArray(targetMeshObj.loops)
+              ? targetMeshObj.loops
+              : [];
+            const targetLoopToBufferMap: number[][] = Array.isArray(targetMeshObj._loopToBufferMap)
+              ? targetMeshObj._loopToBufferMap
+              : [];
+
+            targetPolygons.length = 0;
+            targetLoops.length = 0;
+            targetLoopToBufferMap.length = 0;
+
+            let totalLoopCount = 0;
+            let polyIndex = 0;
+
+            // Triangulación en abanico (fan triangulation: 0, i, i + 1) poblando polygons, loops y BufferGeometry
             for (const face of bmFaces) {
               const fVerts = Array.isArray(face) ? face : Array.isArray(face?.verts) ? face.verts : [];
-              const vIdxList: number[] = [];
-              for (const fv of fVerts) {
-                const idx = Number(typeof fv === 'object' ? fv?.index : fv);
-                if (!Number.isNaN(idx) && idx >= 0 && idx < bmVerts.length) {
-                  vIdxList.push(idx);
+              const fLoops = Array.isArray(face?.loops) ? face.loops : [];
+              const vIdxList: number[] = fVerts.map((fv: any) =>
+                Number(typeof fv === 'object' ? fv?.index : fv)
+              );
+
+              const loopStart = totalLoopCount;
+              const loopCount = vIdxList.length;
+              totalLoopCount += loopCount;
+
+              const polyLoopIndices: number[] = [];
+              for (let li = 0; li < loopCount; li++) {
+                const globalLoopIdx = loopStart + li;
+                polyLoopIndices.push(globalLoopIdx);
+                targetLoops.push({
+                  index: globalLoopIdx,
+                  vertex_index: vIdxList[li],
+                });
+                if (!targetLoopToBufferMap[globalLoopIdx]) {
+                  targetLoopToBufferMap[globalLoopIdx] = [];
                 }
               }
-              if (vIdxList.length === 3) {
-                indices.push(vIdxList[0], vIdxList[1], vIdxList[2]);
-              } else if (vIdxList.length === 4) {
-                // Cuadrilátero -> 2 triángulos
-                indices.push(vIdxList[0], vIdxList[1], vIdxList[2]);
-                indices.push(vIdxList[0], vIdxList[2], vIdxList[3]);
-              } else if (vIdxList.length > 4) {
-                for (let k = 1; k < vIdxList.length - 1; k++) {
-                  indices.push(vIdxList[0], vIdxList[k], vIdxList[k + 1]);
+
+              targetPolygons.push({
+                index: polyIndex++,
+                vertices: [...vIdxList],
+                loop_start: loopStart,
+                loop_total: loopCount,
+                loop_indices: polyLoopIndices,
+                use_smooth: face?.smooth ?? true,
+                material_index: Number(face?.material_index ?? 0),
+                get normal() {
+                  const vertsSource =
+                    Array.isArray(targetMeshObj.vertices) && targetMeshObj.vertices.length > 0
+                      ? targetMeshObj.vertices
+                      : meshVertsList;
+                  return computeNormalFromCoords(
+                    this.vertices.map((idx: number) => vertsSource[idx]?.co)
+                  );
+                },
+                set normal(_val: any) {},
+                get center() {
+                  const vertsSource =
+                    Array.isArray(targetMeshObj.vertices) && targetMeshObj.vertices.length > 0
+                      ? targetMeshObj.vertices
+                      : meshVertsList;
+                  const coords = this.vertices
+                    .map((idx: number) => vertsSource[idx]?.co)
+                    .filter(Boolean);
+                  if (coords.length === 0) return createMathutilsVector([0, 0, 0]);
+                  let sx = 0, sy = 0, sz = 0;
+                  for (const c of coords) {
+                    sx += Number(c?.x ?? c?.[0] ?? 0);
+                    sy += Number(c?.y ?? c?.[1] ?? 0);
+                    sz += Number(c?.z ?? c?.[2] ?? 0);
+                  }
+                  return createMathutilsVector([
+                    sx / coords.length,
+                    sy / coords.length,
+                    sz / coords.length,
+                  ]);
+                },
+              });
+
+              for (let i = 1; i < fVerts.length - 1; i++) {
+                const baseVertIdx = positions.length / 3;
+                targetLoopToBufferMap[loopStart + 0]?.push(baseVertIdx + 0);
+                targetLoopToBufferMap[loopStart + i]?.push(baseVertIdx + 1);
+                targetLoopToBufferMap[loopStart + i + 1]?.push(baseVertIdx + 2);
+
+                const triIndices = [0, i, i + 1];
+                for (const cIdx of triIndices) {
+                  const v = fVerts[cIdx];
+                  const vx = Number(v?.co?.x ?? v?.co?.[0] ?? 0);
+                  const vy = Number(v?.co?.y ?? v?.co?.[1] ?? 0);
+                  const vz = Number(v?.co?.z ?? v?.co?.[2] ?? 0);
+                  if (isZUp) {
+                    positions.push(vx, vz, -vy);
+                  } else {
+                    positions.push(vx, vy, vz);
+                  }
+                  if (activeUV) {
+                    const l = fLoops[cIdx];
+                    const uvVal = l ? l[activeUV as any]?.uv : null;
+                    const u = Number(uvVal?.[0] ?? uvVal?.x ?? 0);
+                    const vCoord = Number(uvVal?.[1] ?? uvVal?.y ?? 0);
+                    uvs.push(u, vCoord);
+                  } else {
+                    uvs.push(vx, vy);
+                  }
                 }
               }
             }
@@ -7964,8 +9730,19 @@ export async function executeBlenderPythonScript(
             const geometry = new THREE.BufferGeometry();
             geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
             geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
-            if (indices.length > 0) {
-              geometry.setIndex(indices);
+            if (activeUV) {
+              geometry.userData.hasCustomUV = true;
+              if (targetMeshObj.uv_layers && typeof targetMeshObj.uv_layers.new === 'function') {
+                const existingLayer =
+                  typeof targetMeshObj.uv_layers.get === 'function'
+                    ? targetMeshObj.uv_layers.get(activeUV.name)
+                    : null;
+                if (!existingLayer) {
+                  targetMeshObj.uv_layers.new(activeUV.name);
+                }
+              }
+            } else {
+              geometry.userData.isBMeshGeometry = true;
             }
             geometry.computeVertexNormals(); // Crucial para el sombreado suave (f.smooth = True)
 
@@ -7988,8 +9765,16 @@ export async function executeBlenderPythonScript(
               }
             }
 
+            if (targetMeshObj.polygons !== targetPolygons) {
+              targetMeshObj.polygons = targetPolygons;
+            }
+            if (targetMeshObj.loops !== targetLoops) {
+              targetMeshObj.loops = targetLoops;
+            }
+
+            const triCount = Math.floor(positions.length / 9);
             logs.push(
-              `bm.to_mesh: ${bmVerts.length} vértices y ${bmFaces.length} caras (${Math.floor(indices.length / 3)} tris) volcados a BufferGeometry.`
+              `bm.to_mesh: ${bmVerts.length} vértices y ${bmFaces.length} caras (${triCount} tris${activeUV ? `, UV activa "${activeUV.name}"` : ''}) volcados a BufferGeometry.`
             );
           } else if (internalGeo && bmVerts.length > 0) {
             const pos = internalGeo.attributes.position as THREE.BufferAttribute;
@@ -8021,7 +9806,13 @@ export async function executeBlenderPythonScript(
             }
           }
         },
-        normal_update: () => {},
+        normal_update: () => {
+          for (const f of bmFaces) {
+            if (f && typeof f.normal_update === 'function') {
+              f.normal_update();
+            }
+          }
+        },
         transform: (mat: any) => {
           if (!mat) return;
           for (const v of bmVerts) {
@@ -8030,6 +9821,11 @@ export async function executeBlenderPythonScript(
               v.co.x = Number(transformed[0] ?? transformed.x ?? v.co.x);
               v.co.y = Number(transformed[1] ?? transformed.y ?? v.co.y);
               v.co.z = Number(transformed[2] ?? transformed.z ?? v.co.z);
+            }
+          }
+          for (const f of bmFaces) {
+            if (f && typeof f.normal_update === 'function') {
+              f.normal_update();
             }
           }
         },
@@ -8257,6 +10053,11 @@ export async function executeBlenderPythonScript(
             item.co.z += dz;
           }
         }
+        if (Array.isArray(opts.bm?.faces)) {
+          for (const f of opts.bm.faces) {
+            if (f && typeof f.normal_update === 'function') f.normal_update();
+          }
+        }
         return { geom: rawList };
       },
       scale: (...rawArgs: unknown[]) => {
@@ -8273,6 +10074,11 @@ export async function executeBlenderPythonScript(
             item.co.x *= sx;
             item.co.y *= sy;
             item.co.z *= sz;
+          }
+        }
+        if (Array.isArray(opts.bm?.faces)) {
+          for (const f of opts.bm.faces) {
+            if (f && typeof f.normal_update === 'function') f.normal_update();
           }
         }
         return { geom: rawList };
@@ -8298,9 +10104,27 @@ export async function executeBlenderPythonScript(
             }
           }
         }
+        if (Array.isArray(opts.bm?.faces)) {
+          for (const f of opts.bm.faces) {
+            if (f && typeof f.normal_update === 'function') f.normal_update();
+          }
+        }
         return { geom: rawList };
       },
-      recalc_face_normals: () => ({}),
+      recalc_face_normals: (...rawArgs: unknown[]) => {
+        const opts = extractPyArgs(rawArgs, ['bm', 'faces'], {});
+        const targetFaces = opts.faces || opts.bm?.faces || [];
+        if (Array.isArray(targetFaces)) {
+          for (const f of targetFaces) {
+            if (f && typeof f.normal_update === 'function') {
+              f.normal_update();
+            } else if (f && Array.isArray(f.verts)) {
+              f.normal = computeBMFaceNormal(f.verts);
+            }
+          }
+        }
+        return {};
+      },
       remove_doubles: () => ({}),
     },
   };
@@ -8537,6 +10361,8 @@ export async function executeBlenderPythonScript(
     const topLevelVars = new Set<string>();
     const reservedVars = new Set<string>([
       'bpy',
+      'data',
+      'images',
       'anim',
       'bmesh',
       'mathutils',
@@ -8590,6 +10416,8 @@ export async function executeBlenderPythonScript(
       'hasattr',
       'getattr',
       'setattr',
+      'eval',
+      'exec',
       'pow',
       'exp',
       'log',
@@ -8646,7 +10474,7 @@ export async function executeBlenderPythonScript(
       const currentIndent = rawLine.match(/^\s*/)?.[0].length ?? 0;
       const isContinuationClause =
         trimmed === 'else:' ||
-        /^elif\s+.+:$/.test(trimmed) ||
+        /^elif(?:\s+|(?=\()).+:$/.test(trimmed) ||
         /^except\b.*:$/.test(trimmed) ||
         trimmed === 'finally:';
 
@@ -8757,9 +10585,7 @@ export async function executeBlenderPythonScript(
       if (
         isDirectClassMember &&
         trimmed.includes('=') &&
-        !trimmed.startsWith('if ') &&
-        !trimmed.startsWith('for ') &&
-        !trimmed.startsWith('while ')
+        !/^(?:if|elif|for|while)\b/.test(trimmed)
       ) {
         transformedLines.push(`${indentStr}${trimmed};`);
         continue;
@@ -8800,30 +10626,30 @@ export async function executeBlenderPythonScript(
         continue;
       }
 
-      // Bucle `while cond:`
-      const whileMatch = trimmed.match(/^while\s+(.+):$/);
+      // Bucle `while cond:` (envuelve siempre la condición completa en paréntesis, incluso si empieza por '(')
+      const whileMatch = trimmed.match(/^while(?:\s+|(?=\())(.+):$/);
       if (whileMatch) {
-        const condJs = rewritePythonSyntaxInLine(whileMatch[1]);
+        const condJs = rewritePythonSyntaxInLine(whileMatch[1].trim());
         transformedLines.push(`${indentStr}__pyLine = ${currentPyLine}; while (${condJs}) {`);
         transpiledStatementsForDiag.push({ pyLine: currentPyLine, jsText: `while (${condJs}) {}` });
         blockStack.push({ headerIndent: currentIndent });
         continue;
       }
 
-      // `if cond:`
-      const ifMatch = trimmed.match(/^if\s+(.+):$/);
+      // `if cond:` (envuelve siempre la condición completa en paréntesis, incluso si empieza por '(')
+      const ifMatch = trimmed.match(/^if(?:\s+|(?=\())(.+):$/);
       if (ifMatch) {
-        const condJs = rewritePythonSyntaxInLine(ifMatch[1]);
+        const condJs = rewritePythonSyntaxInLine(ifMatch[1].trim());
         transformedLines.push(`${indentStr}__pyLine = ${currentPyLine}; if (${condJs}) {`);
         transpiledStatementsForDiag.push({ pyLine: currentPyLine, jsText: `if (${condJs}) {}` });
         blockStack.push({ headerIndent: currentIndent });
         continue;
       }
 
-      // `elif cond:`
-      const elifMatch = trimmed.match(/^elif\s+(.+):$/);
+      // `elif cond:` (envuelve siempre la condición completa en paréntesis, incluso si empieza por '(')
+      const elifMatch = trimmed.match(/^elif(?:\s+|(?=\())(.+):$/);
       if (elifMatch) {
-        const condJs = rewritePythonSyntaxInLine(elifMatch[1]);
+        const condJs = rewritePythonSyntaxInLine(elifMatch[1].trim());
         transformedLines.push(
           `${indentStr}} else if ((__pyLine = ${currentPyLine}, (${condJs}))) {`
         );
@@ -8918,7 +10744,7 @@ export async function executeBlenderPythonScript(
       }
 
       // Expresión ternaria inline de Python: `x = a if cond else b`
-      const ternaryAssign = trimmed.match(/^([a-zA-Z0-9_.[\]]+\s*=\s*)([^=]+?)\s+if\s+(.+?)\s+else\s+(.+)$/);
+      const ternaryAssign = trimmed.match(/^([a-zA-Z0-9_.[\]]+\s*=\s*)([^=]+?)\s+if(?:\s+|(?=\())(.+?)\s+else\s+(.+)$/);
       if (ternaryAssign) {
         const stmtJs = `${ternaryAssign[1]}(${ternaryAssign[3]}) ? (${ternaryAssign[2]}) : (${ternaryAssign[4]});`;
         transformedLines.push(`${indentStr}__pyLine = ${currentPyLine}; ${stmtJs}`);
@@ -8956,6 +10782,8 @@ export async function executeBlenderPythonScript(
     try {
       runner = new AsyncFunction(
         'bpy',
+        'data',
+        'images',
         'anim',
         'bmesh',
         'mathutils',
@@ -9031,6 +10859,8 @@ export async function executeBlenderPythonScript(
 
     await runner(
       bpy,
+      bpyDataProxy,
+      imagesCollectionInstance,
       animModuleProxy,
       bmesh,
       mathutils,
@@ -9134,6 +10964,11 @@ export async function executeBlenderPythonScript(
     // 7. Evaluar modificadores de Blender 5.2 pendientes (MIRROR, ARRAY, SOLIDIFY, etc.)
     for (const objProxy of [...allObjectProxies]) {
       await applyPendingModifiersForObject(objProxy);
+    }
+
+    // 7b. Esperar descargas asíncronas de mapas PBR CC0 de Poly Haven solicitados por el script
+    if (pendingAsyncTasks.length > 0) {
+      await Promise.allSettled(pendingAsyncTasks);
     }
 
     let manualEdits = 0;
@@ -9366,7 +11201,7 @@ function findSyntaxErrorPythonLine(
     const clean = sourceLines[i].replace(/#.*$/, '').trim();
     if (!clean) continue;
     if (
-      /^(?:def\s+\w+\s*\(.*\)|class\s+\w+.*|if\s+.+|elif\s+.+|else|for\s+.+\s+in\s+.+|while\s+.+|try|except\b.*|finally|with\s+.+)$/.test(
+      /^(?:def\s+\w+\s*\(.*\)|class\s+\w+.*|if(?:\s+|\().+|elif(?:\s+|\().+|else|for\s+.+\s+in\s+.+|while(?:\s+|\().+|try|except\b.*|finally|with\s+.+)$/.test(
         clean
       ) &&
       !clean.endsWith(':') &&

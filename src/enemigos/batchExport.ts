@@ -1,4 +1,9 @@
 import { generateMonsterGlb, type MonsterInfo, type MonsterTier } from './enemyGenerator';
+import {
+  buildStoreZipBlob,
+  downloadBytesReliably,
+  type ZipFileEntry,
+} from '../utils/reliableDownload';
 
 export interface BatchProgress {
   done: number;
@@ -56,26 +61,45 @@ export async function folderSink(): Promise<BatchSink> {
 }
 
 export function zipSink(): BatchSink {
+  const files: ZipFileEntry[] = [];
+  const MAX_CHUNK_BYTES = 60 * 1024 * 1024; // Partir en lotes de ~60 MB para no saturar RAM ni servidor
+  let chunkBytes = 0;
+  let partIndex = 1;
+
+  const flushPart = async (suffix?: string) => {
+    if (files.length === 0) return;
+    const zipBlob = buildStoreZipBlob(files);
+    const name = suffix
+      ? `monstruos_celshade_${suffix}.zip`
+      : partIndex > 1
+        ? `monstruos_celshade_parte${partIndex}.zip`
+        : 'monstruos_celshade.zip';
+    await downloadBytesReliably(zipBlob, name, 'application/zip');
+    files.length = 0;
+    chunkBytes = 0;
+    partIndex++;
+  };
+
   return {
     kind: 'download',
-    async writeFile(_tier, _category, filename, bytes) {
-      const copy = new Uint8Array(bytes.byteLength);
-      copy.set(bytes);
-      const blob = new Blob([copy.buffer], { type: 'model/gltf-binary' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = filename;
-      a.rel = 'noopener';
-      document.body.appendChild(a);
-      a.click();
-      setTimeout(() => {
-        if (a.parentNode) a.parentNode.removeChild(a);
-        URL.revokeObjectURL(url);
-      }, 4000);
+    async writeFile(tier, category, filename, bytes) {
+      const safeCat = category.replace(/[^a-z0-9_-]/gi, '_');
+      if (chunkBytes > 0 && chunkBytes + bytes.byteLength > MAX_CHUNK_BYTES) {
+        await flushPart();
+      }
+      files.push({ path: `${tier}/${safeCat}/${filename}`, bytes });
+      chunkBytes += bytes.byteLength;
     },
-    async finish() {
-      // Completed individual downloads
+    async finish(entries) {
+      const csvLines = [
+        'key,tier,mb,error',
+        ...entries.map((e) => `${e.key},${e.tier},${e.mb.toFixed(3)},${e.error || ''}`),
+      ];
+      files.push({
+        path: 'indice.csv',
+        bytes: new TextEncoder().encode(csvLines.join('\n')),
+      });
+      await flushPart();
     },
   };
 }

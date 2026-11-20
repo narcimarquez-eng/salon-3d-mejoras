@@ -209,6 +209,18 @@ export const GEMINI_TRAINING_TAGS: GeminiTrainingTagItem[] = [
   { tag: '#TexMarmolCarrara', point: 'P3', codeHint: 'mat.texture = "marble_carrara" # Mármol blanco veteado' },
   { tag: '#TexCalBlanca', point: 'P3', codeHint: 'mat.color_map = "cal_blanca"; mat.color_map_scale = 2.0 # Cal blanca CC0 (color+normal+rugosidad)' },
   { tag: '#TexTejaArcilla', point: 'P3', codeHint: 'mat.color_map = "teja_arcilla"; mat.color_map_scale = 2.5 # Teja árabe de arcilla CC0' },
+  { tag: '#PolyHavenPBR', point: 'P3', codeHint: 'bpy.ops.material.set_polyhaven_texture(zone="Muro", asset="brick_wall_001", resolution="1k", projection="BOX", repeat=2) # +870 texturas CC0 en vivo (Diffuse+Normal+Roughness)' },
+  { tag: '#MosaicoRomanoImperial', point: 'P3', codeHint: 'bpy.ops.material.set_mosaic_texture(object=obj, texture="mosaico_romano_imperial", projection="FLAT", repeat=(1,1))' },
+  { tag: '#MosaicoGoticoCarmesi', point: 'P3', codeHint: 'bpy.ops.material.set_mosaic_texture(object=obj, texture="mosaico_gotico_carmesi", projection="FLAT", repeat=(1,1))' },
+  { tag: '#MosaicoMuroNazari', point: 'P3', codeHint: 'bpy.ops.material.set_mosaic_texture(object=obj, texture="mosaico_muro_nazari", projection="BOX", repeat=(1,1))' },
+  { tag: '#AtlasSuelosMazmorra', point: 'P3', codeHint: 'bpy.ops.material.set_mosaic_texture(object=obj, texture="catalogo_suelos_mazmorra", tile="T-04", projection="FLAT", repeat=(2,2))' },
+  { tag: '#AtlasParedesMazmorra', point: 'P3', codeHint: 'bpy.ops.material.set_mosaic_texture(object=obj, texture="catalogo_paredes_mazmorra", tile="T-08", projection="BOX", repeat=(2,1))' },
+  { tag: '#AtlasColumnasMazmorra', point: 'P3', codeHint: 'bpy.ops.material.set_mosaic_texture(object=obj, texture="catalogo_columnas_mazmorra", tile="T-05", projection="CYLINDER", repeat=(1,1))' },
+  { tag: '#AtlasTejados', point: 'P3', codeHint: 'bpy.ops.material.set_mosaic_texture(object=obj, texture="catalogo_tejados", tile="T-09", projection="BOX", repeat=(2,2))' },
+  { tag: '#AtlasHierbas', point: 'P3', codeHint: 'bpy.ops.material.set_mosaic_texture(object=obj, texture="catalogo_hierbas", tile="T-09", projection="FLAT", repeat=(3,3))' },
+  { tag: '#AtlasAguaCristalina', point: 'P3', codeHint: 'bpy.ops.material.set_mosaic_texture(object=obj, texture="catalogo_agua_cristalina", tile="T-24", projection="FLAT", repeat=(2,2))' },
+  { tag: '#AtlasAguaProfundidad', point: 'P3', codeHint: 'bpy.ops.material.paint_zone(zone="Agua", texture="catalogo_progresion_agua_arena", tile="T-04", projection="FLAT", repeat=2) # T-01..T-10 (0.5m a 30m+)' },
+  { tag: '#UVProjectMosaic', point: 'P3', codeHint: 'bpy.ops.uv.project_mosaic(object=obj, projection="BOX", repeat=(1,1), cols=6, rows=3, col=0, row=2)' },
   { tag: '#TexMarmolNegroOro', point: 'P3', codeHint: 'mat.texture = "marble_nero" # Mármol negro Marquina y oro' },
   { tag: '#TexAdoquinPiedra', point: 'P3', codeHint: 'mat.texture = "cobblestone" # Adoquín empedrado' },
   { tag: '#TexLadrilloMudejar', point: 'P3', codeHint: 'mat.texture = "brick_mudejar" # Ladrillo visto mudéjar' },
@@ -533,6 +545,8 @@ export default function PythonScriptModal({
 
   const [selectedPresetId, setSelectedPresetId] = useState<string>('');
   const [scriptCode, setScriptCode] = useState<string>('');
+  const [uploadedTextureName, setUploadedTextureName] = useState<string | null>(null);
+  const textureFileInputRef = useRef<HTMLInputElement | null>(null);
   const [internalCoordinateMode, setInternalCoordinateMode] = useState<BlenderCoordinateMode>('auto');
   const coordinateMode = onCoordinateModeChange && externalCoordMode ? externalCoordMode : internalCoordinateMode;
   const handleCoordinateModeSelect = (nextMode: BlenderCoordinateMode, reRunCurrentScript: boolean = false) => {
@@ -884,6 +898,30 @@ PUNTO 3. BIBLIOTECA COMPLETA DE 38 TEXTURAS PBR 3D + RELIEVE BUMP (POR OBJETO O 
      * Maderas y Naturaleza (10): 'wood_oak' ('madera', 'roble'), 'wood_mahogany' ('caoba', 'nogal'), 'tree_bark' ('corteza', 'tronco'), 'water_caustics' ('agua', 'mar'), 'ocean_deep' ('oceano', 'olas'), 'desert_sand' ('arena', 'dunas'), 'moss_nature' ('musgo', 'liquen'), 'grass_meadow' ('hierba', 'cesped'), 'ice_crystal' ('hielo', 'glaciar'), 'fresh_snow' ('nieve', 'escarcha').
      * Metales, Tejidos y Cuero (8): 'brushed_metal' ('metal', 'acero', 'aluminio'), 'damascus_steel' ('damasco', 'forjado'), 'gold_damascene' ('oro', 'dorado', 'orfebreria'), 'copper_patina' ('bronce', 'cobre', 'patina'), 'carbon_weave' ('carbono', 'kevlar'), 'leather_tufted' ('cuero', 'piel'), 'royal_velvet' ('terciopelo', 'seda'), 'woven_linen' ('lino', 'tela', 'arpillera').
      * Fantasía, Sci-Fi y Anime (8): 'dragon_scales' ('escamas'), 'biomech_plates' ('biomecanico'), 'magma_cracks' ('magma', 'lava'), 'solar_plasma' ('plasma', 'sol'), 'hologram_grid' ('holograma'), 'halftone_manga' ('manga', 'comic'), 'cyber_circuits' ('circuitos', 'cyber'), 'smooth_skin' ('cel', 'anime').
+   - API DE MOSAICOS ARQUITECTÓNICOS Y CATÁLOGOS ATLAS 5×2 (9 LÁMINAS + 60 SUB-TESELAS 512×512 RECORTADAS AUTOMÁTICAMENTE):
+     * 3 Mosaicos y Murales de Fotograma Completo (1376×768):
+       - 'mosaico_romano_imperial': Mosaico Romano Imperial con medallón circular estrellado de 8 puntas, olas vitruvianas y trenza guilloche (ideal en suelos con repeat=(1,1), projection="FLAT").
+       - 'mosaico_gotico_carmesi': Mosaico y Bajorrelieve Gótico Carmesí y Basalto en cuadrícula 5×3 de losas con rosetón central (admite cols=5, rows=3 para aislar losas).
+       - 'mosaico_muro_nazari': Mural y Mosaico Nazarí / Mudéjar en cuadrícula 6×3 con triple arco de herradura (filas 0..1) y zócalo de alicatado estrellado (fila 2).
+     * 6 Catálogos Atlas 5×2 (10 sub-texturas de 512×512 px cada uno; el motor recorta automáticamente la celda limpia sin el marco ni el texto):
+       - 'catalogo_suelos_mazmorra' -> sub-tiles 'suelo_mazmorra_t01'..'suelo_mazmorra_t10' (destaca T-04 Mosaico Desgastado, T-01 Losas, T-02 Musgo, T-06 Adoquines, T-09 Charcos).
+       - 'catalogo_paredes_mazmorra' -> sub-tiles 'pared_mazmorra_t01'..'pared_mazmorra_t10' (destaca T-03 Mosaicos Antiguos, T-08 Mosaico Decorativo, T-06 Relieve Gótico, T-05 Runas).
+       - 'catalogo_columnas_mazmorra' -> sub-tiles 'columna_mazmorra_t01'..'columna_mazmorra_t10' (T-01 Ladrillos, T-03 Runas, T-05 Espiral, T-06 Cadenas, T-07 Capitel, T-10 Gótico).
+       - 'catalogo_tejados' -> sub-tiles 'tejado_t01'..'tejado_t10' (T-01 Teja árabe, T-02 Pizarra, T-04 Teja musgo, T-07 Paja, T-09 Escama).
+       - 'catalogo_hierbas' -> sub-tiles 'hierba_t01'..'hierba_t10' (T-01 Césped, T-02 Tréboles, T-05 Musgo, T-09 Margaritas, T-10 Escarcha).
+       - 'catalogo_agua_cristalina' -> sub-tiles 'agua_t21'..'agua_t30' (T-21 Turquesa, T-22 Cenote, T-24 Cáusticas, T-28 Arrecife, T-30 Burbujas).
+       - 'catalogo_progresion_agua_arena' -> sub-tiles 'agua_profundidad_t01'..'agua_profundidad_t10' (T-01 Arena 0.5m, T-04 Turquesa 3m, T-07 Profunda 12m, T-10 Alta Mar 30m+).
+     * 5 Formas de invocar la API en Python:
+       1) Operador de 1 línea: bpy.ops.material.set_mosaic_texture(object=obj, texture="catalogo_suelos_mazmorra", tile="T-04", repeat=(2, 2), projection="FLAT") # projection: "FLAT" | "BOX" | "CYLINDER"
+       2) Pintar zona completa o piezas: bpy.ops.material.paint_zone(zone="Suelo", texture="catalogo_progresion_agua_arena", tile="T-04", projection="FLAT", repeat=2)
+       3) Propiedad directa: mat.color_map = "suelo_mazmorra_t04" (o "catalogo_suelos_mazmorra:T-04" o "mosaico_romano_imperial"); mat.color_map_scale = (2.0, 2.0)
+       4) Nodo Blender estándar: tex = mat.node_tree.nodes.new("ShaderNodeTexImage"); tex.image = bpy.data.images.load("mosaico_romano_imperial"); mat.node_tree.links.new(bsdf.inputs["Base Color"], tex.outputs["Color"])
+       5) Proyección UV e introspección: bpy.ops.uv.project_mosaic(object=obj, projection="BOX", repeat=(1, 1), cols=6, rows=3, col=0, row=2) | bpy.ops.material.list_mosaics() | bpy.ops.material.list_polyhaven_api()
+   - API POLY HAVEN CC0 EN DIRECTO (871+ TEXTURAS PBR REALES CON DIFFUSE + NORMAL + ROUGHNESS + METALNESS):
+     * Operador directo por zona u objeto: bpy.ops.material.set_polyhaven_texture(zone="Muro", asset="brick_wall_001", resolution="1k", projection="BOX", repeat=2)
+     * Pintar piezas concretas: bpy.ops.material.paint_zone(objects=["Torre", "Fachada"], texture="polyhaven:castle_brick_01@1k", projection="BOX", repeat=3)
+     * Propiedad de material o nodo: mat.color_map = "polyhaven:wood_planks_dirt" (o "polyhaven:medieval_blocks_05@2k") y bpy.data.images.load("polyhaven:rusty_metal_02")
+     * REST API JSON: GET /api/textures/docs | GET /api/polyhaven/textures?q=ladrillo | GET /api/polyhaven/files/brick_wall_001?res=1k
 
 PUNTO 4. MATERIALES PBR AVANZADOS \`Principled BSDF\` (Blender 5.2) Y NODOS CEL-SHADE / ANIME:
    - Creación: mat = bpy.data.materials.new(name="..."); mat.use_nodes = True; bsdf = mat.node_tree.nodes["Principled BSDF"]
@@ -2062,6 +2100,39 @@ Termina siempre con bpy.ops.mesh.auto_ground() y devuelve únicamente el bloque 
                     )}
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
+                    {/* Botón Cargar Imagen / Textura para ShaderNodeTexImage y bpy.data.images.load */}
+                    <input
+                      ref={textureFileInputRef}
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) {
+                          if (!window.uploadedTextures) {
+                            window.uploadedTextures = {};
+                          }
+                          const objectUrl = URL.createObjectURL(file);
+                          window.uploadedTextures[file.name] = objectUrl;
+                          window.uploadedTextures['default'] = objectUrl;
+                          setUploadedTextureName(file.name);
+                          setTerminalLogs((prev) => [
+                            ...prev,
+                            `>>> 🖼️ Textura de imagen guardada en memoria: "${file.name}" (asociada a '${file.name}' y 'default' en window.uploadedTextures). Soportada por bpy.data.images.load() y ShaderNodeTexImage.`,
+                          ]);
+                        }
+                      }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => textureFileInputRef.current?.click()}
+                      className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/40 font-semibold transition-colors cursor-pointer text-xs"
+                      title="Cargar textura de imagen externa para bpy.data.images.load y ShaderNodeTexImage"
+                    >
+                      <ImagePlus className="w-3.5 h-3.5 text-emerald-400" />
+                      <span>{uploadedTextureName ? `Textura: ${uploadedTextureName}` : 'Cargar Imagen / Textura'}</span>
+                    </button>
+
                     <button
                       type="button"
                       onClick={async () => {
@@ -2436,6 +2507,50 @@ Termina siempre con bpy.ops.mesh.auto_ground() y devuelve únicamente el bloque 
                   • <span className="text-sky-300">Metales, Tejidos y Cuero (8):</span> &apos;brushed_metal&apos; (acero cepillado), &apos;damascus_steel&apos; (acero de Damasco), &apos;gold_damascene&apos; (oro damasquinado), &apos;copper_patina&apos; (bronce con pátina), &apos;carbon_weave&apos; (fibra de carbono), &apos;leather_tufted&apos; (cuero capitoné), &apos;royal_velvet&apos; (terciopelo real), &apos;woven_linen&apos; (lino tejido)
                   <br />
                   • <span className="text-purple-300">Fantasía, Sci-Fi y Anime (8):</span> &apos;dragon_scales&apos;, &apos;biomech_plates&apos;, &apos;magma_cracks&apos;, &apos;solar_plasma&apos;, &apos;hologram_grid&apos;, &apos;halftone_manga&apos;, &apos;cyber_circuits&apos;, &apos;smooth_skin&apos;
+                </code>
+              </div>
+
+              <div className="p-3.5 rounded-lg bg-amber-950/25 border border-amber-500/30 space-y-2 md:col-span-2">
+                <span className="font-mono text-amber-300 font-semibold">
+                  3B. API de Mosaicos Arquitectónicos y Catálogos Atlas 5×2 (9 Láminas + 60 Sub-Texturas 512×512)
+                </span>
+                <p className="text-slate-300 text-xs leading-relaxed">
+                  Algunas texturas incluidas son <strong>Mosaicos de fotograma completo</strong> (medallones y murales con simetría radial o cuadrícula de losas) y otras son <strong>Catálogos Atlas 5×2</strong> con 10 sub-texturas de <code>512×512 px</code> cada una. Al invocar un sub-tile (ej. <code>suelo_mazmorra_t04</code> o <code>tile=&quot;T-04&quot;</code>), el motor recorta automáticamente en un <code>&lt;canvas&gt;</code> la celda limpia sin los bordes ni textos del catálogo:
+                </p>
+                <code className="block p-2.5 rounded bg-slate-950 font-mono text-[11px] text-slate-200 leading-relaxed">
+                  <span className="text-amber-300"># 1. Mosaicos Completos (1376×768):</span> &apos;mosaico_romano_imperial&apos; (medallón circular estrellado), &apos;mosaico_gotico_carmesi&apos; (rosetón gótico en cuadrícula 5×3), &apos;mosaico_muro_nazari&apos; (arquería triple y alicatado nazarí 6×3)
+                  <br />
+                  <span className="text-indigo-300"># 2. Catálogos Atlas 5×2 (60 sub-teselas 512×512):</span>
+                  <br />
+                  • &apos;catalogo_suelos_mazmorra&apos; → &apos;suelo_mazmorra_t01&apos;..&apos;suelo_mazmorra_t10&apos; (incluye T-04 Mosaico Desgastado)
+                  <br />
+                  • &apos;catalogo_paredes_mazmorra&apos; → &apos;pared_mazmorra_t01&apos;..&apos;pared_mazmorra_t10&apos; (incluye T-03 Mosaicos Antiguos y T-08 Mosaico Decorativo)
+                  <br />
+                  • &apos;catalogo_columnas_mazmorra&apos; → &apos;columna_mazmorra_t01&apos;..&apos;columna_mazmorra_t10&apos; (fustes, runas, espiral, cadenas, capitel)
+                  <br />
+                  • &apos;catalogo_tejados&apos; → &apos;tejado_t01&apos;..&apos;tejado_t10&apos; | &apos;catalogo_hierbas&apos; → &apos;hierba_t01&apos;..&apos;hierba_t10&apos; | &apos;catalogo_agua_cristalina&apos; → &apos;agua_t21&apos;..&apos;agua_t30&apos;
+                  <br />
+                  • &apos;catalogo_progresion_agua_arena&apos; → &apos;agua_profundidad_t01&apos;..&apos;agua_profundidad_t10&apos; (0.5m playa a 30m+ alta mar, tileables)
+                  <br />
+                  <span className="text-emerald-300"># 3. Llamadas de la API en Python:</span>
+                  <br />
+                  bpy.ops.material.set_mosaic_texture(object=obj, texture=&quot;catalogo_suelos_mazmorra&quot;, tile=&quot;T-04&quot;, repeat=(2, 2), projection=&quot;FLAT&quot;)
+                  <br />
+                  bpy.ops.uv.project_mosaic(object=obj, projection=&quot;BOX&quot;, repeat=(1, 1), cols=6, rows=3, col=0, row=2)
+                  <br />
+                  mat.color_map = &quot;mosaico_romano_imperial&quot; &nbsp;# o bpy.data.images.load(&quot;pared_mazmorra_t08&quot;)
+                  <br />
+                  <span className="text-cyan-300"># 4. Poly Haven CC0 en directo (871+ texturas PBR con Diffuse + Normal + Roughness + Metalness):</span>
+                  <br />
+                  bpy.ops.material.set_polyhaven_texture(zone=&quot;Muro&quot;, asset=&quot;brick_wall_001&quot;, resolution=&quot;1k&quot;, projection=&quot;BOX&quot;, repeat=2)
+                  <br />
+                  bpy.ops.material.paint_zone(objects=[&quot;Suelo&quot;], texture=&quot;polyhaven:cobblestone_floor_08@1k&quot;, projection=&quot;FLAT&quot;, repeat=3)
+                  <br />
+                  mat.color_map = &quot;polyhaven:wood_planks_dirt&quot; &nbsp;# o bpy.data.images.load(&quot;polyhaven:medieval_blocks_05@2k&quot;)
+                  <br />
+                  <span className="text-purple-300"># 5. Introspección Python y Endpoints REST JSON:</span>
+                  <br />
+                  info = bpy.ops.material.list_polyhaven_api() &nbsp;# REST: GET /api/textures/docs | GET /api/polyhaven/textures?q=ladrillo
                 </code>
               </div>
 

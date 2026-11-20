@@ -123,14 +123,9 @@ function createDownscaledCanvasTexture(
 }
 
 function triggerDownload(blob: Blob, filename: string) {
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  setTimeout(() => URL.revokeObjectURL(url), 2000);
+  void import('../../../utils/reliableDownload').then(({ downloadBytesReliably }) => {
+    void downloadBytesReliably(blob, filename, blob.type || 'application/octet-stream');
+  });
 }
 
 function arrayBufferToBase64(buffer: ArrayBuffer): string {

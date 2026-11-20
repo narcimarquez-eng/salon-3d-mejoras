@@ -313,6 +313,18 @@ export async function sliceCompositeSheet(
   }
 
   let nCols = figureBands.length;
+  if (nCols <= 1 && !hasTwoRows) {
+    const singleBandSpan =
+      figureBands.length === 1 ? (figureBands[0][1] - figureBands[0][0] + 1) / sw : 0;
+    // Si solo hay 1 figura detectada (no ocupa toda una tira de 4 personajes pegados), es una foto individual de frente
+    if (singleBandSpan < 0.68 || ratio < 1.85) {
+      const images = emptySlots<HTMLImageElement>();
+      const names = emptySlots<string>();
+      images.front = sheetImg;
+      names.front = fileName;
+      return { images, names, isAllInOne: false, columns: 1 };
+    }
+  }
   if (!COLUMN_LAYOUTS[nCols]) {
     // Sin bandas limpias: repartir en 4 columnas iguales (comportamiento histórico).
     nCols = 4;

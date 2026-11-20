@@ -1,6 +1,7 @@
 import dotenv from 'dotenv';
 dotenv.config();
 
+import crypto from 'crypto';
 import express from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -72,6 +73,11 @@ PUNTO 2. MALLAS 'from_pydata' Y TOPOLOGÍA DENSA 'bmesh' ('bmesh.ops.create_grid
 PUNTO 3. BIBLIOTECA COMPLETA DE 38 TEXTURAS PBR 3D + RELIEVE BUMP (POR OBJETO O GLOBAL) Y ALIAS:
 - Asignación por material: mat.texture = 'stone_ashlar'; mat.texture_repeat = 2; mat.bump_strength = 1.2 (o bsdf.inputs["Texture"].default_value = '...')
 - Texturas de IMAGEN reales (color + normal + rugosidad, CC0 y del usuario): mat.color_map = 'cal_blanca' (cal blanca, enfoscados y muros), mat.color_map = 'teja_arcilla' (teja árabe de arcilla), mat.color_map_scale = 2.0 (metros que ocupa una repetición; por defecto 3.0). Úsalo para muros de cal, tejados de teja y fachadas reales; las UV se proyectan en metros automáticamente. Si el usuario ha subido sus propias imágenes, también puede usarse mat.color_map = 'nombre_de_la_imagen'.
+- Mosaicos Completos y 7 Catálogos Atlas 5x2 (70 sub-teselas 512x512 recortadas automáticamente):
+  * Mosaicos completos: 'mosaico_romano_imperial', 'mosaico_gotico_carmesi', 'mosaico_muro_nazari'.
+  * Catálogos Atlas 5x2: 'catalogo_progresion_agua_arena' ('agua_profundidad_t01'..'agua_profundidad_t10', desde arena 0.5m hasta alta mar 30m+), 'catalogo_suelos_mazmorra' ('suelo_mazmorra_t01'..'t10'), 'catalogo_paredes_mazmorra' ('pared_mazmorra_t01'..'t10'), 'catalogo_columnas_mazmorra' ('columna_mazmorra_t01'..'t10'), 'catalogo_tejados' ('tejado_t01'..'t10'), 'catalogo_hierbas' ('hierba_t01'..'t10'), 'catalogo_agua_cristalina' ('agua_t21'..'t30').
+  * Uso por zona/pieza: bpy.ops.material.paint_zone(zone='Suelo', texture='catalogo_progresion_agua_arena', tile='T-04', projection='FLAT', repeat=2) o bpy.ops.material.set_mosaic_texture(...).
+- Texturas PBR CC0 en vivo desde POLY HAVEN (871+ materiales reales con Diffuse + Normal GL + Roughness + Metalness): usa prefijo 'polyhaven:<asset_id>' o 'polyhaven:<asset_id>@2k' (ej. 'polyhaven:brick_wall_001', 'polyhaven:wood_planks_dirt', 'polyhaven:cobblestone_floor_08', 'polyhaven:rusty_metal_02') en mat.color_map = 'polyhaven:brick_wall_001', en bpy.data.images.load('polyhaven:...'), en bpy.ops.material.paint_zone(zone='Muro', texture='polyhaven:brick_wall_001', projection='BOX', repeat=2) o en bpy.ops.material.set_polyhaven_texture(zone='Muro', asset='brick_wall_001', resolution='1k', projection='BOX', repeat=2).
 - Asignación por objeto o global: bpy.ops.material.set_texture(name='stone_ashlar', object=obj, repeat=2, bump=1.2, natural_color=True)
 - Las 38 Texturas PBR + Bump disponibles:
   * Arquitectura y Piedra (11): 'stone_ashlar' (alias: 'piedra', 'silleria', 'caliza'), 'travertine_roman' ('travertino'), 'marble_carrara' ('marmol', 'carrara'), 'marble_nero' ('marmol_negro', 'marquina'), 'cobblestone' ('adoquin', 'empedrado'), 'brick_mudejar' ('ladrillo', 'mudejar'), 'terracotta_roof' ('teja', 'terracota'), 'slate_roof' ('pizarra'), 'andalusi_tiles' ('azulejo', 'ceramica'), 'stained_glass' ('vidriera', 'vitral'), 'concrete_brutalist' ('hormigon', 'cemento').
@@ -271,7 +277,14 @@ function parseDataUrlImage(dataUrl?: string): { mimeType: string; data: string }
 
 async function startServer() {
   const app = express();
-  const PORT = Number(process.env.PORT) || 3000;
+
+  const portArgIndex = process.argv.indexOf('--port');
+  const cliPort = portArgIndex !== -1 ? Number(process.argv[portArgIndex + 1]) : NaN;
+  const PORT = !Number.isNaN(cliPort) && cliPort > 0 ? cliPort : (Number(process.env.PORT) || 3000);
+
+  const hostArgIndex = process.argv.indexOf('--host');
+  const cliHost = hostArgIndex !== -1 ? process.argv[hostArgIndex + 1] : undefined;
+  const HOST = cliHost || process.env.HOST || '0.0.0.0';
 
   app.use(express.json({ limit: '10mb' }));
 
@@ -988,6 +1001,544 @@ Usa exactamente estos rangos (X, Y, Z) para colocar nuevos puntos o piezas sin d
     }
   });
 
+  // ============================================================================
+  // API OFICIAL DE POLY HAVEN (CC0 PUBLIC DOMAIN) — BÚSQUEDA, MAPAS PBR Y PROXY
+  // ============================================================================
+  const POLYHAVEN_USER_AGENT = 'CelShadeStudio3D/1.0 (https://polyhaven.com)';
+  const POLYHAVEN_CACHE_TTL_MS = 60 * 60 * 1000; // 1 hora
+
+  interface PolyHavenRawAsset {
+    name?: string;
+    categories?: string[];
+    tags?: string[];
+    description?: string;
+    download_count?: number;
+    thumbnail_url?: string;
+    authors?: Record<string, string>;
+  }
+
+  let polyHavenCatalogCache: {
+    fetchedAt: number;
+    items: Array<{
+      id: string;
+      name: string;
+      categories: string[];
+      tags: string[];
+      description: string;
+      downloadCount: number;
+      thumbnailUrl: string;
+      authors: string[];
+    }>;
+  } | null = null;
+
+  const polyHavenFilesCache = new Map<
+    string,
+    {
+      fetchedAt: number;
+      data: Record<string, any>;
+    }
+  >();
+
+  // Diccionario de búsqueda bilingüe Español -> Inglés para facilitar búsquedas en Poly Haven
+  const ES_TO_EN_TEXTURE_TERMS: Record<string, string[]> = {
+    ladrillo: ['brick', 'bricks'],
+    ladrillos: ['brick', 'bricks'],
+    madera: ['wood', 'planks', 'bark', 'timber'],
+    tablas: ['planks', 'wood'],
+    piedra: ['stone', 'rock', 'cobblestone', 'cobble'],
+    roca: ['rock', 'cliff', 'stone'],
+    marmol: ['marble'],
+    mármol: ['marble'],
+    teja: ['roof', 'tiles', 'terracotta'],
+    tejado: ['roof', 'roofing', 'tiles', 'slate'],
+    pizarra: ['slate', 'roof'],
+    arena: ['sand', 'beach', 'desert'],
+    agua: ['water', 'ice', 'puddle'],
+    hierba: ['grass', 'meadow', 'moss'],
+    cesped: ['grass', 'lawn'],
+    césped: ['grass', 'lawn'],
+    musgo: ['moss', 'forest'],
+    tierra: ['dirt', 'mud', 'soil', 'ground'],
+    barro: ['mud', 'dirt'],
+    nieve: ['snow', 'ice'],
+    hielo: ['ice', 'snow'],
+    metal: ['metal', 'iron', 'steel', 'rust', 'copper', 'gold'],
+    oxido: ['rust', 'rusted'],
+    óxido: ['rust', 'rusted'],
+    hierro: ['iron', 'metal'],
+    acero: ['steel', 'metal'],
+    cobre: ['copper', 'metal'],
+    oro: ['gold', 'metal'],
+    yeso: ['plaster', 'stucco'],
+    cal: ['plaster', 'stucco', 'white'],
+    hormigon: ['concrete', 'cement'],
+    hormigón: ['concrete', 'cement'],
+    cemento: ['concrete', 'cement'],
+    asfalto: ['asphalt', 'road'],
+    adoquin: ['cobblestone', 'cobble', 'paving'],
+    adoquín: ['cobblestone', 'cobble', 'paving'],
+    azulejo: ['tile', 'tiles', 'ceramic'],
+    baldosa: ['tile', 'tiles', 'floor'],
+    suelo: ['floor', 'ground', 'paving', 'cobblestone'],
+    pared: ['wall', 'brick', 'plaster'],
+    muro: ['wall', 'stone', 'brick'],
+    tela: ['fabric', 'cloth', 'linen', 'denim'],
+    cuero: ['leather'],
+    corteza: ['bark', 'tree'],
+    hojas: ['leaves', 'forest'],
+    mosaico: ['mosaic', 'tile', 'tiles'],
+  };
+
+  async function getPolyHavenCatalog() {
+    if (
+      polyHavenCatalogCache &&
+      Date.now() - polyHavenCatalogCache.fetchedAt < POLYHAVEN_CACHE_TTL_MS
+    ) {
+      return polyHavenCatalogCache.items;
+    }
+    const resp = await fetch('https://api.polyhaven.com/assets?t=textures', {
+      headers: { 'User-Agent': POLYHAVEN_USER_AGENT },
+    });
+    if (!resp.ok) {
+      throw new Error(`Poly Haven API respondió con estado ${resp.status}`);
+    }
+    const raw = (await resp.json()) as Record<string, PolyHavenRawAsset>;
+    const items = Object.entries(raw)
+      .map(([id, info]) => ({
+        id,
+        name: info.name || id.replace(/_/g, ' '),
+        categories: Array.isArray(info.categories) ? info.categories : [],
+        tags: Array.isArray(info.tags) ? info.tags : [],
+        description: info.description || '',
+        downloadCount: Number(info.download_count) || 0,
+        thumbnailUrl:
+          info.thumbnail_url ||
+          `https://cdn.polyhaven.com/asset_img/thumbs/${encodeURIComponent(id)}.png?width=256&height=256`,
+        authors: info.authors ? Object.keys(info.authors) : ['Poly Haven'],
+      }))
+      .sort((a, b) => b.downloadCount - a.downloadCount);
+
+    polyHavenCatalogCache = { fetchedAt: Date.now(), items };
+    return items;
+  }
+
+  // ============================================================================
+  // ENDPOINT DE DOCUMENTACIÓN UNIFICADA DE LA API DE TEXTURAS Y POLY HAVEN
+  // ============================================================================
+  app.get('/api/textures/docs', (_req, res) => {
+    return res.json({
+      name: 'CelShade Studio 3D — Texture & Poly Haven PBR API',
+      version: '2.0',
+      restEndpoints: {
+        docs: {
+          method: 'GET',
+          path: '/api/textures/docs',
+          description:
+            'Devuelve la documentación completa de endpoints REST y operadores Python (bpy) de texturas, Mosaicos, Atlas 5x2 y Poly Haven CC0.',
+        },
+        polyhavenSearch: {
+          method: 'GET',
+          path: '/api/polyhaven/textures',
+          queryParams: {
+            q: 'Texto libre en español o inglés (ej. ladrillo, madera, marmol, brick, wood)',
+            category:
+              'all | brick | wood | stone | metal | plaster | roofing | floor | fabric | terrain',
+            limit: 'Número máximo de resultados (1..80, por defecto 36)',
+          },
+          example: '/api/polyhaven/textures?q=ladrillo&limit=12',
+        },
+        polyhavenFiles: {
+          method: 'GET',
+          path: '/api/polyhaven/files/:assetId',
+          queryParams: { res: '1k | 2k (por defecto 1k)' },
+          returns:
+            'URLs same-origin para los mapas PBR Diffuse (sRGB), Normal GL, Roughness, Metalness y AO',
+          example: '/api/polyhaven/files/brick_wall_001?res=1k',
+        },
+        polyhavenImageProxy: {
+          method: 'GET',
+          path: '/api/polyhaven/image?url=<encoded_polyhaven_url>',
+          description:
+            'Proxy seguro same-origin (allowlist dl.polyhaven.org y cdn.polyhaven.com) para evitar bloqueos CORS en WebGL y exportación .glb.',
+        },
+      },
+      pythonBpyApi: {
+        polyhavenOperator: {
+          signature:
+            'bpy.ops.material.set_polyhaven_texture(object=None, objects=None, zone=None, asset="brick_wall_001", resolution="1k", projection="BOX", repeat=2)',
+          description:
+            'Descarga y aplica mapas PBR CC0 completos (Diffuse + Normal + Roughness + Metalness) desde Poly Haven sobre una pieza, lista de piezas o zona.',
+        },
+        paintZoneOperator: {
+          signature:
+            'bpy.ops.material.paint_zone(zone="ALL", objects=None, texture="...", tile=None, projection="BOX", repeat=2)',
+          description:
+            'Pinta una zona o conjunto de piezas con Mosaicos, sub-tiles de Atlas 5x2, 38 texturas PBR procedurales o texturas Poly Haven usando prefijo "polyhaven:<asset_id>@1k|2k".',
+        },
+        setMosaicOperator: {
+          signature:
+            'bpy.ops.material.set_mosaic_texture(object=obj, texture="catalogo_progresion_agua_arena", tile="T-04", projection="FLAT", repeat=2)',
+          description:
+            'Aplica mosaicos completos o recorta automáticamente sub-texturas 512x512 de los 7 Catálogos Atlas 5x2.',
+        },
+        materialProperties: [
+          'mat.color_map = "polyhaven:brick_wall_001"',
+          'mat.color_map = "polyhaven:wood_planks_dirt@2k"',
+          'mat.color_map = "agua_profundidad_t04"',
+          'mat.color_map = "mosaico_romano_imperial"',
+          'img = bpy.data.images.load("polyhaven:medieval_blocks_05@1k")',
+        ],
+        introspection: [
+          'bpy.ops.material.list_mosaics()',
+          'bpy.ops.material.list_polyhaven_api()',
+        ],
+      },
+      builtinCatalogs: {
+        mosaics: [
+          'mosaico_romano_imperial',
+          'mosaico_gotico_carmesi',
+          'mosaico_muro_nazari',
+        ],
+        atlases5x2: [
+          {
+            id: 'catalogo_progresion_agua_arena',
+            tiles: 'agua_profundidad_t01 .. agua_profundidad_t10 (T-01..T-10, 0.5m a 30m+)',
+          },
+          { id: 'catalogo_suelos_mazmorra', tiles: 'suelo_mazmorra_t01 .. suelo_mazmorra_t10' },
+          { id: 'catalogo_paredes_mazmorra', tiles: 'pared_mazmorra_t01 .. pared_mazmorra_t10' },
+          {
+            id: 'catalogo_columnas_mazmorra',
+            tiles: 'columna_mazmorra_t01 .. columna_mazmorra_t10',
+          },
+          { id: 'catalogo_tejados', tiles: 'tejado_t01 .. tejado_t10' },
+          { id: 'catalogo_hierbas', tiles: 'hierba_t01 .. hierba_t10' },
+          { id: 'catalogo_agua_cristalina', tiles: 'agua_t21 .. agua_t30' },
+        ],
+        localPbrCC0: ['cal_blanca', 'teja_arcilla'],
+        polyhavenLiveCatalog:
+          '871+ texturas CC0 Public Domain vía prefijo polyhaven:<asset_id>[@1k|2k]',
+      },
+    });
+  });
+
+  app.get('/api/polyhaven/textures', async (req, res) => {
+    try {
+      const qRaw = String(req.query.q || '').trim().toLowerCase();
+      const category = String(req.query.category || 'all').trim().toLowerCase();
+      const limit = Math.max(1, Math.min(80, Number(req.query.limit) || 36));
+      const allItems = await getPolyHavenCatalog();
+
+      // Expandir términos en español a sinónimos en inglés
+      const searchTerms: string[] = [];
+      if (qRaw) {
+        for (const token of qRaw.split(/\s+/).filter(Boolean)) {
+          searchTerms.push(token);
+          const mapped = ES_TO_EN_TEXTURE_TERMS[token];
+          if (mapped) searchTerms.push(...mapped);
+        }
+      }
+
+      const filtered = allItems.filter((item) => {
+        if (category && category !== 'all') {
+          const catMatch =
+            item.categories.some((c) => c.toLowerCase().includes(category)) ||
+            item.tags.some((t) => t.toLowerCase().includes(category)) ||
+            item.id.toLowerCase().includes(category);
+          if (!catMatch) return false;
+        }
+        if (searchTerms.length > 0) {
+          const haystack = `${item.id} ${item.name} ${item.categories.join(' ')} ${item.tags.join(' ')} ${item.description}`.toLowerCase();
+          // Coincide si el texto completo o cualquiera de los términos traducidos aparece
+          return haystack.includes(qRaw) || searchTerms.some((t) => haystack.includes(t));
+        }
+        return true;
+      });
+
+      res.json({
+        total: filtered.length,
+        totalCatalog: allItems.length,
+        items: filtered.slice(0, limit).map((item) => ({
+          ...item,
+          proxyThumbnailUrl: `/api/polyhaven/image?url=${encodeURIComponent(item.thumbnailUrl)}`,
+        })),
+      });
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : String(error);
+      res.status(502).json({ error: `No se pudo consultar Poly Haven: ${msg}` });
+    }
+  });
+
+  app.get('/api/polyhaven/files/:assetId', async (req, res) => {
+    try {
+      const assetId = String(req.params.assetId || '').trim();
+      if (!/^[a-zA-Z0-9_-]{1,80}$/.test(assetId)) {
+        res.status(400).json({ error: 'ID de textura Poly Haven inválido.' });
+        return;
+      }
+      const requestedRes = String(req.query.res || '1k').toLowerCase() === '2k' ? '2k' : '1k';
+      const fallbackRes = requestedRes === '2k' ? '1k' : '2k';
+
+      let filesJson: Record<string, any> | null = null;
+      const cached = polyHavenFilesCache.get(assetId);
+      if (cached && Date.now() - cached.fetchedAt < POLYHAVEN_CACHE_TTL_MS) {
+        filesJson = cached.data;
+      } else {
+        const resp = await fetch(
+          `https://api.polyhaven.com/files/${encodeURIComponent(assetId)}`,
+          { headers: { 'User-Agent': POLYHAVEN_USER_AGENT } }
+        );
+        if (!resp.ok) {
+          res.status(resp.status === 404 ? 404 : 502).json({
+            error: `Textura Poly Haven "${assetId}" no encontrada (${resp.status}).`,
+          });
+          return;
+        }
+        filesJson = (await resp.json()) as Record<string, any>;
+        polyHavenFilesCache.set(assetId, { fetchedAt: Date.now(), data: filesJson });
+      }
+
+      const pickMapUrl = (candidateKeys: string[]): string | null => {
+        if (!filesJson) return null;
+        for (const key of candidateKeys) {
+          const entry = filesJson[key];
+          if (!entry || typeof entry !== 'object') continue;
+          const resObj = entry[requestedRes] || entry[fallbackRes] || entry['1k'] || entry['2k'];
+          if (!resObj || typeof resObj !== 'object') continue;
+          const url = resObj.jpg?.url || resObj.png?.url;
+          if (typeof url === 'string' && url.startsWith('https://')) {
+            return `/api/polyhaven/image?url=${encodeURIComponent(url)}`;
+          }
+        }
+        return null;
+      };
+
+      const diffuse = pickMapUrl(['Diffuse', 'col', 'alb', 'diff', 'Albedo']);
+      const normal = pickMapUrl(['nor_gl', 'Normal', 'nor_dx']);
+      const roughness = pickMapUrl(['Rough', 'rough', 'Roughness']);
+      const metalness = pickMapUrl(['Metal', 'metal', 'Metalness']);
+      const ao = pickMapUrl(['AO', 'ao']);
+
+      if (!diffuse) {
+        res.status(404).json({
+          error: `El asset "${assetId}" de Poly Haven no contiene un mapa Diffuse JPG/PNG en ${requestedRes}.`,
+        });
+        return;
+      }
+
+      res.json({
+        id: assetId,
+        resolution: requestedRes,
+        license: 'CC0 Public Domain (Poly Haven)',
+        maps: {
+          diffuse,
+          normal,
+          roughness,
+          metalness,
+          ao,
+        },
+      });
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : String(error);
+      res.status(502).json({ error: `Error obteniendo mapas de Poly Haven: ${msg}` });
+    }
+  });
+
+  app.get('/api/polyhaven/image', async (req, res) => {
+    try {
+      const rawUrl = String(req.query.url || '').trim();
+      let parsed: URL;
+      try {
+        parsed = new URL(rawUrl);
+      } catch {
+        res.status(400).send('URL inválida');
+        return;
+      }
+      // Allowlist estricta de dominios oficiales de Poly Haven para prevenir SSRF
+      const allowedHosts = new Set(['dl.polyhaven.org', 'cdn.polyhaven.com']);
+      if (parsed.protocol !== 'https:' || !allowedHosts.has(parsed.hostname)) {
+        res.status(403).send('Dominio no permitido');
+        return;
+      }
+
+      const upstream = await fetch(parsed.toString(), {
+        headers: { 'User-Agent': POLYHAVEN_USER_AGENT },
+      });
+      if (!upstream.ok) {
+        res.status(upstream.status).send('No se pudo descargar la imagen de Poly Haven');
+        return;
+      }
+      const contentType = upstream.headers.get('content-type') || 'image/jpeg';
+      const buf = Buffer.from(await upstream.arrayBuffer());
+      res.setHeader('Content-Type', contentType);
+      res.setHeader('Cache-Control', 'public, max-age=86400');
+      res.send(buf);
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : String(error);
+      res.status(502).send(`Error proxy Poly Haven: ${msg}`);
+    }
+  });
+
+  // ============================================================================
+  // DESCARGAS FIABLES VIA HTTP (Content-Disposition: attachment)
+  // ----------------------------------------------------------------------------
+  // En iframes (vista previa), móviles Android/iOS y tras operaciones async
+  // largas, las descargas con blob: URL suelen fallar o quedar bloqueadas.
+  // Estos endpoints almacenan temporalmente el archivo en RAM y lo entregan
+  // con cabeceras HTTP reales de descarga segura (attachment + nosniff).
+  // ============================================================================
+  interface StagedDownloadEntry {
+    buffer: Buffer;
+    filename: string;
+    mimeType: string;
+    createdAt: number;
+    expiresAt: number;
+  }
+
+  const STAGED_DOWNLOAD_TTL_MS = 15 * 60 * 1000; // 15 minutos
+  const STAGED_DOWNLOAD_MAX_FILE_BYTES = 80 * 1024 * 1024; // 80 MB por archivo
+  const STAGED_DOWNLOAD_MAX_TOTAL_BYTES = 160 * 1024 * 1024; // 160 MB total en RAM
+  const ALLOWED_DOWNLOAD_MIMES = new Set([
+    'model/gltf-binary',
+    'model/gltf+json',
+    'application/zip',
+    'application/octet-stream',
+    'text/plain',
+    'text/csv',
+    'text/x-python',
+    'application/json',
+    'image/png',
+    'image/jpeg',
+  ]);
+
+  const stagedDownloads = new Map<string, StagedDownloadEntry>();
+  let stagedTotalBytes = 0;
+
+  const sanitizeStagedFilename = (raw: string): string => {
+    let decoded = raw;
+    try {
+      decoded = decodeURIComponent(raw);
+    } catch {
+      decoded = raw;
+    }
+    const base = path.basename(decoded.replace(/\\/g, '/'));
+    const cleaned = base
+      .replace(/[^a-zA-Z0-9._-]/g, '_')
+      .replace(/\.{2,}/g, '.')
+      .replace(/^[._-]+/, '')
+      .slice(0, 120);
+    return cleaned || 'modelo_3d.glb';
+  };
+
+  const pruneStagedDownloads = (neededBytes = 0): void => {
+    const now = Date.now();
+    for (const [token, entry] of stagedDownloads.entries()) {
+      if (entry.expiresAt <= now) {
+        stagedTotalBytes = Math.max(0, stagedTotalBytes - entry.buffer.length);
+        stagedDownloads.delete(token);
+      }
+    }
+    while (
+      stagedDownloads.size > 0 &&
+      stagedTotalBytes + neededBytes > STAGED_DOWNLOAD_MAX_TOTAL_BYTES
+    ) {
+      const oldestKey = stagedDownloads.keys().next().value;
+      if (!oldestKey) break;
+      const oldest = stagedDownloads.get(oldestKey);
+      if (oldest) {
+        stagedTotalBytes = Math.max(0, stagedTotalBytes - oldest.buffer.length);
+      }
+      stagedDownloads.delete(oldestKey);
+    }
+  };
+
+  const cleanupTimer = setInterval(() => pruneStagedDownloads(0), 60_000);
+  cleanupTimer.unref?.();
+
+  app.post(
+    '/api/downloads/stage',
+    express.raw({ type: () => true, limit: '80mb' }),
+    (req, res) => {
+      try {
+        const body = req.body;
+        if (!Buffer.isBuffer(body) || body.length === 0) {
+          res.status(400).json({ error: 'El archivo recibido está vacío o no es binario.' });
+          return;
+        }
+        if (body.length > STAGED_DOWNLOAD_MAX_FILE_BYTES) {
+          res.status(413).json({ error: 'El archivo supera el límite temporal de 80 MB.' });
+          return;
+        }
+
+        const rawFilename = String(req.headers['x-filename'] || 'modelo_3d.glb');
+        const safeFilename = sanitizeStagedFilename(rawFilename);
+        const rawMime = String(req.headers['x-mime-type'] || 'application/octet-stream')
+          .split(';')[0]
+          .trim()
+          .toLowerCase();
+        const safeMime = ALLOWED_DOWNLOAD_MIMES.has(rawMime)
+          ? rawMime
+          : 'application/octet-stream';
+
+        pruneStagedDownloads(body.length);
+
+        const token = crypto.randomBytes(24).toString('base64url');
+        const now = Date.now();
+        stagedDownloads.set(token, {
+          buffer: body,
+          filename: safeFilename,
+          mimeType: safeMime,
+          createdAt: now,
+          expiresAt: now + STAGED_DOWNLOAD_TTL_MS,
+        });
+        stagedTotalBytes += body.length;
+
+        res.json({
+          token,
+          filename: safeFilename,
+          byteLength: body.length,
+          downloadUrl: `/api/downloads/${token}/${encodeURIComponent(safeFilename)}`,
+          expiresInSeconds: Math.floor(STAGED_DOWNLOAD_TTL_MS / 1000),
+        });
+      } catch (error: unknown) {
+        const msg = error instanceof Error ? error.message : String(error);
+        res.status(500).json({ error: `No se pudo preparar la descarga: ${msg}` });
+      }
+    }
+  );
+
+  app.get('/api/downloads/:token/:filename', (req, res) => {
+    const token = String(req.params.token || '');
+    if (!/^[A-Za-z0-9_-]{24,64}$/.test(token)) {
+      res.status(400).send('Identificador de descarga inválido.');
+      return;
+    }
+
+    const entry = stagedDownloads.get(token);
+    if (!entry || entry.expiresAt <= Date.now()) {
+      if (entry) {
+        stagedTotalBytes = Math.max(0, stagedTotalBytes - entry.buffer.length);
+        stagedDownloads.delete(token);
+      }
+      res.status(404).send('La descarga temporal ha expirado. Vuelve a exportar el archivo.');
+      return;
+    }
+
+    const safeName = entry.filename;
+    const asciiName = safeName.replace(/["\\]/g, '_');
+    const encodedName = encodeURIComponent(safeName);
+
+    res.setHeader('Content-Type', entry.mimeType);
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="${asciiName}"; filename*=UTF-8''${encodedName}`
+    );
+    res.setHeader('Content-Length', String(entry.buffer.length));
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Content-Security-Policy', "default-src 'none'; sandbox");
+    res.end(entry.buffer);
+  });
+
   if (process.env.NODE_ENV !== 'production') {
     const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
@@ -1003,9 +1554,21 @@ Usa exactamente estos rangos (X, Y, Z) para colocar nuevos puntos o piezas sin d
     });
   }
 
-  app.listen(PORT, '0.0.0.0', () => {
-    console.log(`CelShade Studio 3D + Gemini bpy Server running on http://0.0.0.0:${PORT}`);
+  const server = app.listen(PORT, HOST, () => {
+    console.log(`CelShade Studio 3D + Gemini bpy Server running on http://${HOST}:${PORT}`);
+  });
+
+  server.on('error', (err) => {
+    console.error('Server error encountered:', err);
   });
 }
+
+process.on('uncaughtException', (err) => {
+  console.error('Uncaught Exception:', err);
+});
+
+process.on('unhandledRejection', (reason) => {
+  console.error('Unhandled Rejection:', reason);
+});
 
 startServer();

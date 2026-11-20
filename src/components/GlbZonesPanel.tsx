@@ -176,7 +176,6 @@ export default function GlbZonesPanel({
       if (mode === 'preview') {
         onPreviewBytes?.(res.bytes, outName);
       } else {
-        onPreviewBytes?.(res.bytes, outName);
         onDownloadBytes?.(res.bytes, outName);
       }
     } catch (e: unknown) {
@@ -203,7 +202,6 @@ export default function GlbZonesPanel({
       if (mode === 'preview') {
         onPreviewBytes?.(res.bytes, outName);
       } else {
-        onPreviewBytes?.(res.bytes, outName);
         onDownloadBytes?.(res.bytes, outName);
       }
     } catch (e: unknown) {

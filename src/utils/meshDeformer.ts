@@ -1155,27 +1155,9 @@ function triggerGlbDownload(buffer: ArrayBuffer, fileName: string): void {
     ? safeFileName
     : `${safeFileName}.glb`;
 
-  const blob = new Blob([buffer], { type: 'model/gltf-binary' });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.style.position = 'fixed';
-  link.style.top = '-9999px';
-  link.style.left = '-9999px';
-  link.style.opacity = '0';
-  link.style.pointerEvents = 'none';
-  link.href = url;
-  link.download = finalName;
-  link.rel = 'noopener';
-  document.body.appendChild(link);
-  try {
-    link.click();
-  } catch (err) {
-    console.warn('triggerGlbDownload click error:', err);
-  }
-  setTimeout(() => {
-    if (link.parentNode) link.parentNode.removeChild(link);
-  }, 1000);
-  setTimeout(() => URL.revokeObjectURL(url), 300000);
+  void import('./reliableDownload').then(({ downloadBytesReliably }) => {
+    void downloadBytesReliably(buffer, finalName, 'model/gltf-binary');
+  });
 }
 
 function extractSafeColor(rawColor: unknown, fallbackHex: number): THREE.Color {

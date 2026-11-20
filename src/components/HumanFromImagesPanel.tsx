@@ -283,7 +283,7 @@ export default function HumanFromImagesPanel({
   const [showLayerLegend, setShowLayerLegend] = useState(false);
   const [editingTip, setEditingTip] = useState(false);
   const [showAlignStudio, setShowAlignStudio] = useState(true);
-  const [alignSlot, setAlignSlot] = useState<SlotId>('side');
+  const [alignSlot, setAlignSlot] = useState<SlotId>('front');
   const [alignViewMode, setAlignViewMode] = useState<'overlay' | 'sideBySide'>('overlay');
   const [alignOpacity, setAlignOpacity] = useState<number>(0.62);
   // Proporción activada por defecto: con ella apagada el deslizador de "Tamaño" solo
@@ -471,9 +471,11 @@ export default function HumanFromImagesPanel({
     commitTransform(nextOpts, false);
   };
 
-  // Seleccionar automáticamente el perfil (si existe) o el frente en el estudio de alineación
+  // Seleccionar automáticamente la vista activa (por defecto el frente) en el estudio de alineación
   const effectiveAlignSlot: SlotId = images[alignSlot]
     ? alignSlot
+    : images.front
+    ? 'front'
     : images.side
     ? 'side'
     : images.back
@@ -797,21 +799,13 @@ export default function HumanFromImagesPanel({
     if (!file) return;
     try {
       const img = await loadImage(file);
-      // Si sube una hoja todo-en-uno en el slot de frente, detectarla y recortarla automáticamente
-      if (slot === 'front' && img.naturalWidth / img.naturalHeight > 1.15) {
-        const sliced = await sliceCompositeSheet(img, file.name);
-        setImages(sliced.images);
-        setNames(sliced.names);
-        const baseOpts: HumanBuildOptions = { ...options, customRig: null };
-        setOptions(baseOpts);
-        if (sliced.images.front) {
-          onBuild(sliced.images as HumanImageSet, baseOpts);
-        }
-        return;
-      }
       const nextImages = { ...images, [slot]: img };
       setImages(nextImages);
       setNames((prev) => ({ ...prev, [slot]: file.name }));
+      setAlignSlot(slot);
+      if (inputs.current[slot]) {
+        inputs.current[slot]!.value = '';
+      }
       if (nextImages.front && !busy) {
         onBuild(
           {

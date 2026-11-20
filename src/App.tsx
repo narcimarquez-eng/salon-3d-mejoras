@@ -29,6 +29,7 @@ import {
   Object3D,
   PCFSoftShadowMap,
   PerspectiveCamera,
+  Raycaster,
   RingGeometry,
   Scene,
   ShaderMaterial,
@@ -37,6 +38,7 @@ import {
   SkinnedMesh,
   SphereGeometry,
   SRGBColorSpace,
+  Vector2,
   Vector3,
   WebGLRenderer,
 } from 'three';
@@ -61,12 +63,20 @@ import {
   FolderOpen,
   Maximize2,
   BookOpen,
+  ImagePlus,
 } from 'lucide-react';
 import HumanFromImagesPanel, { type HumanPanelResult } from './components/HumanFromImagesPanel';
 import MonsterLoaderPanel from './components/MonsterLoaderPanel';
 import GlbZonesPanel, { type GlbSource } from './components/GlbZonesPanel';
 import GoogleDriveModal from './components/GoogleDriveModal';
 import PythonScriptModal from './components/PythonScriptModal';
+import MyTexturesPanel from './components/MyTexturesPanel';
+import BpyPartTexturePainterPanel from './components/BpyPartTexturePainterPanel';
+import {
+  applyCatalogTextureToMeshes,
+  preloadColorMapImages,
+  type ColorMapTextureInfo,
+} from './utils/textureLibrary';
 import {
   DEFAULT_CUTOUT,
   alignBackViewToFront,
@@ -102,11 +112,15 @@ import {
   createSkeletonBones,
   type HumanRig,
 } from './human/humanRig';
+import { exportHumanToGLBBytes } from './human/exportHuman';
 import {
-  exportHumanToGLBBytes,
-  triggerBlobDownload,
-  uint8ToBlob,
-} from './human/exportHuman';
+  initiateDownload,
+  saveWithFilePicker,
+  stageAndPrepareDownload,
+  supportsSaveFilePicker,
+  triggerAnchorDownload,
+  type PreparedDownload,
+} from './utils/reliableDownload';
 import {
   analyzeGlbZones,
   optimizeGlb,
@@ -183,6 +197,8 @@ export default function App() {
   const outlineMeshMapRef = useRef<Map<Mesh, Mesh>>(new Map());
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const pyFileInputRef = useRef<HTMLInputElement | null>(null);
+  const bpyTextureFileInputRef = useRef<HTMLInputElement | null>(null);
+  const [bpyUploadedTextureName, setBpyUploadedTextureName] = useState<string | null>(null);
 
   const [activeTab, setActiveTab] = useState<'human' | 'monsters' | 'bpy'>('human');
   const [shadingMode, setShadingMode] = useState<'cel' | 'pbr' | 'matcap' | 'normals' | 'wireframe'>(
@@ -211,13 +227,22 @@ export default function App() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [activeGlbSource, setActiveGlbSource] = useState<GlbSource | null>(null);
   const [loadedAnimations, setLoadedAnimations] = useState<{ id: string; label: string }[]>([]);
-  const [exportedGlb, setExportedGlb] = useState<{
-    url: string;
-    blob: Blob;
-    filename: string;
-    sizeMb: string;
-  } | null>(null);
+  const [exportedGlb, setExportedGlb] = useState<
+    (PreparedDownload & { sizeMb: string; note?: string }) | null
+  >(null);
+  const exportedGlbRef = useRef<(PreparedDownload & { sizeMb: string; note?: string }) | null>(null);
   const [exportError, setExportError] = useState<string | null>(null);
+  const [savePickerFeedback, setSavePickerFeedback] = useState<string | null>(null);
+
+  useEffect(() => {
+    exportedGlbRef.current = exportedGlb;
+  }, [exportedGlb]);
+
+  useEffect(() => {
+    return () => {
+      exportedGlbRef.current?.cleanup();
+    };
+  }, []);
 
   const [polyStats, setPolyStats] = useState({
     verts: 0,
@@ -260,6 +285,75 @@ nodo.data.materials.append(mat)`);
   const [aiGenerating, setAiGenerating] = useState(false);
   const [driveOpen, setDriveOpen] = useState(false);
   const [driveToken, setDriveToken] = useState<string | null>(null);
+  const [activeCatalogTextureId, setActiveCatalogTextureId] = useState<string | null>(null);
+  const [catalogTileMeters, setCatalogTileMeters] = useState<number>(2.5);
+  const [bpyPickMode, setBpyPickMode] = useState<'off' | 'select' | 'paint'>('off');
+  const [selectedPieceUuids, setSelectedPieceUuids] = useState<string[]>([]);
+  const bpyPickModeRef = useRef<'off' | 'select' | 'paint'>('off');
+  const activeTabRef = useRef<'human' | 'monsters' | 'bpy'>('human');
+  const bpyPaintConfigRef = useRef<{
+    textureId: string;
+    parentAtlasId?: string;
+    tileCode?: string;
+    projection: 'FLAT' | 'BOX' | 'CYLINDER';
+    repeat: number;
+  }>({
+    textureId: 'agua_profundidad_t01',
+    parentAtlasId: 'catalogo_progresion_agua_arena',
+    tileCode: 'T-01',
+    projection: 'BOX',
+    repeat: 2,
+  });
+
+  useEffect(() => {
+    bpyPickModeRef.current = bpyPickMode;
+  }, [bpyPickMode]);
+
+  useEffect(() => {
+    activeTabRef.current = activeTab;
+  }, [activeTab]);
+
+  useEffect(() => {
+    void preloadColorMapImages();
+  }, []);
+
+  const handleApplyCatalogTextureToScene = (info: ColorMapTextureInfo | null) => {
+    const group = currentModelGroupRef.current;
+    if (!group) return;
+    if (!info) {
+      setActiveCatalogTextureId(null);
+      return;
+    }
+    setActiveCatalogTextureId(info.id);
+
+    const allMeshes: Mesh[] = [];
+    group.traverse((child) => {
+      if ((child as Mesh).isMesh && !child.userData?.isOutlineMesh) {
+        allMeshes.push(child as Mesh);
+      }
+    });
+
+    const selectedSet = new Set(selectedPieceUuids);
+    const targetMeshes =
+      selectedPieceUuids.length > 0
+        ? allMeshes.filter((m) => selectedSet.has(m.uuid))
+        : allMeshes;
+
+    const repeatCount =
+      info.kind === 'mosaic' ? 1 : Math.max(1, Math.round(4 / Math.max(0.5, catalogTileMeters)));
+    const res = applyCatalogTextureToMeshes(
+      targetMeshes.length > 0 ? targetMeshes : allMeshes,
+      info.id,
+      {
+        projection: info.kind === 'mosaic' ? 'FLAT' : 'BOX',
+        repeat: repeatCount,
+      }
+    );
+    setSceneRevision((r) => r + 1);
+    setBpySuccess(
+      `Pintadas ${res.appliedCount} pieza(s) marcadas con "${res.resolvedName}" (ID API: "${res.resolvedId}")`
+    );
+  };
 
   useEffect(() => {
     const container = containerRef.current;
@@ -381,6 +475,62 @@ nodo.data.materials.append(mat)`);
     };
     animate();
 
+    const raycaster = new Raycaster();
+    const pointerNdc = new Vector2();
+    let downX = 0;
+    let downY = 0;
+
+    const handlePointerDown = (ev: PointerEvent) => {
+      downX = ev.clientX;
+      downY = ev.clientY;
+    };
+
+    const handlePointerUp = (ev: PointerEvent) => {
+      if (activeTabRef.current !== 'bpy' || bpyPickModeRef.current === 'off') return;
+      const dist = Math.hypot(ev.clientX - downX, ev.clientY - downY);
+      if (dist > 6) return; // Fue un arrastre de cámara con OrbitControls
+
+      const group = currentModelGroupRef.current;
+      if (!group || group.children.length === 0) return;
+
+      const rect = renderer.domElement.getBoundingClientRect();
+      if (rect.width <= 0 || rect.height <= 0) return;
+      pointerNdc.x = ((ev.clientX - rect.left) / rect.width) * 2 - 1;
+      pointerNdc.y = -((ev.clientY - rect.top) / rect.height) * 2 + 1;
+
+      raycaster.setFromCamera(pointerNdc, camera);
+      const hits = raycaster.intersectObjects(group.children, true);
+      const hitMesh = hits.find(
+        (h) => (h.object as Mesh).isMesh && !h.object.userData?.isOutlineMesh
+      )?.object as Mesh | undefined;
+
+      if (!hitMesh) return;
+
+      if (bpyPickModeRef.current === 'select') {
+        setSelectedPieceUuids((prev) =>
+          prev.includes(hitMesh.uuid)
+            ? prev.filter((id) => id !== hitMesh.uuid)
+            : [...prev, hitMesh.uuid]
+        );
+        setBpySuccess(`🎯 Pieza seleccionada/desmarcada en 3D: "${hitMesh.name || 'Pieza'}"`);
+        window.setTimeout(() => setBpySuccess(null), 3000);
+      } else if (bpyPickModeRef.current === 'paint') {
+        const cfg = bpyPaintConfigRef.current;
+        const res = applyCatalogTextureToMeshes([hitMesh], cfg.textureId, {
+          projection: cfg.projection,
+          repeat: cfg.repeat,
+        });
+        setSceneRevision((r) => r + 1);
+        setBpySuccess(
+          `🖌️ Pieza "${hitMesh.name || 'Pieza'}" pintada con "${res.resolvedName}"`
+        );
+        window.setTimeout(() => setBpySuccess(null), 3500);
+      }
+    };
+
+    renderer.domElement.addEventListener('pointerdown', handlePointerDown);
+    renderer.domElement.addEventListener('pointerup', handlePointerUp);
+
     const handleResize = () => {
       if (!container || !renderer || !camera) return;
       const w = container.clientWidth;
@@ -393,6 +543,8 @@ nodo.data.materials.append(mat)`);
 
     return () => {
       window.removeEventListener('resize', handleResize);
+      renderer.domElement.removeEventListener('pointerdown', handlePointerDown);
+      renderer.domElement.removeEventListener('pointerup', handlePointerUp);
       cancelAnimationFrame(animId);
       renderer.dispose();
       if (container.contains(renderer.domElement)) {
@@ -1151,6 +1303,16 @@ nodo.data.materials.append(mat)`);
     targetAction.reset().fadeIn(0.24).play();
   };
 
+  const replaceExportedGlb = (
+    next: (PreparedDownload & { sizeMb: string; note?: string }) | null
+  ) => {
+    setSavePickerFeedback(null);
+    setExportedGlb((prev) => {
+      if (prev && prev !== next) prev.cleanup();
+      return next;
+    });
+  };
+
   /** Exporta y descarga el modelo activo en cualquiera de los 5 niveles: Completo, High, Medium, Low o Minimum */
   const handleExportGLB = async (requestedTier?: MonsterTier) => {
     const tierToUse: MonsterTier =
@@ -1168,38 +1330,45 @@ nodo.data.materials.append(mat)`);
       const rawBytes = await exportHumanToGLBBytes(targetObj, currentClipsRef.current);
 
       let finalBytes = rawBytes;
+      let fallbackNote: string | undefined;
       const spec = EXPORT_TIER_SPECS[tierToUse];
       if (tierToUse !== 'completo') {
-        const copyBuf = new Uint8Array(rawBytes.byteLength);
-        copyBuf.set(rawBytes);
-        const analysis = analyzeGlbZones(copyBuf.buffer);
-        const plans = new Map<number, ZonePlan>();
-        for (const z of analysis.zones) {
-          plans.set(z.index, { choice: { kind: 'keep' }, maxSize: spec.maxSize });
+        try {
+          const copyBuf = new Uint8Array(rawBytes.byteLength);
+          copyBuf.set(rawBytes);
+          const analysis = analyzeGlbZones(copyBuf.buffer);
+          const plans = new Map<number, ZonePlan>();
+          for (const z of analysis.zones) {
+            plans.set(z.index, { choice: { kind: 'keep' }, maxSize: spec.maxSize });
+          }
+          const opt = await optimizeGlb(copyBuf.buffer, plans, {
+            jpegQuality: spec.jpegQuality,
+            compactSkin: true,
+            triangleRatio: spec.ratio,
+          });
+          finalBytes = opt.bytes;
+        } catch (optErr) {
+          console.warn('Optimizador GLB omitido, usando exportación completa:', optErr);
+          finalBytes = rawBytes;
+          fallbackNote = 'Exportado sin compresión extra para garantizar la integridad del modelo.';
         }
-        const opt = await optimizeGlb(copyBuf.buffer, plans, {
-          jpegQuality: spec.jpegQuality,
-          compactSkin: true,
-          triangleRatio: spec.ratio,
-        });
-        finalBytes = opt.bytes;
       }
 
       const filename =
         tierToUse === 'completo'
           ? 'celshade_personaje_completo.glb'
           : `celshade_personaje_${tierToUse}.glb`;
-      const blob = uint8ToBlob(finalBytes, 'model/gltf-binary');
-      triggerBlobDownload(blob, filename);
-      const url = URL.createObjectURL(blob);
-      const mb = (finalBytes.byteLength / 1048576).toFixed(2);
-      const sizeStr = `${mb} MB (${spec.shortLabel})`;
+      const prepared = await stageAndPrepareDownload(finalBytes, filename, 'model/gltf-binary');
+      initiateDownload(prepared);
+
+      const kb = finalBytes.byteLength / 1024;
+      const sizeValue = kb < 1024 ? `${kb.toFixed(1)} KB` : `${(kb / 1024).toFixed(2)} MB`;
+      const sizeStr = `${sizeValue} (${spec.shortLabel})`;
       setLastExportSize(sizeStr);
-      setExportedGlb({
-        url,
-        blob,
-        filename,
+      replaceExportedGlb({
+        ...prepared,
         sizeMb: sizeStr,
+        note: fallbackNote,
       });
     } catch (err) {
       console.error('Error al exportar GLB:', err);
@@ -1212,18 +1381,35 @@ nodo.data.materials.append(mat)`);
   };
 
   /** Registra y descarga bytes GLB ya optimizados desde el panel por zonas */
-  const handleDownloadOptimizedBytes = (bytes: Uint8Array, filename: string) => {
-    const blob = uint8ToBlob(bytes, 'model/gltf-binary');
-    triggerBlobDownload(blob, filename);
-    const url = URL.createObjectURL(blob);
-    const sizeStr = `${(bytes.byteLength / 1048576).toFixed(2)} MB`;
-    setLastExportSize(sizeStr);
-    setExportedGlb({
-      url,
-      blob,
-      filename,
-      sizeMb: sizeStr,
-    });
+  const handleDownloadOptimizedBytes = async (bytes: Uint8Array, filename: string) => {
+    try {
+      setExportError(null);
+      const prepared = await stageAndPrepareDownload(bytes, filename, 'model/gltf-binary');
+      initiateDownload(prepared);
+      const kb = bytes.byteLength / 1024;
+      const sizeStr = kb < 1024 ? `${kb.toFixed(1)} KB` : `${(kb / 1024).toFixed(2)} MB`;
+      setLastExportSize(sizeStr);
+      replaceExportedGlb({
+        ...prepared,
+        sizeMb: sizeStr,
+      });
+    } catch (err) {
+      console.error('Error al preparar descarga GLB:', err);
+      setExportError(
+        err instanceof Error ? err.message : 'No se pudo preparar el archivo para descarga.'
+      );
+    }
+  };
+
+  const handleSaveAsPicker = async () => {
+    if (!exportedGlb) return;
+    const status = await saveWithFilePicker(exportedGlb.blob, exportedGlb.filename);
+    if (status === 'saved') {
+      setSavePickerFeedback('Archivo guardado correctamente en la carpeta elegida.');
+    } else if (status === 'unsupported') {
+      triggerAnchorDownload(exportedGlb.url, exportedGlb.filename);
+      setSavePickerFeedback('Iniciando descarga directa en tu navegador...');
+    }
   };
 
   const handleShareGlb = async () => {
@@ -1239,7 +1425,7 @@ nodo.data.materials.append(mat)`);
           text: `Modelo 3D exportado (${exportedGlb.sizeMb})`,
         });
       } else {
-        triggerBlobDownload(exportedGlb.blob, exportedGlb.filename);
+        initiateDownload(exportedGlb);
       }
     } catch (err) {
       if ((err as Error).name !== 'AbortError') {
@@ -1618,9 +1804,26 @@ nodo.data.materials.append(mat)`);
           </button>
 
           {activeFaceFeature !== 'none' && (
-            <div className="absolute top-3 right-28 z-20 bg-cyan-950/80 border border-cyan-500/50 rounded-lg px-3 py-1.5 text-xs text-cyan-200 flex items-center gap-2 shadow-lg backdrop-blur-md animate-pulse">
+            <div className="absolute top-3 right-28 z-20 bg-cyan-950/80 border border-cyan-500/50 rounded-lg px-3 py-1.5 text-xs text-cyan-200 flex items-center gap-2 shadow-lg">
               <span className="w-2 h-2 rounded-full bg-cyan-400" />
               Marcando en 3D: <strong className="capitalize">{activeFaceFeature}</strong>
+            </div>
+          )}
+
+          {activeTab === 'bpy' && bpyPickMode !== 'off' && (
+            <div className="absolute top-14 left-3 z-20 bg-slate-900/95 border border-amber-400/60 rounded-lg px-3 py-1.5 text-xs text-amber-200 flex items-center gap-2.5 shadow-xl">
+              <span>
+                {bpyPickMode === 'select'
+                  ? '🎯 Modo Clic 3D: Haz clic sobre cualquier pieza para marcarla o desmarcarla'
+                  : '🖌️ Modo Pintar en 3D: Haz clic sobre cualquier pieza para pintarla con la textura activa'}
+              </span>
+              <button
+                type="button"
+                onClick={() => setBpyPickMode('off')}
+                className="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-600 text-[10px] font-semibold cursor-pointer"
+              >
+                Salir
+              </button>
             </div>
           )}
         </div>
@@ -1770,14 +1973,41 @@ nodo.data.materials.append(mat)`);
                     <BookOpen className="w-3.5 h-3.5 text-amber-400" />
                     <span>Modelos y Plantillas Python ({BLENDER_SCRIPT_PRESETS.length}):</span>
                   </span>
-                  <button
-                    type="button"
-                    onClick={() => pyFileInputRef.current?.click()}
-                    className="px-2 py-0.5 rounded bg-sky-500/20 hover:bg-sky-500/30 border border-sky-400/40 text-sky-200 text-[10px] font-semibold flex items-center gap-1 cursor-pointer"
-                  >
-                    <FolderOpen className="w-3 h-3" />
-                    <span>Cargar .PY</span>
-                  </button>
+                  <div className="flex items-center gap-1.5">
+                    <input
+                      ref={bpyTextureFileInputRef}
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) {
+                          if (!window.uploadedTextures) window.uploadedTextures = {};
+                          const objectUrl = URL.createObjectURL(file);
+                          window.uploadedTextures[file.name] = objectUrl;
+                          window.uploadedTextures['default'] = objectUrl;
+                          setBpyUploadedTextureName(file.name);
+                        }
+                      }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => bpyTextureFileInputRef.current?.click()}
+                      className="px-2 py-0.5 rounded bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-400/40 text-emerald-200 text-[10px] font-semibold flex items-center gap-1 cursor-pointer"
+                      title="Carga una imagen/textura para usar con bpy.data.images.load() y ShaderNodeTexImage"
+                    >
+                      <ImagePlus className="w-3 h-3 text-emerald-400" />
+                      <span>{bpyUploadedTextureName ? `Textura: ${bpyUploadedTextureName}` : 'Textura'}</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => pyFileInputRef.current?.click()}
+                      className="px-2 py-0.5 rounded bg-sky-500/20 hover:bg-sky-500/30 border border-sky-400/40 text-sky-200 text-[10px] font-semibold flex items-center gap-1 cursor-pointer"
+                    >
+                      <FolderOpen className="w-3 h-3" />
+                      <span>Cargar .PY</span>
+                    </button>
+                  </div>
                 </div>
 
                 <select
@@ -1904,6 +2134,35 @@ nodo.data.materials.append(mat)`);
                 </div>
               </div>
 
+              {/* NUEVA SECCIÓN: Pintor de Piezas y Zonas Completas Marcadas con Textura Determinada */}
+              <BpyPartTexturePainterPanel
+                modelGroupRef={currentModelGroupRef}
+                sceneRevision={sceneRevision}
+                pickMode={bpyPickMode}
+                onPickModeChange={setBpyPickMode}
+                selectedPieceUuids={selectedPieceUuids}
+                onSelectedPieceUuidsChange={setSelectedPieceUuids}
+                onActivePaintConfigChange={(cfg) => {
+                  bpyPaintConfigRef.current = cfg;
+                }}
+                onAppendPythonCode={(pythonSnippet, summaryMessage) => {
+                  setBpyScript((prev) => {
+                    const cleanPrev = prev.trimEnd();
+                    return `${cleanPrev}\n\n# Zona / Piezas pintadas desde el Selector de Zonas:\n${pythonSnippet}\n`;
+                  });
+                  setSceneRevision((r) => r + 1);
+                  setBpySuccess(`${summaryMessage} (Guardado también al final de editor.py)`);
+                }}
+              />
+
+              {/* Catálogo Interactivo de los 10 Mosaicos y Atlas 5x2 (79 Texturas) + Guía API Python */}
+              <MyTexturesPanel
+                activeId={activeCatalogTextureId}
+                tileMeters={catalogTileMeters}
+                onTileMetersChange={setCatalogTileMeters}
+                onApply={handleApplyCatalogTextureToScene}
+              />
+
               {bpyError && (
                 <div className="p-2 rounded bg-rose-950/80 border border-rose-500/50 text-[11px] text-rose-200">
                   {bpyError}
@@ -1962,7 +2221,7 @@ nodo.data.materials.append(mat)`);
               </div>
             </div>
             <button
-              onClick={() => setExportedGlb(null)}
+              onClick={() => replaceExportedGlb(null)}
               className="text-slate-400 hover:text-slate-200 p-1 cursor-pointer"
               title="Cerrar aviso"
             >
@@ -1971,8 +2230,16 @@ nodo.data.materials.append(mat)`);
           </div>
 
           <p className="text-[11px] text-slate-300 leading-snug">
-            Si la descarga no se inició automáticamente en tu navegador o móvil, pulsa aquí para guardarlo directamente:
+            {exportedGlb.note
+              ? exportedGlb.note
+              : 'Si la descarga no comenzó automáticamente, pulsa el botón verde para guardarlo directamente:'}
           </p>
+
+          {savePickerFeedback && (
+            <p className="text-[10px] text-emerald-300 bg-emerald-500/10 border border-emerald-500/30 rounded-md px-2 py-1">
+              {savePickerFeedback}
+            </p>
+          )}
 
           <div className="flex flex-col gap-2">
             <a
@@ -1981,8 +2248,32 @@ nodo.data.materials.append(mat)`);
               className="w-full py-2 px-3 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs flex items-center justify-center gap-2 shadow-lg transition-transform active:scale-95 cursor-pointer text-center"
             >
               <Download className="w-4 h-4" />
-              <span>Guardar archivo en este dispositivo</span>
+              <span>Descargar archivo ({exportedGlb.sizeMb.split(' ')[0]} {exportedGlb.sizeMb.split(' ')[1]})</span>
             </a>
+
+            {supportsSaveFilePicker() && (
+              <button
+                type="button"
+                onClick={() => void handleSaveAsPicker()}
+                className="w-full py-1.5 px-3 rounded-lg bg-slate-800 hover:bg-slate-700 text-emerald-300 hover:text-emerald-200 font-medium text-xs flex items-center justify-center gap-2 border border-emerald-500/30 cursor-pointer transition-colors"
+                title="Elegir la carpeta de destino manualmente en tu equipo"
+              >
+                <FolderOpen className="w-3.5 h-3.5" />
+                <span>Guardar como… (elegir carpeta)</span>
+              </button>
+            )}
+
+            {exportedGlb.serverUrl && (
+              <a
+                href={exportedGlb.blobUrl}
+                download={exportedGlb.filename}
+                className="w-full py-1.5 px-3 rounded-lg bg-slate-800/80 hover:bg-slate-700 text-slate-300 hover:text-white font-medium text-[11px] flex items-center justify-center gap-1.5 border border-slate-700 cursor-pointer transition-colors text-center"
+                title="Usa memoria local del navegador si el enlace principal está bloqueado"
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>Descarga alternativa (memoria local)</span>
+              </a>
+            )}
 
             {typeof navigator !== 'undefined' && 'canShare' in navigator && (
               <button
