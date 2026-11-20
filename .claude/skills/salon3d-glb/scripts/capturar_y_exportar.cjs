@@ -78,12 +78,12 @@ const URL = process.env.URL || 'http://127.0.0.1:5173/?visor-api=1';
   const vistaBoton = async (archivo, titulo) => {
     await page.mouse.move(1300, 120);
     if (titulo) {
-      await page.locator(`button[title="${titulo}"]`).first().click();
+      await page.locator(`button[title="${titulo}"]`).first().dispatchEvent("click", undefined, { timeout: 5000 }).catch(() => console.log(`Aviso: no se pudo pulsar ${titulo}`));
     }
     await page.waitForTimeout(2500);
     await page.screenshot({ path: `${prefijo}_${archivo}.png` });
   };
-  await page.locator('button[title="Restablecer Cámara"]').first().click().catch(() => {});
+  await page.locator('button[title="Restablecer Cámara"]').first().dispatchEvent('click', undefined, { timeout: 5000 }).catch(() => {});
   await vistaBoton('overview', null);
   await vistaBoton('front', 'Vista Frente');
   await vistaBoton('side', 'Vista Perfil');
@@ -115,7 +115,7 @@ const URL = process.env.URL || 'http://127.0.0.1:5173/?visor-api=1';
   if (glbOut) {
     // Botón "Completo" del panel de exportación (bajar escena actual en .GLB)
     const descarga = page.waitForEvent('download', { timeout: 300000 });
-    await page.getByRole('button', { name: 'Completo', exact: true }).first().click();
+    await page.getByRole('button', { name: process.env.CALIDAD || 'Completo', exact: true }).first().dispatchEvent('click');
     await (await descarga).saveAs(glbOut);
     console.log(`GLB guardado en ${glbOut}`);
   }
