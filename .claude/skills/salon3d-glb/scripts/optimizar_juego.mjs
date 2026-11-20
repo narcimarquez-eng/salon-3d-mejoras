@@ -1,12 +1,14 @@
 // Deja un GLB exportado por salon-3d listo para juego:
 // una malla por material, UV en proyección de caja a densidad fija, sin transmisión, materiales con nombre.
-// Uso: node optimizar_juego.mjs entrada.glb salida.glb [uv_por_metro=1]
-import { NodeIO } from '@gltf-transform/core';
+// Uso: node optimizar_juego.mjs entrada.glb salida.glb [uv_por_metro=1] [y_minima]
+// y_minima: altura (m) a la que se coloca el punto más bajo; la app a veces apoya mal el modelo
+// en el suelo, y con esto todos los módulos de una serie quedan a la misma altura que en el script.
+import { NodeIO, getBounds } from '@gltf-transform/core';
 import { ALL_EXTENSIONS, KHRMaterialsTransmission, KHRMaterialsVolume } from '@gltf-transform/extensions';
 import { dedup, flatten, join, weld, prune, unweld, quantize, transformPrimitive, textureCompress, normals } from '@gltf-transform/functions';
 import sharp from 'sharp';
 
-const [, , inp, out, dens = '1'] = process.argv;
+const [, , inp, out, dens = '1', ymin] = process.argv;
 const UVM = Number(dens);
 const io = new NodeIO().registerExtensions(ALL_EXTENSIONS);
 const doc = await io.read(inp);
@@ -17,7 +19,7 @@ const NOMBRES = [
   ['Hierro_Muelle', [0.14, 0.15, 0.14]], ['Hierro_Oxido', [0.24, 0.16, 0.12]], ['Barandilla_Verde', [0.11, 0.21, 0.17]],
   ['Brida_Acople', [0.36, 0.30, 0.16]], ['Acero_Rail', [0.64, 0.66, 0.68]], ['Madera_Tablero', [0.34, 0.23, 0.14]],
   ['Madera_Traviesa', [0.18, 0.12, 0.08]], ['Madera_Caja', [0.48, 0.34, 0.19]], ['Defensa_Pilote', [0.22, 0.16, 0.11]],
-  ['Saco_Arpillera', [0.58, 0.50, 0.36]], ['Mineral_Riotinto', [0.46, 0.16, 0.09]], ['Luz_Farola', [1.0, 0.75, 0.33]],
+  ['Saco_Arpillera', [0.58, 0.50, 0.36]], ['Mineral_Riotinto', [0.46, 0.16, 0.09]], ['Luz_Farola', [1.0, 0.75, 0.33]], ['Senal_Roja', [0.95, 0.14, 0.10]], ['Senal_Curva', [1.0, 0.58, 0.08]],
 ];
 
 await doc.transform(dedup({ propertyTypes: ['Material', 'Texture'] }), flatten());
@@ -73,7 +75,7 @@ for (const mat of root.listMaterials()) {
     const d = Math.hypot(bc[0] - col[0], bc[1] - col[1], bc[2] - col[2]);
     if (d < bd) { bd = d; best = name; }
   }
-  if (bd < 0.06) mat.setName(best);
+  if (bd < 0.1) mat.setName(best);
   mat.setExtension('KHR_materials_transmission', null);
   mat.setExtension('KHR_materials_volume', null);
   if (mat.getEmissiveFactor().some((x) => x > 0)) {
@@ -101,5 +103,13 @@ for (const node of root.listNodes()) {
   const name = mesh.listPrimitives()[0].getMaterial()?.getName() || 'Pieza';
   mesh.setName('Muelle_' + name);
   node.setName('Muelle_' + name);
+}
+if (ymin !== undefined) {
+  const dy = Number(ymin) - getBounds(root.listScenes()[0]).min[1];
+  for (const node of root.listScenes()[0].listChildren()) {
+    const t = node.getTranslation();
+    node.setTranslation([t[0], t[1] + dy, t[2]]);
+  }
+  console.log(`Altura corregida: ${dy.toFixed(3)} m`);
 }
 await io.write(out, doc);
