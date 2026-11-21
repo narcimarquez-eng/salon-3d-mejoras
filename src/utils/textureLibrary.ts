@@ -123,7 +123,7 @@ const IGLESIA_GRANADA_TEXTURAS = [
   'ig_muro_norte',
   'ig_clerestorio',
   'ig_torre_cana_norte',
-  'ig_torre_cana_oeste',
+  'ig_torre_oeste_dia',
   'ig_torre_campanas',
   'ig_torre_cuerpo_a',
   'ig_torre_cuerpo_b',

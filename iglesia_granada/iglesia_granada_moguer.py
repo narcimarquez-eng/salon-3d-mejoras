@@ -13,8 +13,11 @@ import math
 # Fuentes: fotos y plano del usuario (texturas sacadas de las propias fotos, enderezadas con
 # iglesia_granada/hacer_texturas.py); torre de unos 48 m sobre planta cuadrada de 6 m, cuerpo
 # bajo de ~30 m y de campanas de ~6 m (Waymarking); cinco naves (spain.info).
-# Aproximado: planta 36 x 58 m (+ sacristía) medida sobre el plano con la torre como escala;
-# alturas de muros, cubiertas y cúpula medidas sobre las fotos.
+# Planta de cruz latina medida sobre la vista cenital de Google Earth (barra de 30 m): 35 x 61,5 m,
+# nave central de 12,2 m, crucero de 11,5 m de fondo a 33,8 m de la fachada, cabecera hasta
+# 54,7 m y sacristía hasta 61,5 m. La fachada oeste sale de la foto de día enderezada en metros
+# (la puerta cae en el centro y la fachada mide 23 m entre las dos torres). Aproximado: alturas
+# de las cubiertas y de la cúpula (fotos y vistas 3D de Google Earth).
 # Ejes: X = norte(-) a sur(+), Y = oeste(0, fachada principal) a este(+), Z = altura. Metros.
 # La fachada principal mira a -Y; la plaza queda al norte (-X) y los patios al sur (+X).
 # ==============================================================================
@@ -252,6 +255,30 @@ def tejado_pendiente(prefijo, mat, x_alero, x_muro, y0, y1, z_alero, z_muro):
         faldon(prefijo, mat, [(x_alero, y0, z_alero), (x_alero, y1, z_alero), (x_muro, y1, z_muro), (x_muro, y0, z_muro)], (x_alero, y0, z_alero), (0, 1, 0), unit((x_muro - x_alero, 0, z_muro - z_alero)))
 
 
+
+def tejado_hip_x(prefijo, mat, x0, x1, y0, y1, z, h, a0, a1):
+    # Cubierta con la cumbrera paralela a X (brazos del crucero). a0 / a1 = faldón de testero
+    # en el extremo norte (x0) / sur (x1).
+    yc = (y0 + y1) / 2
+    semi = (y1 - y0) / 2
+    zr = z + h
+    ra = (x0 + a0, yc, zr)
+    rb = (x1 - a1, yc, zr)
+    faldon(prefijo + "_O", mat, [(x0, y0, z), (x1, y0, z), rb, ra], (x0, y0, z), (1, 0, 0), unit((0, semi, h)))
+    faldon(prefijo + "_E", mat, [(x1, y1, z), (x0, y1, z), ra, rb], (x1, y1, z), (-1, 0, 0), unit((0, -semi, h)))
+    if a0 > 0:
+        faldon(prefijo + "_N", mat, [(x0, y1, z), (x0, y0, z), ra], (x0, y1, z), (0, -1, 0), unit((a0, 0, h)))
+    if a1 > 0:
+        faldon(prefijo + "_S", mat, [(x1, y0, z), (x1, y1, z), rb], (x1, y0, z), (0, 1, 0), unit((-a1, 0, h)))
+
+
+def limas(prefijo, mat, lineas):
+    # Cumbreras y limas de teja vidriada verde (se ven en la foto aérea)
+    for i in range(len(lineas)):
+        l = lineas[i]
+        viga(prefijo + "_" + str(i), l[0], l[1], 0.3, mat)
+
+
 # ==========================================
 # 1. MATERIALES
 # ==========================================
@@ -260,10 +287,15 @@ m_albero = material("IG_Albero", (0.48, 0.17, 0.055, 1.0), 0.8)      # molduras 
 m_rosa = material("IG_Rosa", (0.62, 0.25, 0.17, 1.0), 0.8)           # paños rosados de la torre
 m_teja = material("IG_Teja", (1.0, 1.0, 1.0, 1.0), 0.9)
 m_teja.color_map = "ig_teja"
-m_suelo = material("IG_Suelo", (0.20, 0.19, 0.17, 1.0), 0.85)  # losas grises de la plaza
+m_teja.color_map_scale = 6.0
+m_verde = material("IG_Teja_Verde", (0.03, 0.11, 0.06, 1.0), 0.35)   # cumbreras vidriadas
+m_suelo = material("IG_Suelo", (0.20, 0.19, 0.17, 1.0), 0.85)        # losas grises de la plaza
+m_grada = material("IG_Grada", (0.42, 0.41, 0.39, 1.0), 0.8)         # granito de las gradas
+m_azotea = material("IG_Azotea", (0.20, 0.12, 0.08, 1.0), 0.9)       # azotea de la sacristía
 m_hierro = material("IG_Hierro", (0.03, 0.03, 0.032, 1.0), 0.45, 0.6)
 m_bronce = material("IG_Bronce", (0.06, 0.045, 0.03, 1.0), 0.4, 0.8)
 m_azulejo = material("IG_Azulejo", (0.03, 0.08, 0.35, 1.0), 0.25)
+m_hueco = material("IG_Hueco", (0.02, 0.02, 0.025, 1.0), 0.8)        # ventanas en sombra
 m_hoja = material("IG_Hoja", (0.06, 0.12, 0.035, 1.0), 0.85)
 m_tronco = material("IG_Tronco", (0.12, 0.08, 0.05, 1.0), 0.9)
 
@@ -271,7 +303,7 @@ f_fachada = mat_foto("ig_fachada_oeste")
 f_muro = mat_foto("ig_muro_norte")
 f_clere = mat_foto("ig_clerestorio")
 f_cana_n = mat_foto("ig_torre_cana_norte")
-f_cana_o = mat_foto("ig_torre_cana_oeste")
+f_torre_dia = mat_foto("ig_torre_oeste_dia")
 f_campanas = mat_foto("ig_torre_campanas")
 f_cuerpo_a = mat_foto("ig_torre_cuerpo_a")
 f_cuerpo_b = mat_foto("ig_torre_cuerpo_b")
@@ -281,111 +313,155 @@ f_portada_s = mat_foto("ig_portada_sur")
 f_cupula = mat_foto("ig_cupula")
 f_tambor = mat_foto("ig_tambor")
 
-# ==========================================
-# 2. SUELO: plaza al norte y al oeste, patios al sur
-# ==========================================
-caja_lim("IG_Plaza", -42, 50, -16, 72, -0.2, 0.0, m_suelo)
-caja_lim("IG_Gradas", -12.5, 12.5, -2.6, 0.0, 0.0, 0.5, m_suelo)
-caja_lim("IG_Grada_Baja", -12.5, 12.5, -3.4, -2.6, 0.0, 0.25, m_suelo)
+# Medidas de la planta (vista cenital)
+XN = -17.5      # muro norte (plaza)
+XS = 17.5       # muro sur (patios)
+XNAVE = 6.1     # media anchura de la nave central
+Y_CRU0 = 33.8   # crucero
+Y_CRU1 = 45.3
+Y_CAB = 54.7    # fin de la cabecera / arranque de la sacristía
+Y_FIN = 61.5    # testero de la sacristía
+Z_BAJO = 12.5   # muros de las naves laterales
+Z_ALTO = 19.5   # muros de la nave central, crucero y cabecera
 
 # ==========================================
-# 3. CUERPO BAJO (cinco naves)
+# 2. SUELO Y GRADAS
 # ==========================================
-caja_lim("IG_Cuerpo", -18, 18, 0, 58, 0, 12.5, m_cal)
-# Pretiles sobre el muro norte y sur (la foto del muro ya los dibuja por fuera)
-caja_lim("IG_Pretil_N", -18, -17.6, 5, 58, 12.5, 13.6, m_cal)
-caja_lim("IG_Pretil_S", 17.6, 18, 5, 58, 12.5, 13.6, m_cal)
-caja_lim("IG_Pretil_E", -18, 18, 57.6, 58, 12.5, 13.6, m_cal)
+caja_lim("IG_Plaza", -42, 48, -18, 68, -0.2, 0.0, m_suelo)
+for i in range(5):
+    caja_lim("IG_Grada_" + str(i), XN, 18.5, -3.0 + i * 0.3, 0.0, 0.0, 0.12 * (i + 1), m_grada)
 
-# Fachada oeste: foto enderezada (1024 x 940 px = 24 x 22 m) recortada por su silueta
-PX = 1024.0 / 24.0
-perfil = [[0, 405], [40, 395], [62, 362], [124, 360], [168, 368], [200, 345], [212, 315], [216, 180], [234, 150], [322, 150], [360, 110], [420, 82], [461, 72], [461.5, 45], [515.5, 45], [516, 72], [560, 80], [615, 105], [658, 132], [662, 128], [794, 150], [778, 190], [790, 260], [805, 307], [863, 344], [900, 344], [944, 333], [995, 358], [1020, 385], [1024, 399]]
+# ==========================================
+# 3. CUERPO BAJO (cinco naves) Y FACHADA OESTE
+# ==========================================
+caja_lim("IG_Cuerpo", XN, XS, 0, Y_CAB, 0, Z_BAJO, m_cal)
+caja_lim("IG_Pretil_N", XN, XN + 0.4, 4.5, Y_CAB, Z_BAJO, 13.6, m_cal)
+caja_lim("IG_Pretil_S", XS - 0.4, XS, 4.5, Y_CAB, Z_BAJO, 13.6, m_cal)
+
+# Fachada oeste: foto de día enderezada en metros (X de -11,5 a 18,5, Z de 0,6 a 23, 40 px/m)
+# recortada por su silueta. El perfil está medido en la foto enderezada: X = -18 + u/40,
+# Z = 23 - v/40. Incluye la cara oeste de la torre inacabada.
+perfil = [[259, 382], [321, 334], [364, 327], [393, 339], [426, 334], [455, 315], [479, 286], [488, 239], [488, 134], [498, 95], [574, 95], [612, 57], [669, 29], [727, 17], [784, 29], [841, 57], [875, 95], [956, 95], [964, 134], [964, 277], [994, 315], [1032, 334], [1070, 324], [1104, 324], [1127, 344], [1142, 377], [1166, 386], [1173, 367], [1461, 367]]
 verts = []
 caras = []
 uvs = []
 for i in range(len(perfil)):
     q = perfil[i]
-    x = -12.0 + q[0] / PX
-    verts.append((x, -0.04, 0.5))
-    verts.append((x, -0.04, 0.5 + (940 - q[1]) / PX))
+    x = -18.0 + q[0] / 40.0
+    verts.append((x, -0.04, 0.6))
+    verts.append((x, -0.04, 23.0 - q[1] / 40.0))
 for i in range(len(perfil) - 1):
     a = perfil[i]
     b = perfil[i + 1]
+    ua = (a[0] / 40.0 - 6.5) / 30.0
+    ub = (b[0] / 40.0 - 6.5) / 30.0
     caras.append((2 * i, 2 * i + 2, 2 * i + 3, 2 * i + 1))
-    uvs.append((a[0] / 1024.0, 0.0))
-    uvs.append((b[0] / 1024.0, 0.0))
-    uvs.append((b[0] / 1024.0, 1.0 - b[1] / 940.0))
-    uvs.append((a[0] / 1024.0, 1.0 - a[1] / 940.0))
+    uvs.append((ua, 0.0))
+    uvs.append((ub, 0.0))
+    uvs.append((ub, (22.4 - b[1] / 40.0) / 22.4))
+    uvs.append((ua, (22.4 - a[1] / 40.0) / 22.4))
 malla_uv("IG_Fachada_Oeste", verts, caras, uvs, f_fachada)
-# Volumen detrás del hastial (para que se vea macizo desde el lado)
-caja_lim("IG_Hastial", -6.4, 6.1, 0.05, 1.0, 12.5, 18.8, m_cal)
-cruz_x = -0.25
-caja("IG_Cruz_Fachada_V", (cruz_x, -0.1, 22.7), (0.12, 0.12, 1.6), m_hierro)
-caja("IG_Cruz_Fachada_H", (cruz_x, -0.1, 23.0), (0.9, 0.12, 0.12), m_hierro)
+# Volúmenes detrás de la fachada (alas con volutas y hastial central)
+caja_lim("IG_Fachada_Alas", -11.5, 11.5, 0.0, 0.8, Z_BAJO, 13.4, m_cal)
+caja_lim("IG_Hastial", -5.7, 6.0, 0.0, 0.8, Z_BAJO, 19.9, m_cal)
+caja("IG_Cruz_Fachada_V", (0.2, -0.1, 23.4), (0.12, 0.12, 1.4), m_hierro)
+caja("IG_Cruz_Fachada_H", (0.2, -0.1, 23.7), (0.8, 0.12, 0.12), m_hierro)
 
-# Muro norte (a la plaza) con su portada: foto enderezada de 53 m, de la torre al testero
-panel("IG_Muro_Norte", f_muro, (-18.04, 58), (0, -1), 53, 0, 13.6)
+# Muro norte (a la plaza) con su portada: foto enderezada, de la torre a la sacristía
+panel("IG_Muro_Norte", f_muro, (XN - 0.04, Y_CAB), (0, -1), Y_CAB - 4.5, 0, 13.6)
 # Muro sur (a los patios): la misma foto en espejo y encima la portada renacentista del sur
-panel("IG_Muro_Sur", f_muro, (18.04, 5), (0, 1), 53, 0, 13.6, 1.0, 0.0)
-panel("IG_Portada_Sur", f_portada_s, (18.12, 23.7 - 3.6), (0, 1), 7.2, 0.0, 10.2)
-# Testero (este) liso
-caja_lim("IG_Testero_Imposta", -18.1, 18.1, 57.9, 58.15, 11.8, 12.3, m_albero)
-caja_lim("IG_Imposta_N", -18.15, -17.9, 5, 58, 11.8, 12.2, m_albero)
+panel("IG_Muro_Sur", f_muro, (XS + 0.04, 4.5), (0, 1), Y_CAB - 4.5, 0, 13.6, 1.0, 0.0)
+panel("IG_Portada_Sur", f_portada_s, (XS + 0.12, 22.2 - 3.6), (0, 1), 7.2, 0.0, 10.2)
 
 # ==========================================
-# 4. NAVE CENTRAL, CRUCERO Y CABECERA (cuerpo alto)
+# 4. NAVE CENTRAL, CRUCERO Y CABECERA (cruz latina)
 # ==========================================
-caja_lim("IG_Nave_Alta", -9.5, 9.5, 0.5, 36, 12.5, 19.5, m_cal)
-panel("IG_Clere_N", f_clere, (-9.54, 36), (0, -1), 35.5, 12.5, 19.5, 0.0, 1.25)
-panel("IG_Clere_S", f_clere, (9.54, 0.5), (0, 1), 35.5, 12.5, 19.5, 1.25, 0.0)
-caja_lim("IG_Crucero", -15, 15, 36, 52, 12.5, 21.5, m_cal)
-panel("IG_Crucero_N", f_clere, (-15.04, 52), (0, -1), 16, 12.5, 21.5, 0.0, 0.55)
-panel("IG_Crucero_S", f_clere, (15.04, 36), (0, 1), 16, 12.5, 21.5, 0.55, 0.0)
-caja_lim("IG_Crucero_Cornisa", -15.3, 15.3, 35.7, 52.3, 21.3, 21.7, m_albero)
-caja_lim("IG_Cabecera", -9.5, 9.5, 52, 58, 12.5, 19.5, m_cal)
-caja_lim("IG_Nave_Cornisa_N", -9.8, -9.4, 0.5, 36, 19.2, 19.6, m_albero)
-caja_lim("IG_Nave_Cornisa_S", 9.4, 9.8, 0.5, 36, 19.2, 19.6, m_albero)
+caja_lim("IG_Nave_Alta", -XNAVE, XNAVE, 0.8, Y_CRU0, Z_BAJO, Z_ALTO, m_cal)
+panel("IG_Clere_N", f_clere, (-XNAVE - 0.04, Y_CRU0), (0, -1), Y_CRU0 - 0.8, Z_BAJO, Z_ALTO, 0.0, 1.2)
+panel("IG_Clere_S", f_clere, (XNAVE + 0.04, 0.8), (0, 1), Y_CRU0 - 0.8, Z_BAJO, Z_ALTO, 1.2, 0.0)
+caja_lim("IG_Crucero", XN, XS, Y_CRU0, Y_CRU1, Z_BAJO, Z_ALTO, m_cal)
+panel("IG_Crucero_N", f_clere, (XN - 0.04, Y_CRU1), (0, -1), Y_CRU1 - Y_CRU0, Z_BAJO, Z_ALTO, 0.0, 0.4)
+panel("IG_Crucero_S", f_clere, (XS + 0.04, Y_CRU0), (0, 1), Y_CRU1 - Y_CRU0, Z_BAJO, Z_ALTO, 0.4, 0.0)
+panel("IG_Crucero_ON", f_clere, (XN, Y_CRU0 - 0.04), (1, 0), XN * -1 - XNAVE, Z_BAJO, Z_ALTO, 0.0, 0.45)
+panel("IG_Crucero_OS", f_clere, (XNAVE, Y_CRU0 - 0.04), (1, 0), XS - XNAVE, Z_BAJO, Z_ALTO, 0.45, 0.9)
+panel("IG_Crucero_EN", f_clere, (-XNAVE, Y_CRU1 + 0.04), (-1, 0), XN * -1 - XNAVE, Z_BAJO, Z_ALTO, 0.0, 0.45)
+panel("IG_Crucero_ES", f_clere, (XS, Y_CRU1 + 0.04), (-1, 0), XS - XNAVE, Z_BAJO, Z_ALTO, 0.45, 0.9)
+caja_lim("IG_Cabecera", -XNAVE, XNAVE, Y_CRU1, Y_CAB, Z_BAJO, Z_ALTO, m_cal)
+panel("IG_Cabecera_N", f_clere, (-XNAVE - 0.04, Y_CAB), (0, -1), Y_CAB - Y_CRU1, Z_BAJO, Z_ALTO, 0.0, 0.35)
+panel("IG_Cabecera_S", f_clere, (XNAVE + 0.04, Y_CRU1), (0, 1), Y_CAB - Y_CRU1, Z_BAJO, Z_ALTO, 0.35, 0.0)
+caja_lim("IG_Cabecera_Testero", -XNAVE, XNAVE, Y_CAB, Y_CAB + 0.3, 11.0, Z_ALTO, m_cal)
+# Cornisas de ladrillo bajo los aleros
+caja_lim("IG_Cornisa_Nave_N", -XNAVE - 0.3, -XNAVE + 0.1, 0.8, Y_CRU0, Z_ALTO - 0.4, Z_ALTO, m_albero)
+caja_lim("IG_Cornisa_Nave_S", XNAVE - 0.1, XNAVE + 0.3, 0.8, Y_CRU0, Z_ALTO - 0.4, Z_ALTO, m_albero)
+caja_lim("IG_Cornisa_Crucero_O", XN - 0.3, XS + 0.3, Y_CRU0 - 0.3, Y_CRU0 + 0.1, Z_ALTO - 0.4, Z_ALTO, m_albero)
+caja_lim("IG_Cornisa_Crucero_E", XN - 0.3, XS + 0.3, Y_CRU1 - 0.1, Y_CRU1 + 0.3, Z_ALTO - 0.4, Z_ALTO, m_albero)
+caja_lim("IG_Cornisa_Cabecera_N", -XNAVE - 0.3, -XNAVE + 0.1, Y_CRU1, Y_CAB + 0.3, Z_ALTO - 0.4, Z_ALTO, m_albero)
+caja_lim("IG_Cornisa_Cabecera_S", XNAVE - 0.1, XNAVE + 0.3, Y_CRU1, Y_CAB + 0.3, Z_ALTO - 0.4, Z_ALTO, m_albero)
 
-# Cubiertas de teja
-tejado_hip("IG_Tejado_Nave", m_teja, -9.9, 9.9, 0.3, 36.2, 19.5, 3.6, 9.9, 0)
-tejado_pabellon("IG_Tejado_Crucero", m_teja, -15.2, 15.2, 35.8, 52.2, 21.5, 3.2)
-tejado_hip("IG_Tejado_Cabecera", m_teja, -9.9, 9.9, 51.8, 58.3, 19.5, 3.0, 0, 6.5)
-tejado_pendiente("IG_Tejado_Nave_N1", m_teja, -17.6, -9.5, 5.0, 36, 13.0, 16.0)
-tejado_pendiente("IG_Tejado_Nave_N2", m_teja, -17.6, -15.0, 36, 52, 13.0, 14.2)
-tejado_pendiente("IG_Tejado_Nave_N3", m_teja, -17.6, -9.5, 52, 57.6, 13.0, 16.0)
-tejado_pendiente("IG_Tejado_Nave_S1", m_teja, 17.6, 9.5, 5.0, 36, 13.0, 16.0)
-tejado_pendiente("IG_Tejado_Nave_S2", m_teja, 17.6, 15.0, 36, 52, 13.0, 14.2)
-tejado_pendiente("IG_Tejado_Nave_S3", m_teja, 17.6, 9.5, 52, 57.6, 13.0, 16.0)
-tejado_pendiente("IG_Tejado_Nave_N0", m_teja, -12.0, -9.5, 0.5, 5.0, 13.0, 16.0)
-tejado_pendiente("IG_Tejado_Nave_S0", m_teja, 12.0, 9.5, 0.5, 5.0, 13.0, 16.0)
+# Cubiertas de teja: nave con faldón al oeste, crucero a cuatro aguas con testeros a norte y
+# sur, cabecera con faldón al este y naves laterales a un agua
+H = 4.0
+tejado_hip("IG_Tejado_Nave", m_teja, -XNAVE - 0.3, XNAVE + 0.3, 0.5, Y_CRU0, Z_ALTO, H, XNAVE + 0.3, 0)
+tejado_hip_x("IG_Tejado_Crucero", m_teja, XN - 0.3, XS + 0.3, Y_CRU0 - 0.3, Y_CRU1 + 0.3, Z_ALTO, H, 6.1, 6.1)
+tejado_hip("IG_Tejado_Cabecera", m_teja, -XNAVE - 0.3, XNAVE + 0.3, Y_CRU1, Y_CAB + 0.3, Z_ALTO, H, 0, XNAVE + 0.3)
+YC = (Y_CRU0 + Y_CRU1) / 2
+ZR = Z_ALTO + H
+limas("IG_Lima", m_verde, [
+    [(0, XNAVE + 0.8, ZR), (0, Y_CRU0, ZR)],
+    [(-XNAVE - 0.3, 0.5, Z_ALTO), (0, XNAVE + 0.8, ZR)],
+    [(XNAVE + 0.3, 0.5, Z_ALTO), (0, XNAVE + 0.8, ZR)],
+    [(XN + 5.8, YC, ZR), (XS - 5.8, YC, ZR)],
+    [(XN - 0.3, Y_CRU0 - 0.3, Z_ALTO), (XN + 5.8, YC, ZR)],
+    [(XN - 0.3, Y_CRU1 + 0.3, Z_ALTO), (XN + 5.8, YC, ZR)],
+    [(XS + 0.3, Y_CRU0 - 0.3, Z_ALTO), (XS - 5.8, YC, ZR)],
+    [(XS + 0.3, Y_CRU1 + 0.3, Z_ALTO), (XS - 5.8, YC, ZR)],
+    [(0, Y_CRU1, ZR), (0, Y_CAB + 0.3 - XNAVE - 0.3, ZR)],
+    [(-XNAVE - 0.3, Y_CAB + 0.3, Z_ALTO), (0, Y_CAB - XNAVE, ZR)],
+    [(XNAVE + 0.3, Y_CAB + 0.3, Z_ALTO), (0, Y_CAB - XNAVE, ZR)],
+])
+Z_ALERO = 13.0
+Z_LIMA = 16.2
+tejado_pendiente("IG_Tejado_Lat_N0", m_teja, -11.5, -XNAVE, 0.8, 4.5, Z_ALERO, Z_LIMA)
+tejado_pendiente("IG_Tejado_Lat_N1", m_teja, XN + 0.4, -XNAVE, 4.5, Y_CRU0, Z_ALERO, Z_LIMA)
+tejado_pendiente("IG_Tejado_Lat_N2", m_teja, XN + 0.4, -XNAVE, Y_CRU1, Y_CAB, Z_ALERO, Z_LIMA)
+tejado_pendiente("IG_Tejado_Lat_S0", m_teja, 11.5, XNAVE, 0.8, 4.5, Z_ALERO, Z_LIMA)
+tejado_pendiente("IG_Tejado_Lat_S1", m_teja, XS - 0.4, XNAVE, 4.5, Y_CRU0, Z_ALERO, Z_LIMA)
+tejado_pendiente("IG_Tejado_Lat_S2", m_teja, XS - 0.4, XNAVE, Y_CRU1, Y_CAB, Z_ALERO, Z_LIMA)
+# Lucernas sobre los faldones de la nave (las manchas claras de la vista cenital)
+for i in range(2):
+    sx = -1
+    if i == 1:
+        sx = 1
+    caja("IG_Lucerna_" + str(i), (sx * 4.2, 22.0, 21.4), (1.2, 1.4, 1.0), m_cal)
+    caja("IG_Lucerna_Hueco_" + str(i), (sx * 4.81, 22.0, 21.4), (0.05, 0.7, 0.6), m_hueco)
 
 # Cúpula sobre el crucero: tambor con óculos, media naranja de nervios y linterna
-DY = 44.0
-prisma_foto("IG_Tambor", f_tambor, 0, DY, 6.3, 21.5, 25.2, 24, 4)
-cilindro("IG_Tambor_Cornisa", (0, DY, 25.4), 6.75, 0.5, m_cal, vertices=24)
-cupula_foto("IG_Cupula", f_cupula, 0, DY, 25.6, 6.4, 5.4, 24, 7, 4)
-cilindro("IG_Linterna", (0, DY, 31.7), 1.15, 2.0, m_cal, vertices=12)
-cilindro("IG_Linterna_Anillo", (0, DY, 32.8), 1.35, 0.25, m_albero, vertices=12)
-cono("IG_Linterna_Chapitel", (0, DY, 33.5), 1.2, 0.25, 1.2, m_cal, vertices=12)
-esfera("IG_Linterna_Bola", (0, DY, 34.2), 0.3, m_cal)
-caja("IG_Cruz_Cupula_V", (0, DY, 35.2), (0.1, 0.1, 1.6), m_hierro)
-caja("IG_Cruz_Cupula_H", (0, DY, 35.5), (0.8, 0.1, 0.1), m_hierro)
-
-# Cupulín de azulejos en la esquina noreste
-cilindro("IG_Cupulin_Base", (-16.3, 55.8, 13.4), 1.2, 1.8, m_cal, vertices=12)
-esfera("IG_Cupulin", (-16.3, 55.8, 14.3), 1.2, m_azulejo, escala=(1, 1, 0.9))
+DY = YC
+prisma_foto("IG_Tambor", f_tambor, 0, DY, 5.6, Z_ALTO + 1.0, 24.6, 24, 4)
+cilindro("IG_Tambor_Base", (0, DY, Z_ALTO + 0.5), 5.7, 1.0, m_cal, vertices=24)
+cilindro("IG_Tambor_Cornisa", (0, DY, 24.8), 6.05, 0.45, m_cal, vertices=24)
+cupula_foto("IG_Cupula", f_cupula, 0, DY, 25.0, 5.75, 5.2, 24, 7, 4)
+cilindro("IG_Linterna", (0, DY, 30.9), 1.1, 1.9, m_cal, vertices=12)
+cilindro("IG_Linterna_Anillo", (0, DY, 31.9), 1.3, 0.25, m_albero, vertices=12)
+cono("IG_Linterna_Chapitel", (0, DY, 32.6), 1.15, 0.25, 1.1, m_cal, vertices=12)
+esfera("IG_Linterna_Bola", (0, DY, 33.3), 0.3, m_cal)
+caja("IG_Cruz_Cupula_V", (0, DY, 34.2), (0.1, 0.1, 1.5), m_hierro)
+caja("IG_Cruz_Cupula_H", (0, DY, 34.5), (0.8, 0.1, 0.1), m_hierro)
 
 # ==========================================
-# 5. TORRE (noroeste, 6 x 6 m)
+# 5. TORRE (noroeste, 6 x 6 m, adelantada 1,5 m a la fachada)
 # ==========================================
-TX0 = -18.0
-TX1 = -12.0
-TY0 = -1.0
-TY1 = 5.0
+TX0 = XN
+TX1 = XN + 6.0
+TY0 = -1.5
+TY1 = 4.5
 TC = ((TX0 + TX1) / 2, (TY0 + TY1) / 2)
 caja_lim("IG_Torre_Cana", TX0, TX1, TY0, TY1, 0, 27.5, m_cal)
-caras_caja("IG_Torre_Cana", [f_cana_o, f_cana_n, None, None], TX0, TX1, TY0, TY1, 0, 27.5)
-caras_caja("IG_Torre_Cana_Alta", [None, None, f_cana_o, f_cana_o], TX0, TX1, TY0, TY1, 13.6, 27.5, 0.03, 13.6 / 27.5)
+caja_lim("IG_Torre_Zocalo", TX0 - 0.05, TX1 + 0.05, TY0 - 0.05, TY1 + 0.05, 0, 0.6, m_grada)
+# Cara oeste: foto de día enderezada en metros
+panel("IG_Torre_Cana_O_Dia", f_torre_dia, (TX0, TY0 - 0.04), (1, 0), 6.0, 0.6, 27.5)
+caras_caja("IG_Torre_Cana", [None, f_cana_n, None, None], TX0, TX1, TY0, TY1, 0, 27.5)
+caras_caja("IG_Torre_Cana_Alta", [None, None, f_torre_dia, f_torre_dia], TX0, TX1, TY0, TY1, 13.6, 27.5, 0.03, 13.6 / 27.5)
 caja("IG_Torre_Imposta", (TC[0], TC[1], 27.65), (6.5, 6.5, 0.3), m_albero)
 # Cuerpo de campanas con el friso de azulejos (foto)
 caja_lim("IG_Torre_Campanas", TX0 - 0.1, TX1 + 0.1, TY0 - 0.1, TY1 + 0.1, 27.8, 35.0, m_cal)
@@ -432,26 +508,56 @@ caja("IG_Giraldillo_Bandera", (TC[0] - 0.75, TC[1], 49.0), (0.7, 0.03, 0.45), m_
 caja("IG_Giraldillo_Cruz", (TC[0] - 0.35, TC[1], 49.35), (0.3, 0.03, 0.05), m_hierro)
 
 # ==========================================
-# 6. TORRE INACABADA (suroeste)
+# 6. TORRE INACABADA (suroeste): cuerpo de 7 m con azotea y tejadillo ochavado detrás
 # ==========================================
-caja_lim("IG_Torre_Sur", 12.0, 18.0, -1.0, 5.0, 0, 16.2, m_cal)
-caja_lim("IG_Torre_Sur_Cornisa", 11.8, 18.2, -1.2, 5.2, 16.2, 16.6, m_albero)
-caja_lim("IG_Torre_Sur_Imposta", 11.95, 18.05, -1.05, 5.05, 11.8, 12.2, m_albero)
-caja_lim("IG_Torre_Sur_Ventana", 14.3, 15.7, -1.06, -0.9, 13.0, 15.2, m_hierro)
-tejado_pabellon("IG_Torre_Sur_Tejado", m_teja, 11.8, 18.2, -1.2, 5.2, 16.6, 2.6)
+caja_lim("IG_Torre_Sur", 11.5, 18.5, 0.0, 4.5, 0, 13.8, m_cal)
+caja_lim("IG_Torre_Sur_Pretil_E", 11.5, 18.5, 4.2, 4.5, 13.8, 14.3, m_cal)
+caja_lim("IG_Torre_Sur_Pretil_S", 18.2, 18.5, 0.0, 4.5, 13.8, 14.3, m_cal)
+caja_lim("IG_Torre_Sur_Pretil_N", 11.5, 11.8, 0.0, 4.5, 13.8, 14.3, m_cal)
+caja_lim("IG_Torre_Sur_Imposta_S", 18.5, 18.6, 0.0, 4.5, 3.6, 3.75, m_albero)
+caja_lim("IG_Torre_Sur_Ventana_S", 18.5, 18.56, 1.5, 3.0, 9.5, 11.0, m_hueco)
+cilindro("IG_Ochavo_Base", (14.2, 7.2, 13.2), 2.9, 1.4, m_cal, vertices=8, rot=(0, 0, math.pi / 8))
+cono("IG_Ochavo_Tejado", (14.2, 7.2, 15.4), 3.15, 0.15, 3.0, m_teja, vertices=8, rot=(0, 0, math.pi / 8))
+esfera("IG_Ochavo_Remate", (14.2, 7.2, 17.0), 0.25, m_verde)
 
 # ==========================================
-# 7. SACRISTÍA Y PATIOS (sur: naranjos y olivos)
+# 7. SACRISTÍA (este), CUPULINES Y PATIOS (sur)
 # ==========================================
-caja_lim("IG_Sacristia", -13, 13, 58, 64, 0, 9.0, m_cal)
-caja_lim("IG_Sacristia_Cornisa", -13.2, 13.2, 57.8, 64.2, 9.0, 9.3, m_albero)
-tejado_hip("IG_Tejado_Sacristia", m_teja, -13.2, 13.2, 58, 64.2, 9.3, 2.0, 0, 6.2)
+caja_lim("IG_Sacristia", XN, XS, Y_CAB, Y_FIN, 0, 11.0, m_cal)
+caja_lim("IG_Sacristia_Azotea", XN + 0.3, XS - 0.3, Y_CAB, Y_FIN - 0.3, 11.0, 11.05, m_azotea)
+caja_lim("IG_Sacristia_Pretil_E", XN, XS, Y_FIN - 0.3, Y_FIN, 11.0, 11.8, m_cal)
+caja_lim("IG_Sacristia_Pretil_N", XN, XN + 0.3, Y_CAB, Y_FIN, 11.0, 11.8, m_cal)
+caja_lim("IG_Sacristia_Pretil_S", XS - 0.3, XS, Y_CAB, Y_FIN, 11.0, 11.8, m_cal)
+caja_lim("IG_Sacristia_Cornisa", XN - 0.15, XS + 0.15, Y_FIN - 0.15, Y_FIN + 0.15, 10.6, 11.0, m_albero)
+claraboyas = [[-10.0, 56.2], [-10.0, 59.2], [9.6, 56.2], [9.6, 59.2]]
+for i in range(len(claraboyas)):
+    q = claraboyas[i]
+    caja("IG_Claraboya_" + str(i), (q[0], q[1], 11.4), (1.3, 1.3, 0.8), m_cal)
+# Testeros del este: muro de la sacristía y cabecera por encima, con la foto del cuerpo alto
+# (ventanas recercadas, imposta y óculos), repetida a lo largo
+# (la foto cubre unos 29 x 7 m: se pone a su proporción, en la parte alta del muro)
+panel("IG_Testero_Sacristia", f_clere, (XS, Y_FIN + 0.04), (-1, 0), XS - XN, 4.8, 11.8, 0.0, 1.2)
+panel("IG_Testero_Cabecera", f_clere, (XNAVE, Y_CAB + 0.34), (-1, 0), 2 * XNAVE, 11.8, Z_ALTO, 0.0, 0.42)
+panel("IG_Sacristia_N", f_clere, (XN - 0.04, Y_FIN), (0, -1), Y_FIN - Y_CAB, 4.8, 11.8, 0.0, 0.23)
+panel("IG_Sacristia_S", f_clere, (XS + 0.04, Y_CAB), (0, 1), Y_FIN - Y_CAB, 4.8, 11.8, 0.23, 0.0)
+caja_lim("IG_Sacristia_Zocalo", XN - 0.06, XS + 0.06, Y_CAB, Y_FIN + 0.06, 0.0, 0.8, m_grada)
+for i in range(4):
+    vx = -12.0 + i * 8.0
+    caja("IG_Testero_Ventana_" + str(i), (vx, Y_FIN + 0.03, 2.8), (1.0, 0.06, 1.6), m_hueco)
+    caja("IG_Testero_Marco_" + str(i), (vx, Y_FIN + 0.02, 2.8), (1.4, 0.05, 2.0), m_albero)
+for i in range(2):
+    sx = -1
+    if i == 1:
+        sx = 1
+    cilindro("IG_Cupulin_Base_" + str(i), (sx * 15.9, Y_CAB - 1.8, 13.4), 1.2, 1.8, m_cal, vertices=12)
+    esfera("IG_Cupulin_" + str(i), (sx * 15.9, Y_CAB - 1.8, 14.3), 1.2, m_azulejo, escala=(1, 1, 0.9))
+
 # Tapias de los patios
-caja_lim("IG_Tapia_Oeste", 18, 26, 8.5, 9.0, 0, 4.0, m_cal)
+caja_lim("IG_Tapia_Oeste", XS, 26, 8.5, 9.0, 0, 4.0, m_cal)
 caja_lim("IG_Tapia_Naranjos", 25.5, 26, 9, 27, 0, 4.0, m_cal)
 caja_lim("IG_Tapia_Olivos_O", 26, 46, 26.5, 27, 0, 4.0, m_cal)
 caja_lim("IG_Tapia_Olivos_S", 45.5, 46, 27, 62, 0, 4.0, m_cal)
-caja_lim("IG_Tapia_Olivos_E", 13, 46, 61.5, 62, 0, 4.0, m_cal)
+caja_lim("IG_Tapia_Olivos_E", XS, 46, 61.5, 62, 0, 4.0, m_cal)
 arboles = [[21, 12, 0.9], [23.5, 12.5, 0.9], [21, 16, 0.9], [23.5, 16.5, 0.9], [21, 20, 0.9], [23.5, 20.5, 0.9], [22, 24, 0.9],
            [21, 31, 1.6], [26, 30, 1.6], [31, 32, 1.8], [37, 30, 1.6], [42, 33, 1.7], [22, 38, 1.7], [28, 37, 1.6], [34, 39, 1.9],
            [40, 40, 1.6], [24, 45, 1.7], [31, 46, 1.6], [38, 47, 1.8], [43, 50, 1.6], [26, 53, 1.6], [33, 55, 1.7], [40, 57, 1.6]]

@@ -151,3 +151,15 @@ Mira el script más parecido antes de empezar uno nuevo:
 - **GLB pesado**: el exportador guarda las fotos en PNG y un material por pieza (7,4 MB, 206
   materiales). `iglesia_granada/aligerar_glb.py` las pasa a JPG y une materiales idénticos
   (1,4 MB, 23 materiales) sin tocar la geometría.
+- **Enderezar en metros, no en píxeles** (segunda vuelta de la iglesia): en `TEXTURAS_METRICAS`
+  de `hacer_texturas.py` se dan 4 puntos de la foto con su posición real en la pared (X, Z en
+  metros) y se recorta el rectángulo de pared que se quiera a N px/m. Con una foto casi frontal,
+  las cornisas y ventanas salen a nivel y la puerta cayó en X = 0 sin forzarla (comprobación de
+  que las medidas son buenas). La silueta del hastial se mide sobre esa foto enderezada.
+- **La foto deja ver más alto de lo que parece**: en la cara de la torre el borde superior de
+  la foto estaba a ~29,5 m, no a 17; se comprobó con dos detalles (ventana y balcón) que salen
+  en otra foto. Si se pone mal, las ventanas no coinciden entre caras.
+- **Vista cenital de Google Earth** (con su barra de escala) para la planta: aquí dio la cruz
+  latina, el crucero, la cabecera y la sacristía. Sus texturas son borrosas: solo para medidas.
+- **Toda textura nueva se registra en el catálogo** (`IGLESIA_GRANADA_TEXTURAS`): si no, la
+  pieza sale blanca sin aviso.
