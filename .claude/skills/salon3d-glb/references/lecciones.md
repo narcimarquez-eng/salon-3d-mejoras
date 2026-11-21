@@ -174,3 +174,9 @@ Mira el script más parecido antes de empezar uno nuevo:
   50 m. `iglesia_granada/dibujar_muros.py` dibuja muros laterales, cuerpo alto (en paños de 6 m
   que se repiten sin costura) y teja árabe sin costuras; de la foto solo se pega la portada,
   y como es simétrica, su mitad tapada por una farola se rehace en espejo.
+- **Enderezar con rectas, no con esquinas sueltas** (portada norte): cuatro esquinas tomadas a
+  ojo dejaron las columnas inclinadas. Lo que funcionó: seguir fila a fila un canto vertical
+  largo a cada lado (pilastras del muro) buscando el píxel más oscuro, ajustar una recta a
+  cada uno (aquí con pendientes distintas: -0,108 y -0,055, la foto tenía perspectiva y
+  cizalla) y cortarlas con dos horizontales (suelo y cornisa). Las 4 intersecciones son los
+  puntos de la homografía.

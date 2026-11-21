@@ -172,17 +172,28 @@ def main(fotos, salida, homografia):
     # propia foto: base de la portada en y = 2350 y friso en y = 1600, que en el modelo está a
     # 10,95 m (1,46 cm/px). Salen 8,8 m de ancho, puerta de 4,4 x 5,8 m y copete a ~14 m.
     foto = Image.open(os.path.join(fotos, "36d32d30-image.jpg")).convert("RGB")
-    m_px = 10.95 / (2350 - 1600)
-    z_cornisa = (2350 - 1850) * m_px
-    pared = [(-4.4, 0.0), (4.4, 0.0), (-4.4, z_cornisa), (4.4, z_cornisa)]
-    fotop = [(300, 2350), (905, 2350), (345, 1850), (935, 1850)]
+    # Trapecio -> rectángulo con rectas medidas en la foto (no con esquinas sueltas):
+    # verticales = cantos de las pilastras del muro a cada lado de la portada, seguidos fila a
+    # fila (izquierda x = 341 - 0,108 (y - 1750); derecha x = 953 - 0,055 (y - 1700));
+    # horizontales = suelo (y = 2352) y cornisa sobre las columnas (y = 1848).
+    def izq(y):
+        return 341 - 0.108 * (y - 1750)
+
+    def der(y):
+        return 953 - 0.055 * (y - 1700)
+
+    m_px = 10.95 / (2352 - 1600)          # el friso (y = 1600) está a 10,95 m en el modelo
+    z_c = (2352 - 1848) * m_px
+    media = (der(2000) - izq(2000)) * m_px / 2
+    pared = [(-media, 0.0), (media, 0.0), (-media, z_c), (media, z_c)]
+    fotop = [(izq(2352), 2352), (der(2352), 2352), (izq(1848), 1848), (der(1848), 1848)]
     c = homografia(pared, fotop)  # pared (m) -> foto (px)
 
     def a_foto(X, Z):
         d = c[6] * X + c[7] * Z + 1
         return ((c[0] * X + c[1] * Z + c[2]) / d, (c[3] * X + c[4] * Z + c[5]) / d)
 
-    X0, X1, Z1 = -5.2, 5.2, 13.6
+    X0, X1, Z1 = -media - 0.3, media + 0.3, 13.6
     w = int((X1 - X0) * PXM_MURO)
     h = int(Z1 * PXM_MURO)
     esq = [a_foto(X0, Z1), a_foto(X1, Z1), a_foto(X1, 0.0), a_foto(X0, 0.0)]
