@@ -22,6 +22,10 @@ import math
 # La fachada principal mira a -Y; la plaza queda al norte (-X) y los patios al sur (+X).
 # ==============================================================================
 
+# Escena: "plaza" (la plaza real de Moguer) o "pradera" (prado con flores, riachuelo y
+# montañas; iglesia_granada_pradera.py es este mismo script con ESCENA = "pradera")
+ESCENA = "plaza"
+
 bpy.ops.object.select_all(action='SELECT')
 bpy.ops.object.delete(use_global=False)
 
@@ -330,7 +334,8 @@ Z_ALTO = 19.5   # muros de la nave central, crucero y cabecera
 # ==========================================
 # 2. SUELO Y GRADAS
 # ==========================================
-caja_lim("IG_Plaza", -42, 48, -18, 68, -0.2, 0.0, m_suelo)
+if ESCENA == "plaza":
+    caja_lim("IG_Plaza", -42, 48, -18, 68, -0.2, 0.0, m_suelo)
 for i in range(5):
     caja_lim("IG_Grada_" + str(i), XN, 18.5, -3.0 + i * 0.3, 0.0, 0.0, 0.12 * (i + 1), m_grada)
 
@@ -637,29 +642,283 @@ for i in range(2):
     cilindro("IG_Cupulin_Base_" + str(i), (sx * 15.9, Y_CAB - 1.8, 13.4), 1.2, 1.8, m_cal, vertices=12)
     esfera("IG_Cupulin_" + str(i), (sx * 15.9, Y_CAB - 1.8, 14.3), 1.2, m_azulejo, escala=(1, 1, 0.9))
 
-# Tapias de los patios
-caja_lim("IG_Tapia_Oeste", XS, 26, 8.5, 9.0, 0, 4.0, m_cal)
-caja_lim("IG_Tapia_Naranjos", 25.5, 26, 9, 27, 0, 4.0, m_cal)
-caja_lim("IG_Tapia_Olivos_O", 26, 46, 26.5, 27, 0, 4.0, m_cal)
-caja_lim("IG_Tapia_Olivos_S", 45.5, 46, 27, 62, 0, 4.0, m_cal)
-caja_lim("IG_Tapia_Olivos_E", XS, 46, 61.5, 62, 0, 4.0, m_cal)
-arboles = [[21, 12, 0.9], [23.5, 12.5, 0.9], [21, 16, 0.9], [23.5, 16.5, 0.9], [21, 20, 0.9], [23.5, 20.5, 0.9], [22, 24, 0.9],
-           [21, 31, 1.6], [26, 30, 1.6], [31, 32, 1.8], [37, 30, 1.6], [42, 33, 1.7], [22, 38, 1.7], [28, 37, 1.6], [34, 39, 1.9],
-           [40, 40, 1.6], [24, 45, 1.7], [31, 46, 1.6], [38, 47, 1.8], [43, 50, 1.6], [26, 53, 1.6], [33, 55, 1.7], [40, 57, 1.6]]
-for i in range(len(arboles)):
-    q = arboles[i]
-    cilindro("IG_Arbol_Tronco_" + str(i), (q[0], q[1], q[2] * 0.6), 0.16 * q[2], q[2] * 1.2, m_tronco, vertices=6)
-    esfera("IG_Arbol_Copa_" + str(i), (q[0], q[1], q[2] * 1.75), q[2] * 1.15, m_hoja, escala=(1, 1, 0.8), segmentos=8, anillos=6)
+def hacer_plaza():
+    # Tapias de los patios
+    caja_lim("IG_Tapia_Oeste", XS, 26, 8.5, 9.0, 0, 4.0, m_cal)
+    caja_lim("IG_Tapia_Naranjos", 25.5, 26, 9, 27, 0, 4.0, m_cal)
+    caja_lim("IG_Tapia_Olivos_O", 26, 46, 26.5, 27, 0, 4.0, m_cal)
+    caja_lim("IG_Tapia_Olivos_S", 45.5, 46, 27, 62, 0, 4.0, m_cal)
+    caja_lim("IG_Tapia_Olivos_E", XS, 46, 61.5, 62, 0, 4.0, m_cal)
+    arboles = [[21, 12, 0.9], [23.5, 12.5, 0.9], [21, 16, 0.9], [23.5, 16.5, 0.9], [21, 20, 0.9], [23.5, 20.5, 0.9], [22, 24, 0.9],
+               [21, 31, 1.6], [26, 30, 1.6], [31, 32, 1.8], [37, 30, 1.6], [42, 33, 1.7], [22, 38, 1.7], [28, 37, 1.6], [34, 39, 1.9],
+               [40, 40, 1.6], [24, 45, 1.7], [31, 46, 1.6], [38, 47, 1.8], [43, 50, 1.6], [26, 53, 1.6], [33, 55, 1.7], [40, 57, 1.6]]
+    for i in range(len(arboles)):
+        q = arboles[i]
+        cilindro("IG_Arbol_Tronco_" + str(i), (q[0], q[1], q[2] * 0.6), 0.16 * q[2], q[2] * 1.2, m_tronco, vertices=6)
+        esfera("IG_Arbol_Copa_" + str(i), (q[0], q[1], q[2] * 1.75), q[2] * 1.15, m_hoja, escala=(1, 1, 0.8), segmentos=8, anillos=6)
 
-# Palmeras y farolas de la plaza norte
-palmeras = [[-30, 10], [-34, 32]]
-for i in range(len(palmeras)):
-    q = palmeras[i]
-    cilindro("IG_Palmera_Tronco_" + str(i), (q[0], q[1], 4.0), 0.3, 8.0, m_tronco, vertices=8)
-    for k in range(7):
-        ang = 2 * math.pi * k / 7
-        viga("IG_Palmera_Hoja_" + str(i) + "_" + str(k), (q[0], q[1], 8.0), (q[0] + 2.6 * math.cos(ang), q[1] + 2.6 * math.sin(ang), 7.0), 0.35, m_hoja)
-for i in range(6):
-    fy = 4 + i * 9
-    cilindro("IG_Farola_Poste_" + str(i), (-21.5, fy, 2.0), 0.07, 4.0, m_hierro, vertices=6)
-    caja("IG_Farola_Fanal_" + str(i), (-21.5, fy, 4.2), (0.35, 0.35, 0.5), m_hierro)
+    # Palmeras y farolas de la plaza norte
+    palmeras = [[-30, 10], [-34, 32]]
+    for i in range(len(palmeras)):
+        q = palmeras[i]
+        cilindro("IG_Palmera_Tronco_" + str(i), (q[0], q[1], 4.0), 0.3, 8.0, m_tronco, vertices=8)
+        for k in range(7):
+            ang = 2 * math.pi * k / 7
+            viga("IG_Palmera_Hoja_" + str(i) + "_" + str(k), (q[0], q[1], 8.0), (q[0] + 2.6 * math.cos(ang), q[1] + 2.6 * math.sin(ang), 7.0), 0.35, m_hoja)
+    for i in range(6):
+        fy = 4 + i * 9
+        cilindro("IG_Farola_Poste_" + str(i), (-21.5, fy, 2.0), 0.07, 4.0, m_hierro, vertices=6)
+        caja("IG_Farola_Fanal_" + str(i), (-21.5, fy, 4.2), (0.35, 0.35, 0.5), m_hierro)
+
+
+if ESCENA == "plaza":
+    hacer_plaza()
+
+
+# ==========================================
+# 8. PRADERA (ESCENA = "pradera")
+# ==========================================
+# Prado de la pradera florida T-09 del atlas de hierbas, rodales de flores pintados sobre la
+# misma hierba (iglesia_granada/dibujar_pradera.py), riachuelo con lecho de cantos (atlas de
+# agua T-23) que cruza delante de la puerta oeste, puente de madera, camino de tierra (T-08),
+# orillas (T-04), árboles y un anillo de montañas con nieve en las cumbres.
+def mat_tile(nombre, tex, metros):
+    m = material(nombre, (1.0, 1.0, 1.0, 1.0), 0.95)
+    m.color_map = tex
+    m.color_map_scale = metros
+    return m
+
+
+def poligono_suelo(nombre, mat, cx, cy, radio, z, lados, semilla, irregular=0.35):
+    # Mancha irregular (rodal) o disco: polígono en abanico; sin UV propias, así la app lo
+    # proyecta en metros igual que el prado y casan
+    verts = [(cx, cy, z)]
+    caras = []
+    for i in range(lados):
+        a = 2 * math.pi * i / lados
+        r = radio * (1 - irregular * 0.5 + irregular * 0.5 * (math.sin(a * 3 + semilla) * 0.6 + math.sin(a * 5 + semilla * 2.3) * 0.4))
+        verts.append((cx + r * math.cos(a), cy + r * math.sin(a), z))
+    for i in range(lados):
+        j = i + 1
+        if j == lados:
+            j = 0
+        caras.append((0, i + 1, j + 1))
+    mesh = bpy.data.meshes.new(nombre)
+    mesh.from_pydata(verts, [], caras)
+    obj = bpy.data.objects.new(nombre, mesh)
+    bpy.context.collection.objects.link(obj)
+    obj.data.materials.append(mat)
+    return obj
+
+
+def cauce_y(x):
+    # Línea central del riachuelo (cruza de norte a sur por delante de la fachada oeste)
+    return -16.0 + 2.6 * math.sin(x / 14.0) + 1.3 * math.sin(x / 6.0 + 1.0)
+
+
+def cinta(nombre, mat, puntos, semiancho, z, tile):
+    # Cinta a lo largo de una polilínea [[x, y], ...] con UV propias en metros / tile
+    verts = []
+    caras = []
+    uvs = []
+    dist = 0.0
+    for i in range(len(puntos) - 1):
+        a = puntos[i]
+        b = puntos[i + 1]
+        dx = b[0] - a[0]
+        dy = b[1] - a[1]
+        l = math.sqrt(dx * dx + dy * dy)
+        nx = -dy / l
+        ny = dx / l
+        n = len(verts)
+        verts.append((a[0] - nx * semiancho, a[1] - ny * semiancho, z))
+        verts.append((b[0] - nx * semiancho, b[1] - ny * semiancho, z))
+        verts.append((b[0] + nx * semiancho, b[1] + ny * semiancho, z))
+        verts.append((a[0] + nx * semiancho, a[1] + ny * semiancho, z))
+        caras.append((n, n + 1, n + 2, n + 3))
+        uvs.append((0.0, dist / tile))
+        uvs.append((0.0, (dist + l) / tile))
+        uvs.append((2 * semiancho / tile, (dist + l) / tile))
+        uvs.append((2 * semiancho / tile, dist / tile))
+        dist = dist + l
+    return malla_uv(nombre, verts, caras, uvs, mat)
+
+
+def hacer_montanas(R0, R1, n_ang, n_rad):
+    m_bosque = material("IG_Monte_Bosque", (0.035, 0.07, 0.03, 1.0), 0.95)
+    m_roca = material("IG_Monte_Roca", (0.16, 0.14, 0.12, 1.0), 0.9)
+    m_nieve = material("IG_Monte_Nieve", (0.85, 0.87, 0.9, 1.0), 0.6)
+    grupos = [[[], []], [[], []], [[], []]]
+    alturas = []
+    for j in range(n_rad + 1):
+        fila = []
+        r = R0 + (R1 - R0) * j / n_rad
+        t = j / n_rad
+        perfil = math.sin(min(1.0, t * 1.6) * math.pi / 2)
+        for i in range(n_ang):
+            a = 2 * math.pi * i / n_ang
+            cresta = 70 + 30 * math.sin(3 * a + 0.5) + 22 * math.sin(7 * a + 1.3) + 12 * math.sin(13 * a + 2.1) + 7 * math.sin(23 * a + t * 3)
+            fila.append([r * math.cos(a), 20 + r * math.sin(a), perfil * cresta * (0.75 + 0.25 * math.sin(5 * a + t * 4))])
+        alturas.append(fila)
+    for j in range(n_rad):
+        for i in range(n_ang):
+            k = i + 1
+            if k == n_ang:
+                k = 0
+            # orden antihorario visto desde dentro del valle (las caras miran a la iglesia)
+            q = [alturas[j][i], alturas[j + 1][i], alturas[j + 1][k], alturas[j][k]]
+            hm = (q[0][2] + q[1][2] + q[2][2] + q[3][2]) / 4
+            g = 0
+            if hm > 38:
+                g = 1
+            if hm > 82:
+                g = 2
+            vs = grupos[g][0]
+            n = len(vs)
+            for p in q:
+                vs.append((p[0], p[1], p[2]))
+            grupos[g][1].append((n, n + 1, n + 2, n + 3))
+    mats = [m_bosque, m_roca, m_nieve]
+    nombres = ["IG_Montes_Bosque", "IG_Montes_Roca", "IG_Montes_Nieve"]
+    for g in range(3):
+        if len(grupos[g][1]) > 0:
+            mesh = bpy.data.meshes.new(nombres[g])
+            mesh.from_pydata(grupos[g][0], [], grupos[g][1])
+            obj = bpy.data.objects.new(nombres[g], mesh)
+            bpy.context.collection.objects.link(obj)
+            obj.data.materials.append(mats[g])
+
+
+def lejos_de_todo(x, y, margen):
+    # Fuera de la iglesia, del cauce y del camino
+    if x > XN - margen and x < XS + 1 + margen and y > -3.5 - margen and y < Y_FIN + margen:
+        return False
+    if abs(y - cauce_y(x)) < 4.5 + margen:
+        return False
+    if abs(x) < 2.2 + margen and y < 0:
+        return False
+    return True
+
+
+def hacer_pradera():
+    m_prado = mat_tile("IG_Prado", "ig_prado", 4.0)
+    flores = [mat_tile("IG_Prado_Amapolas", "ig_prado_amapolas", 4.0), mat_tile("IG_Prado_Lavanda", "ig_prado_lavanda", 4.0),
+              mat_tile("IG_Prado_Botones", "ig_prado_botones", 4.0), mat_tile("IG_Prado_Mezcla", "ig_prado_mezcla", 4.0)]
+    m_orilla = mat_tile("IG_Orilla", "ig_orilla", 4.0)
+    m_camino = mat_tile("IG_Camino", "ig_camino", 3.0)
+    m_lecho = mat_tile("IG_Lecho", "ig_lecho", 3.0)
+    m_agua = material("IG_Agua", (0.02, 0.22, 0.26, 1.0), 0.05)
+    bsdf = m_agua.node_tree.nodes.get("Principled BSDF")
+    bsdf.inputs["Alpha"].default_value = 0.4
+    bsdf.inputs["Coat Weight"].default_value = 1.0
+    m_madera = material("IG_Madera", (0.2, 0.11, 0.05, 1.0), 0.75)
+    m_piedra = material("IG_Piedra", (0.3, 0.28, 0.25, 1.0), 0.85)
+    m_hoja2 = material("IG_Hoja_Alamo", (0.1, 0.2, 0.05, 1.0), 0.8)
+    m_junco = material("IG_Junco", (0.12, 0.2, 0.05, 1.0), 0.8)
+    m_f_rojo = material("IG_Flor_Roja", (0.6, 0.02, 0.01, 1.0), 0.6)
+    m_f_amar = material("IG_Flor_Amarilla", (0.9, 0.55, 0.02, 1.0), 0.6)
+    m_f_mora = material("IG_Flor_Morada", (0.22, 0.09, 0.5, 1.0), 0.6)
+    m_f_blanca = material("IG_Flor_Blanca", (0.9, 0.9, 0.85, 1.0), 0.6)
+
+    # Prado
+    poligono_suelo("IG_Prado", m_prado, 0, 20, 175, 0.0, 64, 0, 0.0)
+    # Rodales de flores
+    tipo = 0
+    for k in range(70):
+        a = k * 2.399963
+        r = 14 + 4.2 * math.sqrt(k * 7)
+        x = r * math.cos(a)
+        y = 20 + r * math.sin(a)
+        if r < 150 and lejos_de_todo(x, y, 4):
+            poligono_suelo("IG_Rodal_" + str(k), flores[tipo % 4], x, y, 4 + (k % 5) * 1.4, 0.015, 14, k)
+            tipo = tipo + 1
+    # Riachuelo: orillas, lecho y lámina de agua
+    pts = []
+    for i in range(0, 69):
+        x = -170 + i * 5.0
+        pts.append([x, cauce_y(x)])
+    cinta("IG_Orilla", m_orilla, pts, 4.4, 0.01, 4.0)
+    cinta("IG_Lecho", m_lecho, pts, 2.7, 0.03, 3.0)
+    cinta("IG_Agua", m_agua, pts, 2.6, 0.16, 6.0)
+    # Piedras y juncos en las orillas
+    for k in range(80):
+        x = -150 + k * 3.8
+        lado = 1
+        if k % 2 == 0:
+            lado = -1
+        y = cauce_y(x) + lado * (2.7 + (k % 3) * 0.4)
+        if abs(x) > 3:
+            esfera("IG_Canto_" + str(k), (x, y, 0.08), 0.35 + (k % 4) * 0.12, m_piedra, escala=(1.3, 1.0, 0.45), segmentos=6, anillos=4)
+        if k % 3 == 0 and abs(x) > 6:
+            for j in range(4):
+                cono("IG_Junco_" + str(k) + "_" + str(j), (x + j * 0.25 - 0.4, y + lado * 0.9, 0.7), 0.06, 0.0, 1.4 + (j % 2) * 0.4, m_junco, vertices=4)
+    # Camino de tierra desde las gradas, puente y más allá
+    yb = cauce_y(0)
+    camino = [[0.0, -3.0], [0.2, yb + 4.6]]
+    cinta("IG_Camino_Atrio", m_camino, camino, 1.8, 0.02, 3.0)
+    camino = [[0.0, yb - 4.6], [-1.0, yb - 15], [1.5, yb - 30], [-2.0, yb - 48], [0.0, yb - 70], [3.0, yb - 95], [0.0, yb - 125]]
+    cinta("IG_Camino_Sur", m_camino, camino, 1.6, 0.02, 3.0)
+    # Puente de madera en arco sobre el riachuelo
+    n = 12
+    L = 10.0
+    for i in range(n):
+        t = (i + 0.5) / n
+        y = yb - L / 2 + L * t
+        z = 0.35 + 1.0 * math.sin(math.pi * t)
+        pend = math.atan(1.0 * math.pi / L * math.cos(math.pi * t))
+        caja("IG_Puente_Tabla_" + str(i), (0.2, y, z), (3.0, L / n * 1.04, 0.12), m_madera, rot=(pend, 0, 0))
+    for lado in [-1, 1]:
+        xs = 0.2 + lado * 1.45
+        prev = None
+        for i in range(n + 1):
+            t = i / n
+            y = yb - L / 2 + L * t
+            z = 0.35 + 1.0 * math.sin(math.pi * t)
+            if i % 3 == 0:
+                caja("IG_Puente_Poste_" + str(lado) + "_" + str(i), (xs, y, z + 0.55), (0.12, 0.12, 1.1), m_madera)
+            if prev:
+                viga("IG_Puente_Baranda_" + str(lado) + "_" + str(i), (xs, prev[0], prev[1] + 1.05), (xs, y, z + 1.05), 0.09, m_madera)
+            prev = [y, z]
+    # Matas de flores en 3D a ambos lados del camino y junto al agua
+    colores = [m_f_rojo, m_f_amar, m_f_mora, m_f_blanca]
+    for k in range(36):
+        lado = 1
+        if k % 2 == 0:
+            lado = -1
+        y = -4.5 - (k // 2) * 1.6
+        if abs(y - yb) < 5.5:
+            continue
+        x = lado * (2.6 + (k % 3) * 0.5)
+        for j in range(5):
+            ang = j * 1.256 + k
+            fx = x + 0.35 * math.cos(ang)
+            fy = y + 0.35 * math.sin(ang)
+            h = 0.35 + (j % 3) * 0.12
+            cilindro("IG_Tallo_" + str(k) + "_" + str(j), (fx, fy, h / 2), 0.015, h, m_junco, vertices=3)
+            cono("IG_Flor_" + str(k) + "_" + str(j), (fx, fy, h + 0.04), 0.13, 0.03, 0.1, colores[(k + j) % 4], vertices=5)
+    # Árboles: encinas y olivos por el prado, álamos junto al agua
+    for k in range(90):
+        a = k * 2.399963 + 0.7
+        r = 30 + 1.45 * k
+        x = r * math.cos(a)
+        y = 20 + r * math.sin(a)
+        if r < 160 and lejos_de_todo(x, y, 3):
+            s = 1.2 + (k % 4) * 0.25
+            cilindro("IG_Encina_Tronco_" + str(k), (x, y, s * 1.2), 0.22 * s, s * 2.4, m_tronco, vertices=6)
+            esfera("IG_Encina_Copa_" + str(k), (x, y, s * 3.1), s * 2.2, m_hoja, escala=(1, 1, 0.75), segmentos=8, anillos=6)
+    for k in range(16):
+        x = -120 + k * 16 + 5
+        if abs(x) < 12:
+            continue
+        lado = 1
+        if k % 2 == 0:
+            lado = -1
+        y = cauce_y(x) + lado * 6.0
+        cilindro("IG_Alamo_Tronco_" + str(k), (x, y, 2.5), 0.25, 5.0, m_tronco, vertices=6)
+        esfera("IG_Alamo_Copa_" + str(k), (x, y, 9.0), 2.2, m_hoja2, escala=(1, 1, 2.4), segmentos=8, anillos=6)
+    # Montañas alrededor
+    hacer_montanas(168, 330, 72, 7)
+
+
+if ESCENA == "pradera":
+    hacer_pradera()
