@@ -302,6 +302,8 @@ m_tronco = material("IG_Tronco", (0.12, 0.08, 0.05, 1.0), 0.9)
 f_fachada = mat_foto("ig_fachada_oeste")
 f_muro = mat_foto("ig_muro_norte")
 f_muro_s = mat_foto("ig_muro_sur")
+f_portada_n = mat_foto("ig_portada_norte")
+f_portada_s = mat_foto("ig_portada_sur")
 f_clere = mat_foto("ig_clerestorio")
 f_cara_n = mat_foto("ig_torre_cara_norte")
 f_cara_o = mat_foto("ig_torre_cara_oeste")
@@ -372,6 +374,88 @@ caja("IG_Cruz_Fachada_H", (0.2, -0.1, 23.7), (0.8, 0.12, 0.12), m_hierro)
 panel("IG_Muro_Norte", f_muro, (XN - 0.04, Y_CAB), (0, -1), Y_CAB - 4.5, 0, 13.6)
 # Muro sur (a los patios): dibujado igual que el norte, con la portada sur de la foto
 panel("IG_Muro_Sur", f_muro_s, (XS + 0.04, 4.5), (0, 1), Y_CAB - 4.5, 0, 13.6, 1.0, 0.0)
+
+# Relieve de las portadas laterales: la foto enderezada se reparte en piezas a distinta
+# profundidad (puerta hundida, cuerpo bajo saliente, columnas y cornisa más salientes, ático).
+# Las caras laterales llevan la línea de borde de la foto estirada, así toman su color.
+# P = [x_pared, y_centro, sentido_fuera_x, sentido_derecha_y, u0_foto, ancho_foto, alto_foto]
+def pp(P, u, o, z):
+    return (P[0] + P[2] * o, P[1] + P[3] * u, z)
+
+
+def uvp(P, u, z):
+    return ((u - P[4]) / P[5], z / P[6])
+
+
+def cara_p(nombre, mat, P, u0, u1, z0, z1, o):
+    verts = [pp(P, u0, o, z0), pp(P, u1, o, z0), pp(P, u1, o, z1), pp(P, u0, o, z1)]
+    uvs = [uvp(P, u0, z0), uvp(P, u1, z0), uvp(P, u1, z1), uvp(P, u0, z1)]
+    return malla_uv(nombre, verts, [(0, 1, 2, 3)], uvs, mat)
+
+
+def bloque_p(nombre, mat, P, u0, u1, z0, z1, o0, o1, frente=True):
+    # Prisma saliente: frente con la foto y lados con su borde estirado
+    if frente:
+        cara_p(nombre + "_F", mat, P, u0, u1, z0, z1, o1)
+    a = uvp(P, u0, z0)
+    b = uvp(P, u0, z1)
+    malla_uv(nombre + "_I", [pp(P, u0, o0, z0), pp(P, u0, o1, z0), pp(P, u0, o1, z1), pp(P, u0, o0, z1)], [(0, 1, 2, 3)], [a, a, b, b], mat)
+    a = uvp(P, u1, z0)
+    b = uvp(P, u1, z1)
+    malla_uv(nombre + "_D", [pp(P, u1, o1, z0), pp(P, u1, o0, z0), pp(P, u1, o0, z1), pp(P, u1, o1, z1)], [(0, 1, 2, 3)], [a, a, b, b], mat)
+    a = uvp(P, u0, z1)
+    b = uvp(P, u1, z1)
+    malla_uv(nombre + "_T", [pp(P, u0, o1, z1), pp(P, u1, o1, z1), pp(P, u1, o0, z1), pp(P, u0, o0, z1)], [(0, 1, 2, 3)], [a, b, b, a], mat)
+    a = uvp(P, u0, z0)
+    b = uvp(P, u1, z0)
+    malla_uv(nombre + "_B", [pp(P, u0, o0, z0), pp(P, u1, o0, z0), pp(P, u1, o1, z0), pp(P, u0, o1, z0)], [(0, 1, 2, 3)], [a, b, b, a], mat)
+
+
+def portada_relieve(pre, mat, P, M):
+    # M: medidas en metros sobre la foto enderezada, en este orden:
+    #   puerta [u0, u1, z_clave], cuerpo [u0, u1, z_alto], cornisa [z0, z1],
+    #   columnas [[u0, u1], ...], atico [u0, u1, z_alto]
+    D = 0.45
+    pu = M[0]
+    cu = M[1]
+    co = M[2]
+    # Puerta hundida en el fondo del vano y mochetas
+    cara_p(pre + "_Puerta", mat, P, pu[0], pu[1], 0.0, pu[2], 0.06)
+    bloque_p(pre + "_Vano", mat, P, pu[0], pu[1], 0.0, pu[2], 0.06, D, False)
+    # Cuerpo bajo saliente, con el hueco de la puerta
+    cara_p(pre + "_Cuerpo_I", mat, P, cu[0], pu[0], 0.0, co[0], D)
+    cara_p(pre + "_Cuerpo_D", mat, P, pu[1], cu[1], 0.0, co[0], D)
+    cara_p(pre + "_Cuerpo_C", mat, P, pu[0], pu[1], pu[2], co[0], D)
+    bloque_p(pre + "_Cuerpo", mat, P, cu[0], cu[1], 0.0, co[0], 0.0, D, False)
+    # Columnas o pilastras, más salientes
+    for i in range(len(M[3])):
+        c = M[3][i]
+        bloque_p(pre + "_Col_" + str(i), mat, P, c[0], c[1], 0.3, co[0], D, D + 0.3)
+    # Cornisa volada sobre las columnas
+    bloque_p(pre + "_Cornisa", mat, P, cu[0] - 0.15, cu[1] + 0.15, co[0], co[1], 0.0, D + 0.45)
+    # Ático con la hornacina, algo menos saliente
+    at = M[4]
+    bloque_p(pre + "_Atico", mat, P, at[0], at[1], co[1], at[2], 0.0, D * 0.6)
+
+
+# Portada norte (plaza): la pared mira a -X; a la derecha del que la mira queda -Y
+portada_relieve("IG_PN", f_portada_n, [XN - 0.04, 22.2, -1, -1, -4.83, 9.66, 13.6], [
+    [-1.48, 1.80, 5.75],
+    [-4.3, 4.35, 0.0],
+    [7.0, 7.5],
+    [[-4.08, -3.33], [-2.95, -2.2], [2.36, 3.1], [3.42, 4.17]],
+    [-2.95, 3.17, 12.4],
+])
+# Portada sur (patio): mira a +X; a la derecha queda +Y. La foto va escalada a 0,908 para que
+# su friso caiga en el del muro, así que las medidas también.
+K = 0.908
+portada_relieve("IG_PS", f_portada_s, [XS + 0.04, 22.2, 1, 1, -4.9 * K, 9.8 * K, 13.0 * K], [
+    [-1.8 * K, 1.89 * K, 6.25 * K],
+    [-4.17 * K, 4.2 * K, 0.0],
+    [7.75 * K, 8.25 * K],
+    [[-4.05 * K, -2.17 * K], [2.33 * K, 4.2 * K]],
+    [-1.92 * K, 2.08 * K, 12.0 * K],
+])
 
 # ==========================================
 # 4. NAVE CENTRAL, CRUCERO Y CABECERA (cruz latina)

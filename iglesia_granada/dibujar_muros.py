@@ -245,11 +245,16 @@ def main(fotos, salida, homografia):
     esq = [a_foto(X0, Z1), a_foto(X1, Z1), a_foto(X1, 0.0), a_foto(X0, 0.0)]
     coef = homografia([(0, 0), (w, 0), (w, h), (0, h)], esq)
     portada = foto.transform((w, h), Image.PERSPECTIVE, coef, resample=Image.BICUBIC)
+    portada.save(os.path.join(salida, "ig_portada_norte.jpg"), quality=90)
+    print("portada norte %.2f x 13.6 m" % (X1 - X0))
     largo = 54.7 - 4.5
     # El muro norte se ve desde la plaza: x = 0 es el este; la portada está a 22,2 m de la fachada
     muro_lateral(os.path.join(salida, "ig_muro_norte.jpg"), largo, (54.7 - 22.2, portada))
     # El muro sur se ve con la textura en espejo (la UV va al revés): la portada se voltea antes
-    sur = portada_sur(fotos, homografia).transpose(Image.FLIP_LEFT_RIGHT)
+    sur = portada_sur(fotos, homografia)
+    sur.save(os.path.join(salida, "ig_portada_sur.jpg"), quality=90)
+    print("portada sur 9.8 x 13.0 m")
+    sur = sur.transpose(Image.FLIP_LEFT_RIGHT)
     # Escalada para que su friso caiga sobre el friso dibujado (10,95 m): 13 m de foto -> 11,8 m
     muro_lateral(os.path.join(salida, "ig_muro_sur.jpg"), largo, (54.7 - 22.2, sur, 11.8))
     clerestorio(os.path.join(salida, "ig_clerestorio.jpg"))
