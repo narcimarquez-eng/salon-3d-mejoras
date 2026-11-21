@@ -311,7 +311,6 @@ f_cuerpo_a = mat_foto("ig_torre_cuerpo_a")
 f_cuerpo_b = mat_foto("ig_torre_cuerpo_b")
 f_linterna = mat_foto("ig_torre_linterna")
 f_balaus = mat_foto("ig_balaustrada")
-f_portada_s = mat_foto("ig_portada_sur")
 f_cupula = mat_foto("ig_cupula")
 f_tambor = mat_foto("ig_tambor")
 
@@ -371,9 +370,8 @@ caja("IG_Cruz_Fachada_H", (0.2, -0.1, 23.7), (0.8, 0.12, 0.12), m_hierro)
 
 # Muro norte (a la plaza): dibujado a regla con la portada de la foto, de la torre a la sacristía
 panel("IG_Muro_Norte", f_muro, (XN - 0.04, Y_CAB), (0, -1), Y_CAB - 4.5, 0, 13.6)
-# Muro sur (a los patios): dibujado igual que el norte y encima la portada renacentista del sur
+# Muro sur (a los patios): dibujado igual que el norte, con la portada sur de la foto
 panel("IG_Muro_Sur", f_muro_s, (XS + 0.04, 4.5), (0, 1), Y_CAB - 4.5, 0, 13.6, 1.0, 0.0)
-panel("IG_Portada_Sur", f_portada_s, (XS + 0.12, 22.2 - 3.6), (0, 1), 7.2, 0.0, 10.2)
 
 # ==========================================
 # 4. NAVE CENTRAL, CRUCERO Y CABECERA (cruz latina)

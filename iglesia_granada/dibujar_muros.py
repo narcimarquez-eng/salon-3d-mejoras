@@ -100,7 +100,10 @@ def muro_lateral(ruta, largo, portada=None):
             continue
         ventana(c, x, 7.6, 1.0, 1.4)
     if portada and portada[1] is not None:
-        pegar_detalle_m(c, portada[1], portada[0], 0.0, 13.6)
+        alto = 13.6
+        if len(portada) > 2:
+            alto = portada[2]
+        pegar_detalle_m(c, portada[1], portada[0], 0.0, alto)
     c.im.save(ruta, quality=88)
 
 
@@ -167,6 +170,49 @@ def tejas(ruta):
     im.save(ruta, quality=88)
 
 
+def portada_sur(fotos, homografia):
+    # Portada sur (al patio), foto frontal del usuario. Rectas medidas en la foto:
+    #  - jambas de la puerta seguidas fila a fila: izquierda x = 532,3 - 0,054 y; derecha
+    #    x = 848,6 - 0,0068 y
+    #  - suelo bajo la puerta y = 1938 (horizontal) y sombra del entablamento sobre las columnas
+    #    y = 1034 + 0,076 x (inclinada: la pared se aleja hacia la derecha)
+    # Sus cuatro cruces forman el trapecio. Escala: la puerta mide 408 px de ancho y el friso
+    # del muro (10,95 m en el modelo) queda 1218 px sobre el suelo -> puerta de 3,67 m y
+    # entablamento a 7,82 m.
+    foto = Image.open(os.path.join(fotos, "60920b26-image.jpg")).convert("RGB")
+    fotop = [(427.6, 1938.0), (835.4, 1941.0), (472.6, 1069.9), (841.1, 1097.9)]
+    media = 3.67 / 2
+    pared = [(-media, 0.0), (media, 0.0), (-media, 7.82), (media, 7.82)]
+    c = homografia(pared, fotop)
+
+    def a_foto(X, Z):
+        d = c[6] * X + c[7] * Z + 1
+        return ((c[0] * X + c[1] * Z + c[2]) / d, (c[3] * X + c[4] * Z + c[5]) / d)
+
+    X0, X1, Z1 = -4.9, 4.9, 13.0
+    w = int((X1 - X0) * PXM_MURO)
+    h = int(Z1 * PXM_MURO)
+    esq = [a_foto(X0, Z1), a_foto(X1, Z1), a_foto(X1, 0.0), a_foto(X0, 0.0)]
+    coef = homografia([(0, 0), (w, 0), (w, h), (0, h)], esq)
+    im = foto.transform((w, h), Image.PERSPECTIVE, coef, resample=Image.BICUBIC)
+    # Los naranjos tapan los pies de la portada: como es simétrica, cada píxel verde se cambia
+    # por su simétrico si este no es verde; lo que quede verde se pinta del color del ladrillo
+    a = np.asarray(im).astype(np.float32)
+    verde = (a[..., 1] > a[..., 0] * 0.97) & (a[..., 1] > a[..., 2] * 1.15)
+    verde = np.asarray(Image.fromarray((verde * 255).astype(np.uint8)).filter(ImageFilter.MaxFilter(3))) > 0
+    espejo = a[:, ::-1]
+    verde_esp = verde[:, ::-1]
+    usar = verde & ~verde_esp
+    a[usar] = espejo[usar]
+    queda = verde & verde_esp
+    a[queda] = (196, 128, 92)
+    # El cielo de arriba, color del muro
+    cielo = (a[..., 2] > 200) & (a[..., 0] > 200) & (a[..., 1] > 200)
+    cielo[int(h * 0.06):] = False
+    a[cielo] = CAL
+    return Image.fromarray(np.clip(a, 0, 255).astype(np.uint8))
+
+
 def main(fotos, salida, homografia):
     # Portada norte: foto de frente del usuario, enderezada en metros. Escala sacada de la
     # propia foto: base de la portada en y = 2350 y friso en y = 1600, que en el modelo está a
@@ -202,8 +248,10 @@ def main(fotos, salida, homografia):
     largo = 54.7 - 4.5
     # El muro norte se ve desde la plaza: x = 0 es el este; la portada está a 22,2 m de la fachada
     muro_lateral(os.path.join(salida, "ig_muro_norte.jpg"), largo, (54.7 - 22.2, portada))
-    # El muro sur lleva encima su propia portada (otra pieza): aquí sin portada ni ventanas en ese tramo
-    muro_lateral(os.path.join(salida, "ig_muro_sur.jpg"), largo, (54.7 - 22.2, None))
+    # El muro sur se ve con la textura en espejo (la UV va al revés): la portada se voltea antes
+    sur = portada_sur(fotos, homografia).transpose(Image.FLIP_LEFT_RIGHT)
+    # Escalada para que su friso caiga sobre el friso dibujado (10,95 m): 13 m de foto -> 11,8 m
+    muro_lateral(os.path.join(salida, "ig_muro_sur.jpg"), largo, (54.7 - 22.2, sur, 11.8))
     clerestorio(os.path.join(salida, "ig_clerestorio.jpg"))
     tejas(os.path.join(salida, "ig_teja.jpg"))
     print("muros dibujados")

@@ -131,7 +131,6 @@ const IGLESIA_GRANADA_TEXTURAS = [
   'ig_torre_cuerpo_b',
   'ig_torre_linterna',
   'ig_balaustrada',
-  'ig_portada_sur',
   'ig_cupula',
   'ig_tambor',
   'ig_teja',

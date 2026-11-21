@@ -27,7 +27,6 @@ FUENTES = ["ig_torre_cana_norte", "ig_torre_oeste_dia"]
 # ajuste: None | "dia" (quita el naranja de la luz nocturna)
 TEXTURAS = {
     "ig_torre_cana_norte": ("norte", [(828, 474), (955, 474), (985, 918), (849, 918)], 256, 1024, None),
-    "ig_portada_sur": ("puerta_sur", [(310, 110), (1090, 700), (1090, 1905), (310, 1900)], 640, 900, None),
     "ig_cupula": ("prensa", [(340, 885), (480, 885), (480, 945), (340, 945)], 512, 224, None),
     "ig_tambor": ("prensa", [(262, 958), (470, 958), (470, 1018), (262, 1018)], 512, 160, None),
 }
