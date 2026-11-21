@@ -393,6 +393,69 @@ nodo.data.materials.append(mat)`);
     controls.maxDistance = 60;
     controlsRef.current = controls;
 
+    // API de revisión para capturas automáticas (solo con ?visor-api=1 en la URL)
+    if (new URLSearchParams(window.location.search).has('visor-api')) {
+      const modelBox = () => {
+        const box = new Box3();
+        const root = currentModelGroupRef.current;
+        if (root) box.setFromObject(root);
+        return box;
+      };
+      (window as any).celshadeViewer = {
+        frameModel: (margin = 1.2, dir: number[] = [0.6, 0.45, 1.0]) => {
+          const box = modelBox();
+          if (box.isEmpty()) return null;
+          const center = box.getCenter(new Vector3());
+          const radius = box.getSize(new Vector3()).length() * 0.5 * margin;
+          const d = new Vector3(dir[0], dir[1], dir[2]).normalize();
+          const dist = radius / Math.sin((camera.fov * Math.PI) / 360);
+          camera.position.copy(center).addScaledVector(d, dist);
+          camera.far = Math.max(camera.far, dist * 4);
+          camera.updateProjectionMatrix();
+          controls.maxDistance = Math.max(controls.maxDistance, dist * 2);
+          controls.target.copy(center);
+          controls.update();
+          return [center.x, center.y, center.z, radius];
+        },
+        setCameraPose: (pos: number[], target: number[]) => {
+          camera.position.set(pos[0], pos[1], pos[2]);
+          controls.target.set(target[0], target[1], target[2]);
+          const dist = camera.position.distanceTo(controls.target);
+          camera.far = Math.max(camera.far, dist * 4);
+          camera.updateProjectionMatrix();
+          controls.maxDistance = Math.max(controls.maxDistance, dist * 2);
+          controls.update();
+        },
+        worldPosOf: (prefix: string) => {
+          let found: number[] | null = null;
+          currentModelGroupRef.current?.traverse((o) => {
+            if (!found && (o as Mesh).isMesh && o.name.startsWith(prefix)) {
+              const b = new Box3().setFromObject(o);
+              const c = b.getCenter(new Vector3());
+              found = [c.x, c.y, c.z];
+            }
+          });
+          return found;
+        },
+        modelBox: () => {
+          const b = modelBox();
+          return b.isEmpty() ? null : [b.min.toArray(), b.max.toArray()];
+        },
+        materialOf: (prefix: string) => {
+          let info: any = null;
+          currentModelGroupRef.current?.traverse((o) => {
+            const m = o as Mesh;
+            if (!info && m.isMesh && o.name.startsWith(prefix)) {
+              const mat = m.material as MeshStandardMaterial;
+              info = { type: mat.type, color: mat.color?.getHexString(), map: Boolean(mat.map), opacity: mat.opacity, transparent: mat.transparent };
+            }
+          });
+          return info;
+        },
+        captureDataUrl: () => renderer.domElement.toDataURL('image/png'),
+      };
+    }
+
     const ambientLight = new AmbientLight(0xdbeafe, 0.7);
     scene.add(ambientLight);
 

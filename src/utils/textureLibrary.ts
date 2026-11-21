@@ -118,6 +118,23 @@ function buildAtlas5x2SubTiles(
   });
 }
 
+const IGLESIA_GRANADA_TEXTURAS = [
+  'ig_fachada_oeste',
+  'ig_muro_norte',
+  'ig_clerestorio',
+  'ig_torre_cana_norte',
+  'ig_torre_cana_oeste',
+  'ig_torre_campanas',
+  'ig_torre_cuerpo_a',
+  'ig_torre_cuerpo_b',
+  'ig_torre_linterna',
+  'ig_balaustrada',
+  'ig_portada_sur',
+  'ig_cupula',
+  'ig_tambor',
+  'ig_teja',
+];
+
 /**
  * Catálogo oficial integrado con las 9 láminas/mosaicos subidos + sets PBR existentes.
  */
@@ -430,6 +447,20 @@ export const BUILTIN_COLOR_MAP_TEXTURES: ColorMapTextureInfo[] = [
     gridLayout: 'Seamless 1:1 PBR (Difuso + Normal + Rugosidad)',
     description: 'Tejado de arcilla cocida con mapas PBR de normales y rugosidad.',
   },
+  // Iglesia de Nuestra Señora de la Granada (Moguer): recortes enderezados de fotos del usuario
+  // (iglesia_granada/hacer_texturas.py). Se proyectan con UV propias desde el script.
+  ...IGLESIA_GRANADA_TEXTURAS.map(
+    (id): ColorMapTextureInfo => ({
+      id,
+      name: `Iglesia de la Granada: ${id.replace(/^ig_/, '').replace(/_/g, ' ')}`,
+      url: `/assets/iglesia_granada/${id}.jpg`,
+      license: 'Fotos del usuario',
+      source: 'builtin',
+      kind: 'mosaic',
+      isMosaic: true,
+      description: 'Recorte de foto enderezado para la Iglesia de la Granada de Moguer.',
+    })
+  ),
 ];
 
 const userTextures: ColorMapTextureInfo[] = [];

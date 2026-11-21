@@ -83,19 +83,33 @@ const URL = process.env.URL || 'http://127.0.0.1:5173/?visor-api=1';
     await page.waitForTimeout(2500);
     await page.screenshot({ path: `${prefijo}_${archivo}.png` });
   };
-  await page.locator('button[title="Restablecer Cámara"]').first().click().catch(() => {});
-  await vistaBoton('overview', null);
-  await vistaBoton('front', 'Vista Frente');
-  await vistaBoton('side', 'Vista Perfil');
-  await vistaBoton('back', 'Vista Espalda');
+  const api = await page.evaluate(() => Boolean(window.celshadeViewer));
+  if (api) {
+    // Con ?visor-api=1 se encuadra el modelo entero (sirve para modelos grandes, que la cámara
+    // normal no alcanza). Direcciones en la escena de la app: x = x, y = z del script, z = -y.
+    console.log('Caja del modelo:', JSON.stringify(await page.evaluate(() => window.celshadeViewer.modelBox())));
+    const vistasStd = [['overview', [0.75, 0.55, 1.0]], ['front', [0, 0.12, 1]], ['side', [1, 0.12, 0]], ['back', [-0.7, 0.5, -1]], ['top', [0, 1, 0.02]]];
+    for (const [nombre, dir] of vistasStd) {
+      await page.evaluate((d) => window.celshadeViewer.frameModel(1.0, d), dir);
+      await page.mouse.move(1300, 120);
+      await page.waitForTimeout(2500);
+      await page.screenshot({ path: `${prefijo}_${nombre}.png` });
+    }
+  } else {
+    await page.locator('button[title="Restablecer Cámara"]').first().click().catch(() => {});
+    await vistaBoton('overview', null);
+    await vistaBoton('front', 'Vista Frente');
+    await vistaBoton('side', 'Vista Perfil');
+    await vistaBoton('back', 'Vista Espalda');
+  }
 
   // Vistas propias en metros del script
   const refs = JSON.parse(process.env.REFS || '[]');
   const vistas = JSON.parse(process.env.VISTAS || '[]');
-  if (vistas.length) {
-    console.log('Aviso: VISTAS necesita window.celshadeViewer, que la app ya no expone; se omiten.');
+  if (vistas.length && !api) {
+    console.log('Aviso: VISTAS necesita window.celshadeViewer (?visor-api=1); se omiten.');
   }
-  if (false) {
+  if (vistas.length && api) {
     if (refs.length < 2) throw new Error('VISTAS necesita REFS con dos piezas de referencia');
     const a = await page.evaluate((n) => window.celshadeViewer.worldPosOf(n), refs[0].nombre);
     const c = await page.evaluate((n) => window.celshadeViewer.worldPosOf(n), refs[1].nombre);

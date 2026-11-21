@@ -126,6 +126,28 @@ Mira el script más parecido antes de empezar uno nuevo:
 | `muelle_tinto/` | Estructura larga con trazado curvo `punto(s)`, celosías con diagonales, muchas piezas repetidas, datos del BOJA |
 | `ermita_montemayor/` | Edificio a partir de fotos del usuario, tejado a dos aguas, torre octogonal |
 | `plaza_espana/` | Conjunto grande semicircular, arcos con cajas escalonadas, solo giros en Z |
+| `iglesia_granada/` | Texturas sacadas de las fotos del usuario, UV propias, torre por cuerpos, cúpula |
 | `ayuntamiento/` | Fachada con texturas CC0 (`mat.color_map`) y optimización del GLB |
 | `puestos/` | Props ligeros de estilo Lineage 2 (pocos lados, materiales compartidos) |
 | `orco/` | Personaje con manos, pies y armadura hecho con primitivas |
+
+## 8. Texturas sacadas de las fotos del usuario (Iglesia de la Granada, 2026-11)
+
+- **Recortes enderezados**: `iglesia_granada/hacer_texturas.py` endereza cada trozo de foto con
+  una homografía (4 esquinas -> rectángulo, `Image.PERSPECTIVE`) y lo guarda en
+  `public/assets/<tema>/`. Para que el script los use por nombre (`mat.color_map = "ig_..."`) se
+  añaden al catálogo `BUILTIN_COLOR_MAP_TEXTURES` de `src/utils/textureLibrary.ts`.
+- **Pegar la foto entera en una cara**: malla propia con `from_pydata` y UV por esquina
+  (`mesh.uv_layers.new()` y `capa.data[k].uv`); la app respeta esas UV y no proyecta en caja.
+  Esquinas en orden antihorario visto desde fuera; la UV (0,0) es abajo a la izquierda de la
+  foto. Una silueta (hastial) se hace con tiras verticales entre el suelo y un perfil de puntos.
+- **Fotos nocturnas**: equilibrar hacia luz de día y pintar el cielo de los bordes del color del
+  muro, o la silueta sale con un ribete azul.
+- **`cal_blanca` en muros de 50 m** sale como mármol con manchas grises: mejor color liso.
+- **Modelos grandes (> 35 m)**: la app los reduce a 3 unidades y la cámara normal no los
+  encuadra bien. `capturar_y_exportar.cjs` usa ahora `?visor-api=1` (`window.celshadeViewer`,
+  añadido de nuevo en `App.tsx`) para encuadrar y para las `VISTAS` en metros. El GLB exportado
+  también sale a esa escala (~3 unidades de ancho).
+- **GLB pesado**: el exportador guarda las fotos en PNG y un material por pieza (7,4 MB, 206
+  materiales). `iglesia_granada/aligerar_glb.py` las pasa a JPG y une materiales idénticos
+  (1,4 MB, 23 materiales) sin tocar la geometría.
