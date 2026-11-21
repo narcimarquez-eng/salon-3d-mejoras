@@ -302,8 +302,9 @@ m_tronco = material("IG_Tronco", (0.12, 0.08, 0.05, 1.0), 0.9)
 f_fachada = mat_foto("ig_fachada_oeste")
 f_muro = mat_foto("ig_muro_norte")
 f_clere = mat_foto("ig_clerestorio")
-f_cana_n = mat_foto("ig_torre_cana_norte")
-f_torre_dia = mat_foto("ig_torre_oeste_dia")
+f_cara_n = mat_foto("ig_torre_cara_norte")
+f_cara_o = mat_foto("ig_torre_cara_oeste")
+f_cara_l = mat_foto("ig_torre_cara_lado")
 f_campanas = mat_foto("ig_torre_campanas")
 f_cuerpo_a = mat_foto("ig_torre_cuerpo_a")
 f_cuerpo_b = mat_foto("ig_torre_cuerpo_b")
@@ -458,10 +459,11 @@ TY1 = 4.5
 TC = ((TX0 + TX1) / 2, (TY0 + TY1) / 2)
 caja_lim("IG_Torre_Cana", TX0, TX1, TY0, TY1, 0, 27.5, m_cal)
 caja_lim("IG_Torre_Zocalo", TX0 - 0.05, TX1 + 0.05, TY0 - 0.05, TY1 + 0.05, 0, 0.6, m_grada)
-# Cara oeste: foto de día enderezada en metros
-panel("IG_Torre_Cana_O_Dia", f_torre_dia, (TX0, TY0 - 0.04), (1, 0), 6.0, 0.6, 27.5)
-caras_caja("IG_Torre_Cana", [None, f_cana_n, None, None], TX0, TX1, TY0, TY1, 0, 27.5)
-caras_caja("IG_Torre_Cana_Alta", [None, None, f_torre_dia, f_torre_dia], TX0, TX1, TY0, TY1, 13.6, 27.5, 0.03, 13.6 / 27.5)
+# Caña: muro limpio con los detalles de las fotos (balcones, reloj, Virgen, ventanas) pegados a
+# alturas comunes en las cuatro caras (iglesia_granada/dibujar_torre.py). Sur y este, solo por
+# encima de los tejados.
+caras_caja("IG_Torre_Cana", [f_cara_o, f_cara_n, None, None], TX0, TX1, TY0, TY1, 0, 27.5)
+caras_caja("IG_Torre_Cana_Alta", [None, None, f_cara_l, f_cara_l], TX0, TX1, TY0, TY1, 13.6, 27.5, 0.03, 13.6 / 27.5)
 caja("IG_Torre_Imposta", (TC[0], TC[1], 27.65), (6.5, 6.5, 0.3), m_albero)
 # Cuerpo de campanas con el friso de azulejos (foto)
 caja_lim("IG_Torre_Campanas", TX0 - 0.1, TX1 + 0.1, TY0 - 0.1, TY1 + 0.1, 27.8, 35.0, m_cal)

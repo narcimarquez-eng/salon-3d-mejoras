@@ -163,3 +163,9 @@ Mira el script más parecido antes de empezar uno nuevo:
   latina, el crucero, la cabecera y la sacristía. Sus texturas son borrosas: solo para medidas.
 - **Toda textura nueva se registra en el catálogo** (`IGLESIA_GRANADA_TEXTURAS`): si no, la
   pieza sale blanca sin aviso.
+- **Cuerpos de torre: dibujar, no fotografiar** (tercera vuelta de la iglesia): las fotos de la
+  torre estaban tomadas desde abajo y en ángulo; enderezadas y repetidas en las 4 caras, las
+  cornisas y filetes no casaban en las esquinas y las pilastras salían cortadas. Se dibujan a
+  regla en `iglesia_granada/dibujar_torre.py` (metros a 100 px/m, simétricas, colores de las
+  fotos) y en la caña solo se pegan los detalles de foto (balcones, reloj, azulejo) igualados
+  al color del muro y a alturas comunes entre caras.

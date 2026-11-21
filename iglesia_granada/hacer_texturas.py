@@ -17,17 +17,17 @@ FOTOS = {
     "aerea": "c1a9e357-image.jpg",         # vista aérea oeste (tejas)
 }
 
+# Los cuerpos altos de la torre no salen de aquí: se dibujan a regla en dibujar_torre.py.
+# Los recortes de FUENTES no se guardan: solo dan los detalles (balcones, reloj...) que
+# dibujar_torre.py pega en la caña.
+FUENTES = ["ig_torre_cana_norte", "ig_torre_oeste_dia"]
+
 # nombre: (foto, [TL, TR, BR, BL], ancho, alto, ajuste)
 # ajuste: None | "dia" (quita el naranja de la luz nocturna)
 TEXTURAS = {
     "ig_muro_norte": ("norte", [(35, 694), (845, 675), (845, 900), (35, 868)], 2048, 260, None),
     "ig_clerestorio": ("norte", [(400, 606), (815, 604), (815, 688), (400, 692)], 1024, 200, None),
     "ig_torre_cana_norte": ("norte", [(828, 474), (955, 474), (985, 918), (849, 918)], 256, 1024, None),
-    "ig_torre_campanas": ("campanas", [(200, 345), (344, 397), (356, 549), (200, 507)], 512, 512, None),
-    "ig_torre_cuerpo_a": ("remate", [(628, 1562), (1266, 1562), (1266, 2199), (628, 2199)], 512, 512, None),
-    "ig_torre_cuerpo_b": ("remate", [(750, 1050), (1170, 1050), (1170, 1544), (750, 1544)], 384, 448, None),
-    "ig_torre_linterna": ("remate", [(853, 790), (1050, 790), (1050, 1032), (853, 1032)], 256, 320, None),
-    "ig_balaustrada": ("remate", [(467, 2199), (1391, 2199), (1391, 2388), (467, 2388)], 1024, 210, None),
     "ig_portada_sur": ("puerta_sur", [(310, 110), (1090, 700), (1090, 1905), (310, 1900)], 640, 900, None),
     "ig_cupula": ("prensa", [(340, 885), (480, 885), (480, 945), (340, 945)], 512, 224, None),
     "ig_tambor": ("prensa", [(262, 958), (470, 958), (470, 1018), (262, 1018)], 512, 160, None),
@@ -85,9 +85,17 @@ def cielo(im):
     return Image.fromarray(a.astype(np.uint8))
 
 
+def guardar(t, nombre, salida, fuentes):
+    if nombre in FUENTES:
+        fuentes[nombre] = t
+    else:
+        t.save(os.path.join(salida, nombre + ".jpg"), quality=86)
+
+
 def main(fotos, salida):
     os.makedirs(salida, exist_ok=True)
     cache = {}
+    fuentes = {}
     for nombre, (foto, quad, w, h, ajuste) in TEXTURAS.items():
         if foto not in cache:
             cache[foto] = Image.open(os.path.join(fotos, FOTOS[foto])).convert("RGB")
@@ -96,7 +104,7 @@ def main(fotos, salida):
         t = im.transform((w, h), Image.PERSPECTIVE, coef, resample=Image.BICUBIC)
         if ajuste == "dia":
             t = dia(t)
-        t.save(os.path.join(salida, nombre + ".jpg"), quality=86)
+        guardar(t, nombre, salida, fuentes)
         print(nombre, w, h)
     for nombre, (foto, p_img, p_pared, rect, px_m, ajuste) in TEXTURAS_METRICAS.items():
         if foto not in cache:
@@ -115,8 +123,11 @@ def main(fotos, salida):
         t = cache[foto].transform((w, h), Image.PERSPECTIVE, coef, resample=Image.BICUBIC)
         if ajuste == "cielo":
             t = cielo(t)
-        t.save(os.path.join(salida, nombre + ".jpg"), quality=86)
+        guardar(t, nombre, salida, fuentes)
         print(nombre, w, h, "(%.1f x %.1f m)" % (X1 - X0, Z1 - Z0))
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import dibujar_torre
+    dibujar_torre.main(fuentes, salida)
 
 
 if __name__ == "__main__":
