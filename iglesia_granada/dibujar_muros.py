@@ -100,7 +100,7 @@ def muro_lateral(ruta, largo, portada=None):
             continue
         ventana(c, x, 7.6, 1.0, 1.4)
     if portada and portada[1] is not None:
-        pegar_detalle_m(c, portada[1], portada[0], 0.0, 10.2)
+        pegar_detalle_m(c, portada[1], portada[0], 0.0, 13.6)
     c.im.save(ruta, quality=88)
 
 
@@ -168,16 +168,26 @@ def tejas(ruta):
 
 
 def main(fotos, salida, homografia):
-    # Portada norte: recorte enderezado de la foto de la plaza (único detalle de foto)
-    foto = Image.open(os.path.join(fotos, "e9ec7ccd-image.jpg")).convert("RGB")
-    w = 300
-    h = 620
-    coef = homografia([(0, 0), (w, 0), (w, h), (0, h)], [(438, 692), (580, 689), (582, 898), (438, 897)])
+    # Portada norte: foto de frente del usuario, enderezada en metros. Escala sacada de la
+    # propia foto: base de la portada en y = 2350 y friso en y = 1600, que en el modelo está a
+    # 10,95 m (1,46 cm/px). Salen 8,8 m de ancho, puerta de 4,4 x 5,8 m y copete a ~14 m.
+    foto = Image.open(os.path.join(fotos, "36d32d30-image.jpg")).convert("RGB")
+    m_px = 10.95 / (2350 - 1600)
+    z_cornisa = (2350 - 1850) * m_px
+    pared = [(-4.4, 0.0), (4.4, 0.0), (-4.4, z_cornisa), (4.4, z_cornisa)]
+    fotop = [(300, 2350), (905, 2350), (345, 1850), (935, 1850)]
+    c = homografia(pared, fotop)  # pared (m) -> foto (px)
+
+    def a_foto(X, Z):
+        d = c[6] * X + c[7] * Z + 1
+        return ((c[0] * X + c[1] * Z + c[2]) / d, (c[3] * X + c[4] * Z + c[5]) / d)
+
+    X0, X1, Z1 = -5.2, 5.2, 13.6
+    w = int((X1 - X0) * PXM_MURO)
+    h = int(Z1 * PXM_MURO)
+    esq = [a_foto(X0, Z1), a_foto(X1, Z1), a_foto(X1, 0.0), a_foto(X0, 0.0)]
+    coef = homografia([(0, 0), (w, 0), (w, h), (0, h)], esq)
     portada = foto.transform((w, h), Image.PERSPECTIVE, coef, resample=Image.BICUBIC)
-    # Delante de la mitad derecha hay una farola y un árbol: la portada es simétrica, así que
-    # la mitad derecha se rehace en espejo de la izquierda
-    izq = portada.crop((0, 0, w // 2, h))
-    portada.paste(izq.transpose(Image.FLIP_LEFT_RIGHT), (w - w // 2, 0))
     largo = 54.7 - 4.5
     # El muro norte se ve desde la plaza: x = 0 es el este; la portada está a 22,2 m de la fachada
     muro_lateral(os.path.join(salida, "ig_muro_norte.jpg"), largo, (54.7 - 22.2, portada))
