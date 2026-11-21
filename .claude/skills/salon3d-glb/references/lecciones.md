@@ -169,3 +169,8 @@ Mira el script más parecido antes de empezar uno nuevo:
   regla en `iglesia_granada/dibujar_torre.py` (metros a 100 px/m, simétricas, colores de las
   fotos) y en la caña solo se pegan los detalles de foto (balcones, reloj, azulejo) igualados
   al color del muro y a alturas comunes entre caras.
+- **Muros largos: también a regla** (cuarta vuelta): la foto del muro de la plaza, tomada en
+  diagonal, dejaba el friso y las impostas inclinados y las pilastras torcidas a lo largo de
+  50 m. `iglesia_granada/dibujar_muros.py` dibuja muros laterales, cuerpo alto (en paños de 6 m
+  que se repiten sin costura) y teja árabe sin costuras; de la foto solo se pega la portada,
+  y como es simétrica, su mitad tapada por una farola se rehace en espejo.

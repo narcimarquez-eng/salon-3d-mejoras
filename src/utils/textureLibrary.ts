@@ -121,6 +121,7 @@ function buildAtlas5x2SubTiles(
 const IGLESIA_GRANADA_TEXTURAS = [
   'ig_fachada_oeste',
   'ig_muro_norte',
+  'ig_muro_sur',
   'ig_clerestorio',
   'ig_torre_cara_norte',
   'ig_torre_cara_oeste',

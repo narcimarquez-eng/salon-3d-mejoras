@@ -192,7 +192,7 @@ def cupula_foto(nombre, mat, cx, cy, z0, radio, alto, lados, anillos, repeticion
     return malla_uv(nombre, verts, caras, uvs, mat)
 
 
-TEJA_M = 6.0  # metros que cubre una repetición de la foto de tejas
+TEJA_M = 4.2  # metros que cubre una repetición de la foto de tejas
 
 
 def faldon(nombre, mat, puntos, origen, eje_u, eje_v):
@@ -287,7 +287,7 @@ m_albero = material("IG_Albero", (0.48, 0.17, 0.055, 1.0), 0.8)      # molduras 
 m_rosa = material("IG_Rosa", (0.62, 0.25, 0.17, 1.0), 0.8)           # paños rosados de la torre
 m_teja = material("IG_Teja", (1.0, 1.0, 1.0, 1.0), 0.9)
 m_teja.color_map = "ig_teja"
-m_teja.color_map_scale = 6.0
+m_teja.color_map_scale = 4.2
 m_verde = material("IG_Teja_Verde", (0.03, 0.11, 0.06, 1.0), 0.35)   # cumbreras vidriadas
 m_suelo = material("IG_Suelo", (0.20, 0.19, 0.17, 1.0), 0.85)        # losas grises de la plaza
 m_grada = material("IG_Grada", (0.42, 0.41, 0.39, 1.0), 0.8)         # granito de las gradas
@@ -301,6 +301,7 @@ m_tronco = material("IG_Tronco", (0.12, 0.08, 0.05, 1.0), 0.9)
 
 f_fachada = mat_foto("ig_fachada_oeste")
 f_muro = mat_foto("ig_muro_norte")
+f_muro_s = mat_foto("ig_muro_sur")
 f_clere = mat_foto("ig_clerestorio")
 f_cara_n = mat_foto("ig_torre_cara_norte")
 f_cara_o = mat_foto("ig_torre_cara_oeste")
@@ -368,10 +369,10 @@ caja_lim("IG_Hastial", -5.7, 6.0, 0.0, 0.8, Z_BAJO, 19.9, m_cal)
 caja("IG_Cruz_Fachada_V", (0.2, -0.1, 23.4), (0.12, 0.12, 1.4), m_hierro)
 caja("IG_Cruz_Fachada_H", (0.2, -0.1, 23.7), (0.8, 0.12, 0.12), m_hierro)
 
-# Muro norte (a la plaza) con su portada: foto enderezada, de la torre a la sacristía
+# Muro norte (a la plaza): dibujado a regla con la portada de la foto, de la torre a la sacristía
 panel("IG_Muro_Norte", f_muro, (XN - 0.04, Y_CAB), (0, -1), Y_CAB - 4.5, 0, 13.6)
-# Muro sur (a los patios): la misma foto en espejo y encima la portada renacentista del sur
-panel("IG_Muro_Sur", f_muro, (XS + 0.04, 4.5), (0, 1), Y_CAB - 4.5, 0, 13.6, 1.0, 0.0)
+# Muro sur (a los patios): dibujado igual que el norte y encima la portada renacentista del sur
+panel("IG_Muro_Sur", f_muro_s, (XS + 0.04, 4.5), (0, 1), Y_CAB - 4.5, 0, 13.6, 1.0, 0.0)
 panel("IG_Portada_Sur", f_portada_s, (XS + 0.12, 22.2 - 3.6), (0, 1), 7.2, 0.0, 10.2)
 
 # ==========================================
