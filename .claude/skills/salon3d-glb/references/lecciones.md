@@ -129,3 +129,18 @@ Mira el script más parecido antes de empezar uno nuevo:
 | `ayuntamiento/` | Fachada con texturas CC0 (`mat.color_map`) y optimización del GLB |
 | `puestos/` | Props ligeros de estilo Lineage 2 (pocos lados, materiales compartidos) |
 | `orco/` | Personaje con manos, pies y armadura hecho con primitivas |
+
+## Platero (estatua de bronce de Moguer, `platero/`)
+
+- **Animales y formas orgánicas**: mejor tubos de sección elíptica con `from_pydata` que sigan el
+  contorno de la foto de perfil (función `tubo` del script, con curva Catmull-Rom) que cajas y
+  esferas. Cada extremo del tubo lleva tapa: mete los extremos dentro del cuerpo o asoman discos.
+- **Textura sacada de las fotos del usuario**: recorte, quitar el degradado de luz (dividir por un
+  desenfoque grande), hacerla repetible en dos pasadas (horizontal y luego vertical; las dos a la
+  vez dejan una cruz) y sacar normal y rugosidad de la luminosidad (`platero/hacer_textura_bronce.py`).
+  Se añade a `src/utils/textureLibrary.ts` y a `public/textures/`.
+- Con `mat.color_map` la app pone el color base en blanco: **el tinte va en la imagen**, no en
+  `Base Color`.
+- La app exporta caras planas: para piezas orgánicas, `SUAVE=1` en `optimizar_juego.mjs`.
+- El visor de la app sale en negro en las capturas sin GPU con este modelo: revisa el GLB en un
+  visor three.js aparte.

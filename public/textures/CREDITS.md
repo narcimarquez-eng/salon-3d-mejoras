@@ -8,3 +8,9 @@ Todas las texturas de esta carpeta son CC0 (dominio público), según la licenci
 | `teja_arcilla_diff_1k.jpg`, `teja_arcilla_nor_gl_1k.jpg`, `teja_arcilla_rough_1k.jpg` | `teja_arcilla` | Clay Roof Tiles 02 (`clay_roof_tiles_02`) | Amal Kumar | https://polyhaven.com/a/clay_roof_tiles_02 |
 
 Mapas incluidos: color (diffuse), normal (OpenGL) y rugosidad, en 1K (1024 × 1024), descargados de `dl.polyhaven.org`.
+
+## Texturas sacadas de fotos del usuario
+
+| Archivo(s) | Id en Python | Origen |
+|---|---|---|
+| `bronce_platero_diff_1k.jpg`, `bronce_platero_nor_gl_1k.jpg`, `bronce_platero_rough_1k.jpg` | `bronce_platero` | Recorte del costado de la estatua de bronce de Platero (Moguer), fotografiada por el usuario. Se quitó el degradado de luz y se hizo repetible; el relieve y la rugosidad salen de la luminosidad. |

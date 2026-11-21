@@ -419,6 +419,18 @@ export const BUILTIN_COLOR_MAP_TEXTURES: ColorMapTextureInfo[] = [
     description: 'Muro encalado blanco tradicional con mapas PBR de normales y rugosidad.',
   },
   {
+    id: 'bronce_platero',
+    aliases: ['platero', 'bronce_pelaje', 'pelaje_bronce'],
+    name: 'Bronce de Platero 1K (pelaje rizado de la estatua de Moguer)',
+    url: '/textures/bronce_platero_diff_1k.jpg',
+    license: 'Fotos del usuario (estatua de Platero, Moguer)',
+    source: 'builtin',
+    kind: 'pbr',
+    isMosaic: false,
+    gridLayout: 'Seamless 1:1 PBR (Difuso + Normal + Rugosidad)',
+    description: 'Pelaje rizado en bronce oscuro sacado de las fotos de la estatua de Platero, repetible sin costuras.',
+  },
+  {
     id: 'teja_arcilla',
     aliases: ['teja_roja_pbr'],
     name: 'Teja de Arcilla 1K (Color + Normal + Roughness)',
@@ -806,6 +818,9 @@ export function getColorMapSet(id: string): ColorMapSet {
   if (info.id === 'cal_blanca') {
     normalTex = loadOrGetThreeTexture('/textures/cal_blanca_nor_gl_1k.jpg', false);
     roughTex = loadOrGetThreeTexture('/textures/cal_blanca_rough_1k.jpg', false);
+  } else if (info.id === 'bronce_platero') {
+    normalTex = loadOrGetThreeTexture('/textures/bronce_platero_nor_gl_1k.jpg', false);
+    roughTex = loadOrGetThreeTexture('/textures/bronce_platero_rough_1k.jpg', false);
   } else if (info.id === 'teja_arcilla') {
     normalTex = loadOrGetThreeTexture('/textures/teja_arcilla_nor_gl_1k.jpg', false);
     roughTex = loadOrGetThreeTexture('/textures/teja_arcilla_rough_1k.jpg', false);
