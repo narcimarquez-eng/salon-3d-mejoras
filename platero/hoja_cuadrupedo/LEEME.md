@@ -8,7 +8,24 @@
 - `hoja_fotos_5vistas.png`: la hoja con las fotos. `hoja_ortografica_5vistas.png`: las cinco
   vistas planas del modelo Python, para comparar.
 
-## Resultado (21-11-2026)
+## Qué fallaba y cómo se arregló (21-11-2026)
+
+El molde tallaba el volumen como si el burro tuviera ALAS: visto de frente, el cuello es
+estrecho y el pecho y la tripa sobresalen de ese "núcleo", así que se tomaban por alas
+(`hasWings` en `buildProfileDriven3DMoldGeometry`, `src/human/humanBodyTemplate.ts`). Con alas,
+el perfil se mide sin esas zonas y las alturas del frente se estiran contra el lomo del perfil:
+salía una losa en lo alto que ocupaba todo el largo, una sola pata y trozos sueltos.
+
+Arreglo: unas alas desplegadas pasan mucho más allá de donde apoyan los pies; ahora solo hay
+alas si lo que sobresale pasa del doble del ancho de los cascos. Con eso, la hoja de fotos da un
+burro con cabeza, cuatro patas y cola, esqueleto de cuadrúpedo y 11 animaciones
+(`platero_cuadrupedo_fotos.glb`, capturas `resultado_*.png`).
+
+Pendiente: las patas traseras salen en bloque, la cola en trozos, las orejas como una sola punta
+y la textura con franjas (las fotos tienen perspectiva y luz distinta en cada vista).
+
+## Pruebas anteriores al arreglo
+
 
 Con esta versión de la app el modo cuadrúpedo NO da un burro válido:
 - Con las fotos (perspectiva) y con las vistas planas, si hay orejas largas sale una losa en lo

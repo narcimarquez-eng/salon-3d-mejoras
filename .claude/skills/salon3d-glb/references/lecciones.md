@@ -144,3 +144,9 @@ Mira el script más parecido antes de empezar uno nuevo:
 - La app exporta caras planas: para piezas orgánicas, `SUAVE=1` en `optimizar_juego.mjs`.
 - El visor de la app sale en negro en las capturas sin GPU con este modelo: revisa el GLB en un
   visor three.js aparte.
+- **Platero por el panel cuadrúpedo**: el molde confundía el pecho de un burro visto de frente
+  con alas (cuello estrecho = "núcleo") y salía una losa en lo alto. Ahora `hasWings` exige que
+  lo que sobresale pase del doble del ancho de los cascos. Para depurar el molde, un
+  `console.log` en `buildProfileDriven3DMoldGeometry` leído desde Playwright (`page.on('console')`)
+  enseña `hasWings`, `fCoreTop`, `sBodyTop`, etc. Para quitar el fondo de fotos reales, rembg
+  (`isnet-general-use`) funciona muy bien (`platero/hoja_cuadrupedo/quitar_fondo.py`).

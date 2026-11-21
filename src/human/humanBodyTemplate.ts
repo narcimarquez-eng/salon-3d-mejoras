@@ -3211,8 +3211,22 @@ function buildProfileDriven3DMoldGeometry(
   // se medía desde debajo de la melena (`sBodyTop`), con lo que la textura del perfil se
   // aplastaba contra la mitad inferior del dibujo y el lomo acababa pintado con la barriga.
   const wingSpanRatio = maxWingHalfSpan / Math.max(1, refBodyHalf);
+  // Un ala desplegada sale mucho más allá de donde apoyan los pies. En un cuadrúpedo visto de
+  // frente (un burro: cuello estrecho y pecho más ancho) el pecho y la tripa sobresalen del
+  // "núcleo" medido en el cuello, pero no pasan del ancho de los cascos: no son alas. Sin esta
+  // condición el perfil se medía sin el pecho y salía una losa en lo alto con las patas rotas.
+  let footHalfSpan = 0;
+  {
+    const yFeet0 = Math.round(fBot - (Hf - 1) * 0.08);
+    for (let y = Math.max(fTop, yFeet0); y <= fBot; y++) {
+      for (let x = 0; x < w; x++) {
+        if (frontMask[y * w + x] === 1) footHalfSpan = Math.max(footHalfSpan, Math.abs(x - fAxisX));
+      }
+    }
+  }
+  const wingsBeyondFeet = maxWingHalfSpan > Math.max(footHalfSpan * 2.0, refBodyHalf * 1.55);
   const hasWings =
-    (frontSplit.wingCount > 180 || backSplit.wingCount > 180) && wingSpanRatio > 1.55;
+    (frontSplit.wingCount > 180 || backSplit.wingCount > 180) && wingSpanRatio > 1.55 && wingsBeyondFeet;
   const fCoreTop = Math.min(frontSplit.coreTop, backSplit.coreTop, fCoreTopEst);
   const tCoreTop = Math.max(0, (fCoreTop - fTop) / Math.max(1, Hf - 1));
 
