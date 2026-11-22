@@ -153,3 +153,21 @@ Mira el script más parecido antes de empezar uno nuevo:
   (`?visor-api=1`, de nuevo en `App.tsx`) para encuadrar cualquier tamaño, y acepta
   `CAMARAS='[{"nombre":..,"pos":[..],"target":[..]}]'` en coordenadas de la escena (Y arriba).
 - El material de imagen sale con metálico 0,2 si no se pone `Metallic` = 0.
+- **Copa que parece "un montón de papeles"**: normales propias hacia fuera del elipsoide de la
+  copa con `mesh.normals_split_custom_set(lista_por_esquina)` (nuevo en el motor: protege las
+  normales de los recálculos de la app y llegan al GLB). Con doble cara la cara trasera se
+  ilumina al revés, así que cada tarjeta lleva sus dos caras modeladas con la misma normal y el
+  material `use_backface_culling = True` (con recorte alpha eso deja una sola cara visible).
+- **Sombra horneada por vértice**: `col = mesh.color_attributes.new(name=..., type='FLOAT_COLOR',
+  domain='CORNER')` y `col.data.foreach_set("color", [r, g, b, a, ...])` (nuevo en el motor;
+  sale como COLOR_0 en el GLB). Interior y panza ~0,35-0,5, fuera 0,9.
+- **Atlas con el fondo de cuadros pintado** (JPG de "transparencia" falsa): alpha por luminancia
+  y saturación (el gris del fondo es claro y sin color), fuera las líneas moradas de la rejilla,
+  componentes conexas para quitar números, y "desmezclar" el gris de los bordes. El atlas venía
+  verde muy oscuro: aclararlo ×1,3 y apagar los reflejos; si no, la copa sale pálida a distancia.
+- **Borde claro alrededor de cada tarjeta a distancia**: el color de relleno bajo alpha 0 se
+  cuela en los mipmaps. Rellénalo con el verde de la pieza oscurecido (×0,55).
+- **El GLB guarda todas las imágenes en PNG RGBA** (8,7 MB el pino). `pino/optimizar_glb.py`
+  las recomprime: opacas a JPEG y las de recorte a PNG con paleta y alpha 0/1 (3,3 MB).
+- Penachos todos hacia arriba = cojín de púas: abrirlos en abanico con más componente lateral
+  y algo de azar en la inclinación.

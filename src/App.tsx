@@ -654,6 +654,7 @@ nodo.data.materials.append(mat)`);
             gradientMap: toonRamp,
             wireframe: false,
             alphaTest: orig?.alphaTest ?? 0,
+            vertexColors: Boolean(orig?.vertexColors),
             side: orig?.alphaTest ? orig.side : 0,
           });
         } else if (shadingMode === 'pbr') {

@@ -1376,7 +1376,7 @@ export async function exportModifiedGlb(
           const alphaTest = Number(pbrMat?.alphaTest ?? 0);
           if (alphaTest > 0) {
             cleanMat.alphaTest = Math.round(alphaTest * 100) / 100;
-            cleanMat.side = THREE.DoubleSide;
+            cleanMat.side = pbrMat?.side === THREE.FrontSide ? THREE.FrontSide : THREE.DoubleSide;
           }
 
           if (

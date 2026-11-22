@@ -48,6 +48,14 @@ Probadas:
 - `primitive_torus_add(major_radius, minor_radius, location, rotation)`.
 - `bpy.context.active_object` para la pieza recién creada; `obj.name`, `obj.data.materials`.
 - Mallas propias con `mesh.from_pydata(verts, [], caras)` (la usan las plantillas internas).
+  Tras `from_pydata`, en el orden de las esquinas de las caras: UV con
+  `mesh.uv_layers.new().data.foreach_set("uv", [u, v, ...])`, normales propias con
+  `mesh.normals_split_custom_set([(x, y, z), ...])` y color por vértice con
+  `mesh.color_attributes.new(name, 'FLOAT_COLOR', 'CORNER').data.foreach_set("color", [r, g, b, a, ...])`.
+  Luego `bpy.data.objects.new(nombre, mesh)` + `bpy.context.collection.objects.link(obj)`.
+  Ejemplo completo: `pino/pino_pilonero.py`.
+- Recorte por alpha de una imagen PNG (hojas, hierba): `mat.blend_method = 'CLIP'`,
+  `mat.alpha_threshold = 0.5`; con `mat.use_backface_culling = True` una sola cara.
 
 Existen en el motor (probar antes): `primitive_ico_sphere_add`, `primitive_plane_add`,
 `primitive_capsule_add`, `primitive_arch_add`, `primitive_octahedron_add`,

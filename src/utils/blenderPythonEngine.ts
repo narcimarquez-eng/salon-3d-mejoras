@@ -2060,11 +2060,19 @@ function applyMaterialToThreeMesh(
   const transVal = Math.max(0, Math.min(1, resolvedTrans));
   const isTransparent = alphaVal < 0.99 || transVal > 0.05;
   const alphaClip = Math.max(0, Math.min(0.99, extraPbr?.alphaClip ?? 0));
-  const sideMode = extraPbr?.flipNormals
-    ? THREE.BackSide
-    : isTransparent || alphaClip > 0
-    ? THREE.DoubleSide
-    : THREE.FrontSide;
+  // Tarjetas recortadas: doble cara salvo con use_backface_culling (tarjetas con las dos caras
+  // modeladas, cada una con su normal: así la cara de atrás no se ilumina al revés)
+  const sideMode =
+    alphaClip > 0
+      ? extraPbr?.useBackfaceCulling
+        ? THREE.FrontSide
+        : THREE.DoubleSide
+      : extraPbr?.flipNormals
+      ? THREE.BackSide
+      : isTransparent
+      ? THREE.DoubleSide
+      : THREE.FrontSide;
+  const useVertexColors = Boolean((mesh.geometry as THREE.BufferGeometry)?.userData?.customColors);
   // Tarjetas recortadas (hojas, hierba): sin contorno de tinta, que dibujaría el rectángulo entero
   mesh.userData.alphaClip = alphaClip;
   if (alphaClip > 0 && mesh.userData.outlineMesh) {
@@ -2096,6 +2104,7 @@ function applyMaterialToThreeMesh(
     stdMat.opacity = isTransparent ? Math.min(alphaVal, 1.0 - transVal * 0.55) : 1.0;
     stdMat.side = sideMode;
     stdMat.alphaTest = alphaClip;
+    stdMat.vertexColors = useVertexColors;
 
     // Normal, rugosidad y metalicidad del mapa de imagen (PBR CC0 / Poly Haven)
     stdMat.normalMap = imageSet?.normal ?? null;
@@ -2160,6 +2169,7 @@ function applyMaterialToThreeMesh(
     eeveeMat.opacity = isTransparent ? Math.min(alphaVal, 1.0 - transVal * 0.55) : 1.0;
     eeveeMat.side = sideMode;
     eeveeMat.alphaTest = alphaClip;
+    eeveeMat.vertexColors = useVertexColors;
     eeveeMat.normalMap = imageSet?.normal ?? null;
     eeveeMat.roughnessMap = imageSet?.roughness ?? null;
     eeveeMat.metalnessMap = imageSet?.metalness ?? null;
@@ -2205,6 +2215,7 @@ function applyMaterialToThreeMesh(
     cyclesMat.opacity = isTransparent ? Math.min(alphaVal, 1.0 - transVal * 0.5) : 1.0;
     cyclesMat.side = sideMode;
     cyclesMat.alphaTest = alphaClip;
+    cyclesMat.vertexColors = useVertexColors;
     cyclesMat.normalMap = imageSet?.normal ?? null;
     cyclesMat.roughnessMap = imageSet?.roughness ?? null;
     cyclesMat.metalnessMap = imageSet?.metalness ?? null;
@@ -2231,6 +2242,7 @@ function applyMaterialToThreeMesh(
     toonMat.opacity = isTransparent ? Math.min(alphaVal, 1.0 - transVal * 0.6) : 1.0;
     toonMat.side = sideMode;
     toonMat.alphaTest = alphaClip;
+    toonMat.vertexColors = useVertexColors;
     if (extraPbr?.customGradientMap) {
       toonMat.gradientMap = extraPbr.customGradientMap;
     }
@@ -6278,11 +6290,87 @@ export async function executeBlenderPythonScript(
         );
       },
       update: () => {
+        if (meshDataObj._geometry.userData?.customNormals) return;
         meshDataObj._geometry.computeVertexNormals();
         if (meshDataObj._threeMesh) {
           prepareGeometryNormals(meshDataObj._threeMesh);
         }
       },
+      // Normales propias por esquina (loop), como en Blender: mesh.normals_split_custom_set([(x, y, z), ...]).
+      // Sirven para que las tarjetas de follaje se iluminen como un volumen (normales hacia fuera de la copa).
+      normals_split_custom_set: (...nArgs: unknown[]) => {
+        const { normals } = extractPyArgs(nArgs, ['normals'], { normals: [] });
+        setCustomNormals(normals as any[], false);
+      },
+      // Igual, pero una normal por vértice: mesh.normals_split_custom_set_from_vertices([(x, y, z), ...])
+      normals_split_custom_set_from_vertices: (...nArgs: unknown[]) => {
+        const { normals } = extractPyArgs(nArgs, ['normals'], { normals: [] });
+        setCustomNormals(normals as any[], true);
+      },
+      // Colores por esquina: col = mesh.color_attributes.new(name="Col", type='FLOAT_COLOR', domain='CORNER')
+      // y col.data.foreach_set("color", [r, g, b, a, ...]) en el orden de las esquinas (lineal, 0-1).
+      color_attributes: {
+        new: (...cArgs: unknown[]) => {
+          const { name } = extractPyArgs(cArgs, ['name', 'type', 'domain'], { name: 'Color', type: 'FLOAT_COLOR', domain: 'CORNER' });
+          return {
+            name: String(name),
+            data: {
+              foreach_set: (_attr: string, flat: number[]) => {
+                const geo = (meshDataObj._threeGeometry || meshDataObj._geometry) as THREE.BufferGeometry;
+                const pos = geo?.getAttribute('position');
+                if (!geo || !pos || !Array.isArray(flat)) return;
+                const cols = new Float32Array(pos.count * 3).fill(1);
+                const totalLoops = Math.floor(flat.length / 4);
+                for (let li = 0; li < totalLoops; li++) {
+                  const targets = loopToBufferMap[li] || [li];
+                  for (const vi of targets) {
+                    if (vi >= 0 && vi < pos.count) {
+                      cols[vi * 3] = Number(flat[li * 4]) || 0;
+                      cols[vi * 3 + 1] = Number(flat[li * 4 + 1]) || 0;
+                      cols[vi * 3 + 2] = Number(flat[li * 4 + 2]) || 0;
+                    }
+                  }
+                }
+                geo.setAttribute('color', new THREE.Float32BufferAttribute(cols, 3));
+                geo.userData.customColors = true;
+              },
+            },
+          };
+        },
+      },
+    };
+    // Escribe el atributo normal desde una lista por esquina o por vértice y lo protege de los
+    // recálculos posteriores de la app (computeVertexNormals se anula en esa geometría).
+    const setCustomNormals = (list: any[], perVertex: boolean) => {
+      const geo = (meshDataObj._threeGeometry || meshDataObj._geometry) as THREE.BufferGeometry;
+      const pos = geo?.getAttribute('position');
+      if (!geo || !pos || !Array.isArray(list)) return;
+      const nrm = new Float32Array(pos.count * 3);
+      const prev = geo.getAttribute('normal');
+      if (prev) nrm.set(prev.array as Float32Array);
+      for (let li = 0; li < loopsList.length; li++) {
+        const src = perVertex ? list[loopsList[li].vertex_index] : list[li];
+        if (!src) continue;
+        let nx = Number(src[0] ?? src.x) || 0;
+        let ny = Number(src[1] ?? src.y) || 0;
+        let nz = Number(src[2] ?? src.z) || 0;
+        if (isZUp) {
+          const t = ny;
+          ny = nz;
+          nz = -t;
+        }
+        const l = Math.hypot(nx, ny, nz) || 1;
+        for (const vi of loopToBufferMap[li] || []) {
+          if (vi >= 0 && vi < pos.count) {
+            nrm[vi * 3] = nx / l;
+            nrm[vi * 3 + 1] = ny / l;
+            nrm[vi * 3 + 2] = nz / l;
+          }
+        }
+      }
+      geo.setAttribute('normal', new THREE.Float32BufferAttribute(nrm, 3));
+      geo.userData.customNormals = true;
+      geo.computeVertexNormals = () => {};
     };
     meshesStore.push(meshDataObj);
     return meshDataObj;

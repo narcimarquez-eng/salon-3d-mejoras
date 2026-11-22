@@ -7,9 +7,17 @@ import math
 # ==============================================================================
 # Tronco y ramas: tubos curvos generados por código (curvas de Bézier con un
 # poco de ondulación), con la corteza de la foto del usuario mapeada en UV a lo
-# largo de cada rama. Copa: "tarjetas" (planos cruzados como la hierba de los
-# juegos) con matas de acículas recortadas de la foto de la copa, con recorte
-# por alpha (blend_method = 'CLIP' -> alphaMode MASK en el GLB).
+# largo de cada rama: tronco -> 4 brazos -> ramas -> ramillas.
+# Copa: "tarjetas" (planos como la hierba de los juegos) con los penachos y
+# ramitas del atlas de Pinus pinea del usuario (public/pino/hojas.png), con
+# recorte por alpha (blend_method = 'CLIP' -> alphaMode MASK en el GLB).
+#  - Los penachos nacen en la punta de cada ramilla y apuntan arriba y afuera;
+#    en la panza cuelgan ramitas.
+#  - Normales propias hacia fuera de la copa: se ilumina como un volumen y no
+#    como un montón de papeles. Cada tarjeta lleva sus dos caras modeladas
+#    (con la misma normal) y el material sin doble cara.
+#  - Color por vértice: interior y panza más oscuros (sombra horneada) y un
+#    poco de variación de tono entre penachos.
 # Forma típica de la especie: tronco corto que se abre en 4 ramas gruesas que
 # suben en curva y una copa ancha en parasol, plana por debajo.
 # Medidas aproximadas: altura ~12 m, copa ~13 m de diámetro, primera
@@ -176,9 +184,9 @@ horq = [inclina[0], inclina[1], 4.1]
 tronco = tubo([[0, 0, -0.3], [0.05, 0.0, 1.4], [inclina[0] * 0.6, inclina[1] * 0.6, 2.8], horq], 0.46, 0.34, 12, 10, 0.08, 0.28)
 
 # ------------------------------------------------------------------
-# 2. RAMAS: 4 brazos gruesos que suben en curva, cada uno con 2-3 ramas secundarias
+# 2. RAMAS: 4 brazos gruesos que suben en curva, cada uno con 3-4 ramas
 # ------------------------------------------------------------------
-PUNTAS = []   # extremos de las ramas finas: de ahí salen las ramillas hacia las matas
+FUENTES = []   # puntos de las ramas de donde pueden salir ramillas
 rumbo0 = entre(0, 6.28)
 NBRAZOS = 4
 for k in range(NBRAZOS):
@@ -186,63 +194,68 @@ for k in range(NBRAZOS):
     d = [math.cos(rumbo), math.sin(rumbo), 0.0]
     t0 = entre(0.78, 0.97)
     p0 = punto_en(tronco, t0)
-    lon = entre(3.0, 4.2)
-    sube = entre(3.8, 5.0)
-    brazo = rama(p0, d, lon, sube, 0.27, 0.13, 10, 10, 0.35)
-    nsec = 2 + int(azar() * 2)
+    lon = entre(2.6, 3.6)
+    sube = entre(3.6, 4.6)
+    brazo = rama(p0, d, lon, sube, 0.27, 0.12, 10, 10, 0.35)
+    for t in [0.75, 0.88, 1.0]:
+        FUENTES.append(punto_en(brazo, t))
+    nsec = 3 + int(azar() * 2)
     for s in range(nsec):
-        ts = entre(0.45, 0.92)
+        ts = entre(0.4, 0.95)
         q0 = punto_en(brazo, ts)
-        desv = entre(-0.75, 0.75)
+        desv = entre(-0.9, 0.9)
         ds = [math.cos(rumbo + desv), math.sin(rumbo + desv), 0.0]
-        sec = rama(q0, ds, entre(1.8, 3.4), entre(0.8, 2.0), 0.12 * (1.2 - ts * 0.5), 0.045, 6, 6, 0.25)
-        PUNTAS.append(sec[len(sec) - 1])
-        PUNTAS.append(punto_en(sec, 0.6))
-    PUNTAS.append(brazo[len(brazo) - 1])
+        sec = rama(q0, ds, entre(2.0, 3.6), entre(0.6, 1.6), 0.11 * (1.2 - ts * 0.5), 0.04, 6, 6, 0.25)
+        for t in [0.45, 0.7, 0.85, 1.0]:
+            FUENTES.append(punto_en(sec, t))
 
 # ------------------------------------------------------------------
-# 3. MATAS DE LA COPA (parasol): posiciones en un disco, cúpula baja y plana por debajo
+# 3. COPA EN PARASOL: puntos donde acaban las ramillas
 # ------------------------------------------------------------------
 CX = horq[0]
 CY = horq[1]
-RCOPA = 6.6
-Z_BASE = 8.4     # panza de la copa
-Z_ALTO = 12.0    # cima
-MATAS = []
-n_matas = 170
-for i in range(n_matas):
-    # reparto en espiral de Fibonacci + algo de azar: cubre el disco sin huecos grandes
-    rr = RCOPA * math.sqrt((i + 0.5) / n_matas) * entre(0.92, 1.04)
-    aa = i * 2.39996 + entre(-0.2, 0.2)
+RCOPA = 6.4      # radio de la copa (a la punta de las ramillas)
+Z_BASE = 8.3     # panza
+Z_ALTO = 11.2    # cima (los penachos suben ~1 m más)
+ZC = 9.4         # centro del elipsoide de la copa (para normales y sombra)
+HC = 2.6         # semialtura del elipsoide
+PUNTAS = []
+n_puntas = 300
+for i in range(n_puntas):
+    rr = RCOPA * math.sqrt((i + 0.5) / n_puntas) * entre(0.9, 1.05)
+    aa = i * 2.39996 + entre(-0.25, 0.25)
     x = CX + rr * math.cos(aa)
     y = CY + rr * math.sin(aa)
     f = rr / RCOPA
     techo = Z_BASE + (Z_ALTO - Z_BASE) * (1 - f * f * f)
-    # dos capas: arriba (techo) y en la panza, para que desde abajo tampoco se vea hueco
-    if i % 3 == 0:
-        z = Z_BASE + entre(0.0, 0.6) + (1 - f) * 0.8
+    if i % 4 == 0:
+        z = Z_BASE + entre(-0.2, 0.4) + (1 - f) * 0.6     # capa de la panza
     else:
-        z = techo - entre(0.0, 1.3)
-    MATAS.append([x, y, z])
+        z = techo - entre(0.0, 1.0)
+    PUNTAS.append([x, y, z])
 
-# ramillas: de la punta de rama más cercana a cada mata (solo para las matas del borde y de la panza,
-# las de arriba quedan tapadas)
-for i in range(n_matas):
-    m = MATAS[i]
-    mejor = PUNTAS[0]
+# ramillas: de la rama más cercana a cada punta, primero hacia fuera y luego hacia arriba
+DIRS = []      # dirección de llegada de cada ramilla (orienta el penacho)
+for i in range(n_puntas):
+    m = PUNTAS[i]
+    mejor = FUENTES[0]
     dmin = 999999.0
-    for p in PUNTAS:
+    for p in FUENTES:
         dd = largo(resta(p, m))
         if dd < dmin:
             dmin = dd
             mejor = p
-    if dmin > 0.6 and dmin < 5.5:
-        fin = [m[0], m[1], m[2] - 0.25]
-        medio1 = suma(por(mejor, 0.66), por(fin, 0.34))
-        medio2 = suma(por(mejor, 0.33), por(fin, 0.67))
-        medio1[2] = medio1[2] + 0.35
-        medio2[2] = medio2[2] + 0.3
-        tubo([mejor, medio1, medio2, fin], 0.05, 0.02, 4, 4, 0.12)
+    fuera = unit([m[0] - mejor[0], m[1] - mejor[1], 0.0])
+    if dmin > 0.35:
+        medio1 = suma(por(mejor, 0.62), por(m, 0.38))
+        medio2 = suma(por(mejor, 0.25), por(m, 0.75))
+        medio1[2] = medio1[2] + 0.2
+        medio2[2] = medio2[2] - 0.15
+        r0 = 0.035 + 0.012 * min(dmin, 3.0)
+        tubo([mejor, medio1, medio2, m], r0, 0.015, 4, 3, 0.1)
+        DIRS.append(unit(resta(m, medio2)))
+    else:
+        DIRS.append(unit(suma(fuera, [0, 0, 1.0])))
 
 # Crear la malla de madera
 mesh = bpy.data.meshes.new("PP_Madera")
@@ -264,78 +277,132 @@ m_corteza.node_tree.links.new(tex.outputs['Color'], bsdf.inputs['Base Color'])
 madera.data.materials.append(m_corteza)
 
 # ------------------------------------------------------------------
-# 4. TARJETAS DE FOLLAJE: por mata, dos planos verticales cruzados y uno casi horizontal.
-#    Cada plano usa una de las 4 matas del atlas copa.png (2x2).
+# 4. TARJETAS DE FOLLAJE (atlas hojas.png: 6 columnas x 3 filas)
+#    celdas 0-7: penachos con el tallo abajo; 8-14: ramitas colgantes con el tallo arriba;
+#    15-17: penachos pequeños con el tallo abajo.
 # ------------------------------------------------------------------
 H_VERTS = []
 H_CARAS = []
 H_UVS = []
+H_NORM = []
+H_COL = []
 
-def tarjeta(centro, eje_u, eje_v, ancho, alto, tile):
-    # plano centrado en "centro" con lados eje_u (ancho) y eje_v (alto); tile 0..3 del atlas
+def normal_copa(p):
+    # normal del elipsoide de la copa en p, algo levantada hacia el cielo
+    q = [(p[0] - CX) / (RCOPA * RCOPA), (p[1] - CY) / (RCOPA * RCOPA), (p[2] - ZC) / (HC * HC)]
+    n = unit(q)
+    return unit(suma(n, [0, 0, 0.35]))
+
+def sombra(p):
+    # 1 = fuera y arriba, ~0.4 = dentro y en la panza
+    dx = (p[0] - CX) / RCOPA
+    dy = (p[1] - CY) / RCOPA
+    dz = (p[2] - ZC) / HC
+    e = math.sqrt(dx * dx + dy * dy + dz * dz)
+    if e > 1.0:
+        e = 1.0
+    a = 0.35 + 0.55 * e * e
+    if dz < 0:
+        a = a * (1.0 + 0.35 * dz)   # panza más oscura
+    if a < 0.3:
+        a = 0.3
+    return a
+
+def tarjeta(base, d, lado, lng, ancho, celda, tinte):
+    # plano desde base (tallo) a lo largo de d, con anchura en la dirección lado
+    col = celda % 6
+    fil = int(celda / 6)
+    u0 = col / 6.0 + 0.002
+    u1 = (col + 1) / 6.0 - 0.002
+    vt = 1.0 - fil / 3.0 - 0.002
+    vb = 1.0 - (fil + 1) / 3.0 + 0.002
+    if celda >= 8 and celda <= 14:
+        v_tallo = vt      # colgantes: el tallo está arriba de la celda
+        v_punta = vb
+    else:
+        v_tallo = vb
+        v_punta = vt
+    hw = por(lado, ancho / 2)
+    pts = [resta(base, hw), suma(base, hw)]
+    punta = suma(base, por(d, lng))
+    pts.append(suma(punta, hw))
+    pts.append(resta(punta, hw))
+    uvs = [[u0, v_tallo], [u1, v_tallo], [u1, v_punta], [u0, v_punta]]
     b = len(H_VERTS)
-    hu = por(eje_u, ancho / 2)
-    hv = por(eje_v, alto / 2)
-    p = resta(resta(centro, hu), hv)
-    H_VERTS.append((p[0], p[1], p[2]))
-    p = suma(resta(centro, hv), hu)
-    H_VERTS.append((p[0], p[1], p[2]))
-    p = suma(suma(centro, hu), hv)
-    H_VERTS.append((p[0], p[1], p[2]))
-    p = suma(resta(centro, hu), hv)
-    H_VERTS.append((p[0], p[1], p[2]))
-    H_CARAS.append((b, b + 1, b + 2, b + 3))
-    col = tile % 2
-    fil = int(tile / 2)
-    u0 = col * 0.5 + 0.004
-    u1 = col * 0.5 + 0.496
-    v1 = 1.0 - fil * 0.5 - 0.004
-    v0 = 1.0 - fil * 0.5 - 0.496
-    H_UVS.append(u0)
-    H_UVS.append(v0)
-    H_UVS.append(u1)
-    H_UVS.append(v0)
-    H_UVS.append(u1)
-    H_UVS.append(v1)
-    H_UVS.append(u0)
-    H_UVS.append(v1)
+    for k in range(4):
+        H_VERTS.append((pts[k][0], pts[k][1], pts[k][2]))
+    # cara delantera y trasera (orden inverso), con la misma normal de la copa
+    caras = [[0, 1, 2, 3], [0, 3, 2, 1]]
+    for c in caras:
+        H_CARAS.append((b + c[0], b + c[1], b + c[2], b + c[3]))
+        for k in c:
+            H_UVS.append(uvs[k][0])
+            H_UVS.append(uvs[k][1])
+            n = normal_copa(pts[k])
+            H_NORM.append((n[0], n[1], n[2]))
+            s = sombra(pts[k])
+            if k < 2:
+                s = s * 0.8      # el tallo queda más metido en la copa
+            H_COL.append(s * tinte[0])
+            H_COL.append(s * tinte[1])
+            H_COL.append(s * tinte[2])
+            H_COL.append(1.0)
 
-for i in range(n_matas):
-    m = MATAS[i]
-    tam = entre(2.0, 3.0)
-    giro = entre(0, 3.14)
-    # tres verticales cruzadas a 60 grados (de canto se ven menos), algo inclinadas hacia fuera
-    hacia = unit([m[0] - CX, m[1] - CY, 0.0])
-    for c in range(3):
-        g = giro + c * 1.0472
-        eu = [math.cos(g), math.sin(g), 0.0]
-        ev = unit(suma([0, 0, 1.0], por(hacia, 0.35)))
-        tarjeta([m[0], m[1], m[2] + tam * 0.12], eu, ev, tam, tam * 0.85, int(azar() * 4) % 4)
-    # horizontal (vista desde arriba/abajo), ligeramente ladeada
-    g = entre(0, 6.28)
-    eu = [math.cos(g), math.sin(g), entre(-0.15, 0.15)]
-    ev = unit(cruz([0, 0, 1.0], eu))
-    ev[2] = entre(-0.2, 0.2)
-    tarjeta(m, unit(eu), unit(ev), tam * 1.15, tam * 1.15, int(azar() * 4) % 4)
+for i in range(n_puntas):
+    m = PUNTAS[i]
+    d0 = DIRS[i]
+    fuera = unit([m[0] - CX, m[1] - CY, 0.01])
+    f = largo([m[0] - CX, m[1] - CY, 0]) / RCOPA
+    panza = (i % 4 == 0)
+    tinte = [entre(0.9, 1.12), entre(0.95, 1.08), entre(0.9, 1.0)]
+    # penachos en abanico: apuntan entre la dirección de la ramilla, hacia fuera y hacia arriba
+    npen = 5 + int(azar() * 2)
+    for k in range(npen):
+        ang = k * 6.2832 / npen + entre(-0.4, 0.4)
+        lateral = [math.cos(ang), math.sin(ang), 0.0]
+        sube = entre(0.25, 1.0)
+        if panza:
+            sube = entre(-0.1, 0.35)
+        d = unit(suma(suma(por(d0, 0.45), por(fuera, 0.6 * f)), suma(por(lateral, 0.9), [entre(-0.3, 0.3), entre(-0.3, 0.3), sube])))
+        lado = unit(cruz(d, [entre(-1, 1), entre(-1, 1), entre(-0.3, 0.3)]))
+        lng = entre(1.5, 2.2)
+        celda = int(azar() * 8) % 8
+        if (not panza) and f < 0.45 and azar() < 0.4:
+            celda = 15 + int(azar() * 3) % 3
+        tarjeta(suma(m, por(d, -0.12)), d, lado, lng, lng * 0.5, celda, tinte)
+    # ramitas colgantes en la panza y en el borde
+    if panza or f > 0.85:
+        ncol = 1 + int(azar() * 2)
+        for k in range(ncol):
+            ang = entre(0, 6.2832)
+            lateral = [math.cos(ang), math.sin(ang), 0.0]
+            d = unit(suma(suma(por(fuera, 0.45), por(lateral, 0.35)), [0, 0, -1.0]))
+            lado = unit(cruz(d, [0, 0, 1.0]))
+            lng = entre(1.4, 1.9)
+            tarjeta(m, d, lado, lng, lng * 0.5, 8 + int(azar() * 7) % 7, tinte)
 
 mesh_h = bpy.data.meshes.new("PP_Hojas")
 mesh_h.from_pydata(H_VERTS, [], H_CARAS)
 uvh = mesh_h.uv_layers.new(name="UVMap")
 uvh.data.foreach_set("uv", H_UVS)
+mesh_h.normals_split_custom_set(H_NORM)
+colh = mesh_h.color_attributes.new(name="Sombra", type='FLOAT_COLOR', domain='CORNER')
+colh.data.foreach_set("color", H_COL)
 hojas = bpy.data.objects.new("PP_Copa_Tarjetas", mesh_h)
 bpy.context.collection.objects.link(hojas)
 
-img_copa = bpy.data.images.load("pino/copa.png")
+img_hojas = bpy.data.images.load("pino/hojas.png")
 m_hojas = bpy.data.materials.new(name="PP_Aciculas")
 m_hojas.use_nodes = True
 bsdf2 = m_hojas.node_tree.nodes.get("Principled BSDF")
-bsdf2.inputs["Roughness"].default_value = 0.8
+bsdf2.inputs["Roughness"].default_value = 0.75
 bsdf2.inputs["Metallic"].default_value = 0.0
 tex2 = m_hojas.node_tree.nodes.new('ShaderNodeTexImage')
-tex2.image = img_copa
+tex2.image = img_hojas
 m_hojas.node_tree.links.new(tex2.outputs['Color'], bsdf2.inputs['Base Color'])
 m_hojas.blend_method = 'CLIP'
 m_hojas.alpha_threshold = 0.5
+m_hojas.use_backface_culling = True   # las dos caras ya están modeladas
 hojas.data.materials.append(m_hojas)
 
-print("Pino pilonero: " + str(len(M_CARAS)) + " caras de madera, " + str(len(H_CARAS)) + " tarjetas de follaje")
+print("Pino pilonero: " + str(len(M_CARAS)) + " caras de madera, " + str(int(len(H_CARAS) / 2)) + " tarjetas de follaje")
