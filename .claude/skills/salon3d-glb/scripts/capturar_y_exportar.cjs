@@ -83,11 +83,31 @@ const URL = process.env.URL || 'http://127.0.0.1:5173/?visor-api=1';
     await page.waitForTimeout(2500);
     await page.screenshot({ path: `${prefijo}_${archivo}.png` });
   };
-  await page.locator('button[title="Restablecer Cámara"]').first().click().catch(() => {});
-  await vistaBoton('overview', null);
-  await vistaBoton('front', 'Vista Frente');
-  await vistaBoton('side', 'Vista Perfil');
-  await vistaBoton('back', 'Vista Espalda');
+  const hayApi = await page.evaluate(() => Boolean(window.celshadeViewer && window.celshadeViewer.frameModel));
+  if (hayApi) {
+    // Encuadre automático al modelo entero, sea cual sea su tamaño (la app no reescala modelos de 0,08–35 m)
+    // Direcciones en la escena de la app (Y arriba): frente = -Y del script = +Z de la escena.
+    const dirs = { overview: [0.75, 0.4, 1], front: [0, 0.08, 1], side: [1, 0.08, 0], top: [0, 1, 0.02] };
+    for (const [archivo, dir] of Object.entries(dirs)) {
+      await page.evaluate((d) => window.celshadeViewer.frameModel(1.05, d), dir);
+      await page.mouse.move(1300, 120);
+      await page.waitForTimeout(2500);
+      await page.screenshot({ path: `${prefijo}_${archivo}.png` });
+    }
+  } else {
+    await page.locator('button[title="Restablecer Cámara"]').first().click().catch(() => {});
+    await vistaBoton('overview', null);
+    await vistaBoton('front', 'Vista Frente');
+    await vistaBoton('side', 'Vista Perfil');
+    await vistaBoton('back', 'Vista Espalda');
+  }
+  // Vistas libres en coordenadas de la escena de la app: CAMARAS='[{"nombre":"abajo","pos":[x,y,z],"target":[x,y,z]}]'
+  for (const v of JSON.parse(process.env.CAMARAS || '[]')) {
+    await page.evaluate(([p, t]) => window.celshadeViewer.setCameraPose(p, t), [v.pos, v.target]);
+    await page.mouse.move(1300, 120);
+    await page.waitForTimeout(2500);
+    await page.screenshot({ path: `${prefijo}_${v.nombre}.png` });
+  }
 
   // Vistas propias en metros del script
   const refs = JSON.parse(process.env.REFS || '[]');

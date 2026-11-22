@@ -1711,6 +1711,8 @@ export interface ExtendedPBRMaterialProps {
   texturePattern?: TexturePatternType;
   textureRepeat?: number;
   textureNaturalColor?: boolean;
+  /** Recorte por alpha de la imagen (blend_method = 'CLIP'): umbral 0–1, 0 = sin recorte */
+  alphaClip?: number;
 }
 
 let cachedNoiseBumpTexture: THREE.DataTexture | null = null;
@@ -2057,11 +2059,17 @@ function applyMaterialToThreeMesh(
   const alphaVal = extraPbr?.alpha !== undefined ? Math.max(0.05, Math.min(1, extraPbr.alpha)) : 1.0;
   const transVal = Math.max(0, Math.min(1, resolvedTrans));
   const isTransparent = alphaVal < 0.99 || transVal > 0.05;
+  const alphaClip = Math.max(0, Math.min(0.99, extraPbr?.alphaClip ?? 0));
   const sideMode = extraPbr?.flipNormals
     ? THREE.BackSide
-    : isTransparent
+    : isTransparent || alphaClip > 0
     ? THREE.DoubleSide
     : THREE.FrontSide;
+  // Tarjetas recortadas (hojas, hierba): sin contorno de tinta, que dibujaría el rectángulo entero
+  mesh.userData.alphaClip = alphaClip;
+  if (alphaClip > 0 && mesh.userData.outlineMesh) {
+    (mesh.userData.outlineMesh as THREE.Object3D).visible = false;
+  }
 
   const stdMat = mesh.userData.originalMaterial as THREE.MeshPhysicalMaterial | undefined;
   if (stdMat) {
@@ -2087,6 +2095,7 @@ function applyMaterialToThreeMesh(
     stdMat.transparent = isTransparent;
     stdMat.opacity = isTransparent ? Math.min(alphaVal, 1.0 - transVal * 0.55) : 1.0;
     stdMat.side = sideMode;
+    stdMat.alphaTest = alphaClip;
 
     // Normal, rugosidad y metalicidad del mapa de imagen (PBR CC0 / Poly Haven)
     stdMat.normalMap = imageSet?.normal ?? null;
@@ -2150,6 +2159,7 @@ function applyMaterialToThreeMesh(
     eeveeMat.transparent = isTransparent;
     eeveeMat.opacity = isTransparent ? Math.min(alphaVal, 1.0 - transVal * 0.55) : 1.0;
     eeveeMat.side = sideMode;
+    eeveeMat.alphaTest = alphaClip;
     eeveeMat.normalMap = imageSet?.normal ?? null;
     eeveeMat.roughnessMap = imageSet?.roughness ?? null;
     eeveeMat.metalnessMap = imageSet?.metalness ?? null;
@@ -2194,6 +2204,7 @@ function applyMaterialToThreeMesh(
     cyclesMat.transparent = isTransparent;
     cyclesMat.opacity = isTransparent ? Math.min(alphaVal, 1.0 - transVal * 0.5) : 1.0;
     cyclesMat.side = sideMode;
+    cyclesMat.alphaTest = alphaClip;
     cyclesMat.normalMap = imageSet?.normal ?? null;
     cyclesMat.roughnessMap = imageSet?.roughness ?? null;
     cyclesMat.metalnessMap = imageSet?.metalness ?? null;
@@ -2219,6 +2230,7 @@ function applyMaterialToThreeMesh(
     toonMat.transparent = isTransparent;
     toonMat.opacity = isTransparent ? Math.min(alphaVal, 1.0 - transVal * 0.6) : 1.0;
     toonMat.side = sideMode;
+    toonMat.alphaTest = alphaClip;
     if (extraPbr?.customGradientMap) {
       toonMat.gradientMap = extraPbr.customGradientMap;
     }
@@ -4616,6 +4628,10 @@ export async function executeBlenderPythonScript(
           textureNaturalColor: this._textureNaturalColor,
           colorMapId: this._colorMapId,
           colorMapTileMeters: this._colorMapTile,
+          alphaClip:
+            /^(CLIP|HASHED)$/i.test(String(this.blend_method || ''))
+              ? Math.max(0.01, Math.min(0.99, Number((this as any).alpha_threshold ?? 0.5) || 0.5))
+              : 0,
         };
         this._linkedMeshes.forEach((m) => {
           applyMaterialToThreeMesh(
@@ -5008,6 +5024,11 @@ export async function executeBlenderPythonScript(
         }
         if (prop === 'use_backface_culling') {
           target.use_backface_culling = Boolean(value);
+          target._sync();
+          return true;
+        }
+        if (prop === 'alpha_threshold') {
+          (target as any).alpha_threshold = Number(value);
           target._sync();
           return true;
         }

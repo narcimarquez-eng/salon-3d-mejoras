@@ -577,6 +577,46 @@ nodo.data.materials.append(mat)`);
     setPolyStats((prev) => ({ ...prev, verts, tris }));
   };
 
+  // API de cámara para las capturas automáticas (solo con ?visor-api=1 en la URL)
+  useEffect(() => {
+    if (typeof window === 'undefined' || !/visor-api=1/.test(window.location.search)) return;
+    (window as any).celshadeViewer = {
+      setCameraPose: (pos: number[], target: number[]) => {
+        if (!cameraRef.current || !controlsRef.current) return;
+        controlsRef.current.target.set(target[0], target[1], target[2]);
+        cameraRef.current.position.set(pos[0], pos[1], pos[2]);
+        controlsRef.current.update();
+      },
+      // Encuadra el modelo entero mirando desde la dirección dir (por defecto 3/4)
+      frameModel: (margin: number = 1.15, dir: number[] = [0.7, 0.35, 1]) => {
+        const root = currentModelGroupRef.current;
+        if (!root || !cameraRef.current || !controlsRef.current) return null;
+        const box = new Box3().setFromObject(root);
+        if (box.isEmpty()) return null;
+        const center = box.getCenter(new Vector3());
+        const radius = box.getSize(new Vector3()).length() / 2;
+        const cam = cameraRef.current as any;
+        const fov = ((cam.fov ?? 45) * Math.PI) / 180;
+        const dist = (radius * margin) / Math.sin(fov / 2);
+        const d = new Vector3(dir[0], dir[1], dir[2]).normalize();
+        controlsRef.current.target.copy(center);
+        cam.position.copy(center.clone().add(d.multiplyScalar(dist)));
+        if (cam.far < dist * 4) {
+          cam.far = dist * 4;
+          cam.updateProjectionMatrix();
+        }
+        controlsRef.current.update();
+        return { center: center.toArray(), radius };
+      },
+      worldBox: () => {
+        const root = currentModelGroupRef.current;
+        if (!root) return null;
+        const box = new Box3().setFromObject(root);
+        return { min: box.min.toArray(), max: box.max.toArray() };
+      },
+    };
+  }, []);
+
   const frameActiveModel = (root: Object3D | null) => {
     if (!root || !cameraRef.current || !controlsRef.current) return;
     const box = new Box3().setFromObject(root);
@@ -613,6 +653,8 @@ nodo.data.materials.append(mat)`);
             map: orig?.map || null,
             gradientMap: toonRamp,
             wireframe: false,
+            alphaTest: orig?.alphaTest ?? 0,
+            side: orig?.alphaTest ? orig.side : 0,
           });
         } else if (shadingMode === 'pbr') {
           mesh.material = mesh.userData.originalMaterial;
@@ -634,7 +676,7 @@ nodo.data.materials.append(mat)`);
         }
 
         let outline = outlineMeshMapRef.current.get(mesh);
-        if (outlineEnabled && (shadingMode === 'cel' || shadingMode === 'pbr')) {
+        if (outlineEnabled && (shadingMode === 'cel' || shadingMode === 'pbr') && !mesh.userData.alphaClip) {
           if (!outline) {
             const outMat = createComicOutlineMaterial(outlineThickness, 0.98);
             outline = new Mesh(mesh.geometry, outMat);
@@ -658,7 +700,8 @@ nodo.data.materials.append(mat)`);
           contornoMotor.visible =
             outlineEnabled &&
             (shadingMode === 'cel' || shadingMode === 'pbr') &&
-            contornoMotor.userData.wantVisible !== false;
+            contornoMotor.userData.wantVisible !== false &&
+            !mesh.userData.alphaClip;
         }
       }
     });

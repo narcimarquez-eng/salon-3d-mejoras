@@ -129,3 +129,27 @@ Mira el script más parecido antes de empezar uno nuevo:
 | `ayuntamiento/` | Fachada con texturas CC0 (`mat.color_map`) y optimización del GLB |
 | `puestos/` | Props ligeros de estilo Lineage 2 (pocos lados, materiales compartidos) |
 | `orco/` | Personaje con manos, pies y armadura hecho con primitivas |
+
+## 8. Vegetación con tarjetas y fotos del usuario (pino pilonero, 2026-11)
+
+- **Recorte por alpha (hojas, hierba, acículas)**: `mat.blend_method = 'CLIP'` y
+  `mat.alpha_threshold = 0.5` con una imagen PNG con transparencia enlazada por
+  `ShaderNodeTexImage`. Antes el motor guardaba `blend_method` sin usarlo; ahora pone
+  `alphaTest`, doble cara, quita el contorno de tinta (dibujaba el rectángulo entero) y el GLB
+  sale con `alphaMode MASK` + `doubleSided`. Ejemplo: `pino/pino_pilonero.py`.
+- **Imágenes propias**: guárdalas en `public/<tema>/` y cárgalas con ruta relativa
+  (`bpy.data.images.load("pino/corteza.jpg")`), que funciona en local y en GitHub Pages.
+- **Fotos del usuario a resolución real**: las subidas llegan a 4096 px aunque se vean
+  reducidas; mide el tamaño con PIL antes de recortar por coordenadas.
+- **Cielo azul a alpha**: `azul = B - (R+G)/2`; cielo ≈ +80, acículas ≈ -100. Alpha =
+  `clip((15 - azul)/25)` y bajar el azul de los bordes (`B = min(B, 0.85·G)`) para que no
+  quede halo. Rellena el color bajo alpha 0 con el verde medio (evita bordes azules al filtrar).
+- **Tubos curvos con UV propias** (tronco y ramas): `from_pydata` con anillos de `lados + 1`
+  vértices (costura duplicada), marco por transporte paralelo, y
+  `mesh.uv_layers.new().data.foreach_set("uv", lista_plana)` en el orden de las caras
+  (4 UV por cuadrilátero). Todas las ramas en una malla = un draw call.
+- **Modelos de 0,08–35 m no se reescalan** y los botones Frente/Perfil tienen la cámara fija
+  para ~3 m: el script de captura usa ahora `window.celshadeViewer.frameModel(margen, dir)`
+  (`?visor-api=1`, de nuevo en `App.tsx`) para encuadrar cualquier tamaño, y acepta
+  `CAMARAS='[{"nombre":..,"pos":[..],"target":[..]}]'` en coordenadas de la escena (Y arriba).
+- El material de imagen sale con metálico 0,2 si no se pone `Metallic` = 0.

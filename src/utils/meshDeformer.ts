@@ -968,6 +968,7 @@ function mergeKeyFor(mesh: THREE.Mesh): string | null {
     emissiveIntensity,
     opacity,
     mat.transparent ? 1 : 0,
+    Math.round((mat.alphaTest ?? 0) * 100),
      mat.vertexColors ? 1 : 0,
     hasMap,
     hasNormal,
@@ -1371,6 +1372,12 @@ export async function exportModifiedGlb(
             opacity: Math.round(opacity * 100) / 100,
             vertexColors: keepVertexColors,
           });
+          // Tarjetas recortadas por alpha (hojas, hierba): en el GLB salen con alphaMode MASK y doble cara
+          const alphaTest = Number(pbrMat?.alphaTest ?? 0);
+          if (alphaTest > 0) {
+            cleanMat.alphaTest = Math.round(alphaTest * 100) / 100;
+            cleanMat.side = THREE.DoubleSide;
+          }
 
           if (
             !stripTextures &&
