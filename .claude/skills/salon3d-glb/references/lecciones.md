@@ -171,3 +171,11 @@ Mira el script más parecido antes de empezar uno nuevo:
   las recomprime: opacas a JPEG y las de recorte a PNG con paleta y alpha 0/1 (3,3 MB).
 - Penachos todos hacia arriba = cojín de púas: abrirlos en abanico con más componente lateral
   y algo de azar en la inclinación.
+- **Palmera** (`palmera/palmera_datilera.py`, 2026-11): cada hoja es una tira a lo largo de un
+  nervio que cae con la gravedad (`s·d0 - caida·s²`), doblada en V (dos mitades con un pliegue
+  de 18–30°) y con la celda del atlas con el tallo abajo y el nervio centrado (centro de masas
+  del recorte). Las hojas se colocan en espiral de 137,5°; jóvenes arriba, viejas abajo.
+  Atlas sobre fondo gris liso: alpha = max(saturación, luminancia sobre el fondo), quedarse con
+  la componente mayor (tras dilatar 3 px para unir foliolos sueltos). 3.768 triángulos, 1,9 MB.
+- `capturar_y_exportar.cjs` acepta `MARGEN=1.15` para el encuadre automático (modelos altos y
+  estrechos salían cortados por arriba con 1,05).

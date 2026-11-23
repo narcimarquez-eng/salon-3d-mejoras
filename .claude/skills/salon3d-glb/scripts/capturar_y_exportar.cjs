@@ -89,7 +89,7 @@ const URL = process.env.URL || 'http://127.0.0.1:5173/?visor-api=1';
     // Direcciones en la escena de la app (Y arriba): frente = -Y del script = +Z de la escena.
     const dirs = { overview: [0.75, 0.4, 1], front: [0, 0.08, 1], side: [1, 0.08, 0], top: [0, 1, 0.02] };
     for (const [archivo, dir] of Object.entries(dirs)) {
-      await page.evaluate((d) => window.celshadeViewer.frameModel(1.05, d), dir);
+      await page.evaluate(([d, m]) => window.celshadeViewer.frameModel(m, d), [dir, Number(process.env.MARGEN || 1.05)]);
       await page.mouse.move(1300, 120);
       await page.waitForTimeout(2500);
       await page.screenshot({ path: `${prefijo}_${archivo}.png` });
