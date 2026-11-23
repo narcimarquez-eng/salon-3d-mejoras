@@ -6,7 +6,8 @@ import math
 # PINO PILONERO (Pinus pinea, pino piñonero) - para juego
 # ==============================================================================
 # Tronco y ramas: tubos curvos generados por código (curvas de Bézier con un
-# poco de ondulación), con la corteza de la foto del usuario mapeada en UV a lo
+# poco de ondulación), con la corteza del atlas del usuario (troncos cosidos en
+# una textura repetible, pino/generar_corteza_atlas.py) mapeada en UV a lo
 # largo de cada rama: tronco -> 4 brazos -> ramas -> ramillas.
 # Copa: "tarjetas" (planos como la hierba de los juegos) con los penachos y
 # ramitas del atlas de Pinus pinea del usuario (public/pino/hojas.png), con
@@ -86,8 +87,8 @@ def bezier(p0, p1, p2, p3, t):
 M_VERTS = []
 M_CARAS = []
 M_UVS = []
-CORTEZA_ANCHO = 0.75   # metros de perímetro que ocupa la foto de corteza
-CORTEZA_ALTO = 1.9     # metros de largo que ocupa la foto de corteza
+CORTEZA_ANCHO = 1.4    # metros de perímetro que ocupa la textura de corteza
+CORTEZA_ALTO = 0.7     # metros de largo que ocupa la textura de corteza
 
 def tubo(ctrl, r0, r1, lados, tramos, onda=0.0, ensanche=0.0):
     # Tubo a lo largo de la curva de Bézier ctrl = [p0, p1, p2, p3].
@@ -238,13 +239,29 @@ for i in range(n_puntas):
 DIRS = []      # dirección de llegada de cada ramilla (orienta el penacho)
 for i in range(n_puntas):
     m = PUNTAS[i]
-    mejor = FUENTES[0]
-    dmin = 999999.0
+    # una de las 3 fuentes más cercanas, al azar (si no, salen abanicos desde un mismo punto)
+    c1 = [999999.0, FUENTES[0]]
+    c2 = [999999.0, FUENTES[0]]
+    c3 = [999999.0, FUENTES[0]]
     for p in FUENTES:
         dd = largo(resta(p, m))
-        if dd < dmin:
-            dmin = dd
-            mejor = p
+        if dd < c1[0]:
+            c3 = c2
+            c2 = c1
+            c1 = [dd, p]
+        elif dd < c2[0]:
+            c3 = c2
+            c2 = [dd, p]
+        elif dd < c3[0]:
+            c3 = [dd, p]
+    elegido = c1
+    r = azar()
+    if r > 0.45 and c2[0] < c1[0] * 1.6 + 0.4:
+        elegido = c2
+    if r > 0.75 and c3[0] < c1[0] * 1.6 + 0.4:
+        elegido = c3
+    dmin = elegido[0]
+    mejor = elegido[1]
     fuera = unit([m[0] - mejor[0], m[1] - mejor[1], 0.0])
     if dmin > 0.35:
         medio1 = suma(por(mejor, 0.62), por(m, 0.38))
@@ -265,7 +282,7 @@ uv.data.foreach_set("uv", M_UVS)
 madera = bpy.data.objects.new("PP_Tronco_Ramas", mesh)
 bpy.context.collection.objects.link(madera)
 
-img_corteza = bpy.data.images.load("pino/corteza.jpg")
+img_corteza = bpy.data.images.load("pino/corteza_atlas.jpg")
 m_corteza = bpy.data.materials.new(name="PP_Corteza")
 m_corteza.use_nodes = True
 bsdf = m_corteza.node_tree.nodes.get("Principled BSDF")
