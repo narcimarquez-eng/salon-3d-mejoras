@@ -185,3 +185,13 @@ Mira el script más parecido antes de empezar uno nuevo:
   madera). Ramas oscurecidas con color por vértice en la madera (0,42) y tronco en sombra por
   encima del primer piso. Rejilla del atlas gris oscura como las acículas: se repinta con los
   píxeles vecinos en sus posiciones conocidas antes de recortar. 19.216 triángulos, 3,7 MB.
+- **El GLB no unía piezas por material** (pinsapo de Navidad: 264 piezas, una por bola y luz).
+  Los botones "Completo" (barra superior y panel Python) llaman a `handleExportGLB` →
+  `exportHumanToGLBBytes`, que no unía nada; `mergeMeshesByMaterial` no lo llamaba nadie.
+  Ahora `handleExportGLB` une por material una copia de la escena cuando no hay esqueleto
+  (17 piezas). Las mallas unidas se llaman `<material>_<n>piezas`.
+- Bolas de metal puro (`Metallic` 1) salen negras en el visor y en motores sin mapa de entorno:
+  metálico 0,45–0,75 con barniz.
+- **Texto en un cartel**: el motor no tiene `text_add`; se dibuja la imagen con PIL
+  (`pinsapo/generar_cartel.py`) y se pone en un quad con UV delante de la tabla. Ojo con los
+  postes: van detrás de la tabla o tapan las letras.

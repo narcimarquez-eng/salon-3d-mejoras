@@ -44,6 +44,7 @@ import {
 } from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { mergeMeshesByMaterial } from './utils/meshDeformer';
 import {
   Boxes,
   CodeXml,
@@ -1371,7 +1372,18 @@ nodo.data.materials.append(mat)`);
     setExportError(null);
     try {
       const targetObj = group.children.length === 1 ? group.children[0] : group;
-      const rawBytes = await exportHumanToGLBBytes(targetObj, currentClipsRef.current);
+      // Escenas sin esqueleto (scripts Python): las piezas que comparten material se unen en una
+      // sola malla (un draw call por material). Se hace sobre una copia; la escena no cambia.
+      let hasSkin = false;
+      targetObj.traverse((o) => {
+        if ((o as SkinnedMesh).isSkinnedMesh) hasSkin = true;
+      });
+      let exportObj: Object3D = targetObj;
+      if (!hasSkin) {
+        exportObj = targetObj.clone(true);
+        mergeMeshesByMaterial(exportObj);
+      }
+      const rawBytes = await exportHumanToGLBBytes(exportObj, currentClipsRef.current);
 
       let finalBytes = rawBytes;
       let fallbackNote: string | undefined;

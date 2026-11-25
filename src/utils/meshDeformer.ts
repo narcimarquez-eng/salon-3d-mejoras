@@ -982,7 +982,7 @@ function mergeKeyFor(mesh: THREE.Mesh): string | null {
  * Las geometrías se transforman a la escala local de `root`; el resultado queda sin jerarquía.
  * Si una unión falla, las mallas de ese grupo se dejan como estaban.
  */
-function mergeMeshesByMaterial(root: THREE.Object3D): void {
+export function mergeMeshesByMaterial(root: THREE.Object3D): void {
   try {
     root.updateMatrixWorld(true);
     const rootInverse = new THREE.Matrix4().copy(root.matrixWorld).invert();
@@ -1043,7 +1043,7 @@ function mergeMeshesByMaterial(root: THREE.Object3D): void {
         list.forEach((mesh) => mesh.removeFromParent());
         const material = list[0].material as THREE.Material;
         const combined = new THREE.Mesh(merged, material);
-        combined.name = `Grupo_${index}_${list.length}piezas`;
+        combined.name = `${material.name || 'Grupo_' + index}_${list.length}piezas`;
         root.add(combined);
         index++;
       } catch (groupErr) {
