@@ -195,3 +195,11 @@ Mira el script más parecido antes de empezar uno nuevo:
 - **Texto en un cartel**: el motor no tiene `text_add`; se dibuja la imagen con PIL
   (`pinsapo/generar_cartel.py`) y se pone en un quad con UV delante de la tabla. Ojo con los
   postes: van detrás de la tabla o tapan las letras.
+- **Liquidámbar** (`liquidambar/liquidambar.py`, 2026-11): ramilletes de pie (3–4 tarjetas
+  cruzadas) en la punta de cada rama y secundaria; desde arriba quedaban huecos porque las
+  tarjetas de pie se ven de canto: una tarjeta tumbada por ramillete y un remate inclinado
+  alrededor de la cima. Color por altura (rojos arriba, naranjas y amarillos abajo).
+  Bordes blanquecinos de las hojas (mezcla con el fondo claro): sustituir 2 px del borde por el
+  color medio de alrededor. 9.232 triángulos, 1,9 MB.
+- Al insertar código buscando un texto, comprueba que no aparece antes en la cabecera: un bloque
+  acabó en los comentarios del principio y el script falló en la línea 16.
