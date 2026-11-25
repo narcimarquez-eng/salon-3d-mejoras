@@ -1,6 +1,7 @@
 # Texturas del liquidambar a partir de los atlas del usuario:
-#   liquidambar/fotos/atlas_follaje.jpg -> public/liquidambar/hojas.png (2048x2048, 4x4 celdas de 512x512:
-#       0-9 ramilletes de otono con el tallo abajo, 10-11 ramitas con pocas hojas, 12 bolas de semillas)
+#   liquidambar/fotos/atlas_arbol_magenta.jpg + atlas_follaje.jpg -> public/liquidambar/hojas.png
+#       (2048x2048, 4x4 celdas de 512x512: 0-9 ramilletes de otono con el tallo abajo,
+#       10-11 ramitas con pocas hojas, 12 bola de semillas)
 #   liquidambar/fotos/atlas_arbol.jpg   -> public/liquidambar/corteza.jpg (paneles de corteza, repetible)
 # Fondo de cuadros pintado y rejilla gris oscura: la rejilla se repinta con los pixeles de al lado.
 # Uso: python3 liquidambar/generar_texturas_liquidambar.py  (desde la raiz del repo)
@@ -18,36 +19,68 @@ for y in [510, 1025]:                             # filas
     for dy in range(-2, 4):
         A[y + dy, :] = (A[y - 4, :] + A[y + 5, :]) / 2
 
-# (x0, y0, x1, y1) en coordenadas de 2000 px. Todos con el tallo abajo.
+# Fuentes: 'mag' = atlas del arbol sobre fondo magenta (sin rejilla; recorte por color, sin huecos
+# claros entre las hojas); 'cua' = atlas de follaje con fondo de cuadros (solo para las piezas que no
+# estan en el magenta). (x0, y0, x1, y1) en coordenadas de 2000 px. Todos con el tallo abajo, salvo la bola.
 PIEZAS = [
-    (30, 35, 385, 315),     # 0 rojo denso
-    (425, 40, 790, 335),    # 1 naranja y verde oliva
-    (825, 75, 1185, 305),   # 2 naranja
-    (1255, 40, 1535, 340),  # 3 rojo, arbolito
-    (1675, 30, 1935, 345),  # 4 naranja, ralo
-    (25, 425, 380, 715),    # 5 rojo y ocre, denso
-    (420, 430, 780, 710),   # 6 rojo
-    (830, 415, 1175, 710),  # 7 naranja en V
-    (1230, 445, 1550, 705), # 8 naranja, dos ramitas
-    (1655, 425, 1955, 715), # 9 amarillo verdoso
-    (55, 780, 355, 1100),   # 10 ramita con hojas rojas
-    (430, 820, 710, 1075),  # 11 ramita fina
-    (1490, 768, 1580, 1005),  # 12 bola de semillas con su rabillo (cuelga)
+    ('mag', (820, 50, 1190, 318)),     # 0 rojo denso
+    ('mag', (1222, 38, 1590, 338)),    # 1 naranja y verde oliva
+    ('mag', (820, 428, 1198, 698)),    # 2 rojo
+    ('mag', (1238, 418, 1585, 698)),   # 3 naranja en V
+    ('mag', (1648, 45, 1962, 350)),    # 4 ramita roja rala
+    ('mag', (1665, 428, 1952, 695)),   # 5 amarillo verdoso ralo
+    ('cua', (825, 75, 1185, 305)),     # 6 naranja
+    ('cua', (1255, 40, 1535, 340)),    # 7 rojo, arbolito
+    ('cua', (1675, 30, 1935, 345)),    # 8 naranja, ralo
+    ('cua', (25, 425, 380, 715)),      # 9 rojo y ocre, denso
+    ('cua', (55, 780, 355, 1100)),     # 10 ramita con hojas rojas
+    ('cua', (430, 820, 710, 1075)),    # 11 ramita fina
+    ('mag', (1490, 768, 1580, 1000)),  # 12 bola de semillas con su rabillo (cuelga)
 ]
+M = np.asarray(Image.open('liquidambar/fotos/atlas_arbol_magenta.jpg').convert('RGB')).astype(float)
+FONDO_MAG = np.array([253.0, 0.0, 251.0])
 
 
-def pieza(c, todas=False):
+def pieza(fuente, c):
     x0, y0, x1, y1 = [int(v * K) for v in c]
-    p = A[y0:y1, x0:x1]
-    lum = p.mean(axis=2)
-    sat = p.max(axis=2) - p.min(axis=2)
-    a = np.maximum(np.clip((170 - lum) / 40, 0, 1), np.clip((sat - 26) / 20, 0, 1))
+    if fuente == 'mag':
+        p = M[y0:y1, x0:x1]
+        mag = np.minimum(p[..., 0], p[..., 2]) - p[..., 1]      # fondo ~250, hojas < 70
+        a = np.clip((130 - mag) / 80, 0, 1)                     # los bordes mezclados (JPEG) fuera
+        # rosa claro en los huecos entre hojas (fondo mezclado con brillo): claro y con el azul muy por
+        # encima del verde, cosa que no pasa en ninguna hoja ni en la corteza
+        lum = p.mean(axis=2)
+        rosa = np.clip((p[..., 2] - p[..., 1] - 18) / 14, 0, 1) * np.clip((lum - 115) / 25, 0, 1)
+        a = a * (1 - rosa)
+        fondo = FONDO_MAG
+    else:
+        p = A[y0:y1, x0:x1]
+        lum = p.mean(axis=2)
+        sat = p.max(axis=2) - p.min(axis=2)
+        a = np.maximum(np.clip((170 - lum) / 40, 0, 1), np.clip((sat - 26) / 20, 0, 1))
+        # lo muy claro es fondo aunque tenga color (rosa claro = cuadro gris mezclado con hoja roja)
+        a = a * np.clip((205 - lum) / 30, 0, 1)
+        fondo = np.array([210.0, 210.0, 210.0])
     lab, n = ndimage.label(ndimage.binary_dilation(a > 0.4, iterations=3))
     if n:
         tam = ndimage.sum(np.ones_like(a), lab, range(1, n + 1))
         a = a * np.isin(lab, 1 + np.where(tam >= tam.max() * 0.08)[0])
-    aa = np.clip(a, 0.2, 1)[..., None]
-    p = np.clip((p - (1 - aa) * 210) / aa, 0, 255)
+    # color de los bordes: en vez de "restar" el fondo (con el JPEG da tonos claros y rosados),
+    # cada pixel que no es hoja maciza toma el color de la hoja maciza de al lado
+    maciza = (a > 0.97).astype(float)
+    num = np.dstack([ndimage.gaussian_filter(p[..., k] * maciza, 2.0) for k in range(3)])
+    den_m = ndimage.gaussian_filter(maciza, 2.0)[..., None]
+    vecino = num / np.maximum(den_m, 1e-3)
+    # lejos de las hojas (fondo puro): el color medio de las hojas a mayor distancia. Asi al reducir
+    # la pieza para el atlas no se cuela el magenta/gris del fondo en los bordes (eso eran las motas claras)
+    num8 = np.dstack([ndimage.gaussian_filter(p[..., k] * maciza, 10.0) for k in range(3)])
+    den8 = ndimage.gaussian_filter(maciza, 10.0)[..., None]
+    lejos = np.where(den8 > 1e-4, num8 / np.maximum(den8, 1e-4), p[maciza > 0].mean(axis=0))
+    p = np.where(maciza[..., None] > 0, p, np.where(den_m > 0.02, vecino, lejos))
+    if fuente == 'mag':
+        # por si queda algo de tinte magenta: en hojas y corteza el azul no pasa del verde + 35
+        p[..., 2] = np.minimum(p[..., 2], p[..., 1] + 35)
+    p = np.clip(p, 0, 255)
     img = Image.fromarray(np.dstack([p, a * 255]).astype(np.uint8), 'RGBA')
     ys, xs = np.nonzero(a > 0.4)
     return img.crop((xs.min(), ys.min(), xs.max() + 1, ys.max() + 1))
@@ -55,8 +88,8 @@ def pieza(c, todas=False):
 
 C = 512
 atlas = Image.new('RGBA', (2048, 2048), (0, 0, 0, 0))
-for i, c in enumerate(PIEZAS):
-    img = pieza(c)
+for i, (fuente, c) in enumerate(PIEZAS):
+    img = pieza(fuente, c)
     s = min((C - 8) / img.width, (C - 6) / img.height)
     img = img.resize((max(1, int(img.width * s)), max(1, int(img.height * s))), Image.LANCZOS)
     x, y = (i % 4) * C, (i // 4) * C

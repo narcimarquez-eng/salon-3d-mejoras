@@ -199,9 +199,9 @@ H_CARAS = []
 H_UVS = []
 H_NORM = []
 H_COL = []
-ROJOS = [0, 3, 5, 6, 10]
-NARANJAS = [1, 2, 4, 7, 8]
-AMARILLOS = [9, 11]
+ROJOS = [0, 2, 4, 7, 9, 10]
+NARANJAS = [1, 3, 6, 8]
+AMARILLOS = [5, 11]
 
 def normal_copa(p):
     q = [p[0] / (RMAX * RMAX), p[1] / (RMAX * RMAX), (p[2] - ZC) / (HC * HC)]

@@ -203,3 +203,11 @@ Mira el script más parecido antes de empezar uno nuevo:
   color medio de alrededor. 9.232 triángulos, 1,9 MB.
 - Al insertar código buscando un texto, comprueba que no aparece antes en la cabecera: un bloque
   acabó en los comentarios del principio y el script falló en la línea 16.
+- **Motas blancas/rosas dentro del follaje** (liquidámbar): en los huecos pequeños entre hojas el
+  fondo claro se mezclaba con el rojo y quedaba un rosa claro con mucha saturación, que contaba
+  como hoja. Con el atlas sobre **magenta** (sin rejilla): alpha = (130 − (min(R,B) − G)) / 80, y
+  fuera el rosa claro (B − G > 18 y luminancia > 115; ninguna hoja ni corteza lo cumple). No
+  "restes" el fondo en los bordes (con el JPEG da tonos claros): los píxeles no macizos toman el
+  color de la hoja maciza vecina, y lo transparente el color medio de alrededor, antes de reducir.
+  Dos versiones del atlas (verde y magenta) no sirven para "triangulation matting" si no coinciden
+  píxel a píxel (estas, generadas aparte, difieren ~30 niveles en la corteza).
