@@ -179,3 +179,9 @@ Mira el script más parecido antes de empezar uno nuevo:
   la componente mayor (tras dilatar 3 px para unir foliolos sueltos). 3.768 triángulos, 1,9 MB.
 - `capturar_y_exportar.cjs` acepta `MARGEN=1.15` para el encuadre automático (modelos altos y
   estrechos salían cortados por arriba con 1,05).
+- **Pinsapo** (`pinsapo/pinsapo.py`, 2026-11): abeto en pisos (verticilos) de 4–6 ramas girados
+  entre sí; el largo de rama sigue un cono algo abombado. Ramitas a lo largo de cada rama: dos
+  casi planas hacia los lados y una que sube de canto (si todas son planas, de lado se ve solo la
+  madera). Ramas oscurecidas con color por vértice en la madera (0,42) y tronco en sombra por
+  encima del primer piso. Rejilla del atlas gris oscura como las acículas: se repinta con los
+  píxeles vecinos en sus posiciones conocidas antes de recortar. 19.216 triángulos, 3,7 MB.
