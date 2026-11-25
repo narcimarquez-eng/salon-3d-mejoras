@@ -32,7 +32,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 
-const DATOS = { glb: '__GLB__', trigo: '__TRIGO__', hojas: '__HOJAS__' };
+const DATOS = { glb: '__GLB__', trigo: '__TRIGO__', hojas: '__HOJAS__', flores: '__FLORES__' };
 const params = new URLSearchParams(location.search);
 const T_INICIO = Number(params.get('t') || 0);
 const PAUSA = params.has('pausa');
@@ -223,7 +223,19 @@ function crearTerreno() {
       float micro = 0.86 + 0.28 * ruidoValor(vMundoNZ.xz * 0.9) * ruidoValor(vMundoNZ.xz * 0.23 + 7.0);
       // a lo lejos el campo es una textura de espigas: vetas y manchas del color del trigo
       float surcos = 0.86 + 0.14 * ruidoValor(vMundoNZ.xz * vec2(1.6, 0.35)) + 0.08 * (ruidoValor(vMundoNZ.xz * 0.06) - 0.5);
-      diffuseColor.rgb *= micro * mix(1.0, surcos, 1.0 - smoothstep(${R_CAMPO - 10}.0, ${R_CAMPO + 20}.0, length(vMundoNZ.xz)));`
+      float enCampo = 1.0 - smoothstep(${R_CAMPO - 10}.0, ${R_CAMPO + 20}.0, length(vMundoNZ.xz));
+      diffuseColor.rgb *= micro * mix(1.0, surcos, enCampo);
+      // motas de flores en el suelo del campo: mismas manchas y flor dominante que crearFlores
+      // (ruidoValor es el mismo ruido que ruido() en JS), para que de lejos el prado se vea florido
+      float manchaF = ruidoValor(vMundoNZ.xz * 0.045 + vec2(31.0, 7.0));
+      float domF = floor(ruidoValor(vMundoNZ.xz * 0.02 + vec2(90.0, 40.0)) * 3.999);
+      vec2 celdaF = floor(vMundoNZ.xz * 3.0);
+      float hF = fract(sin(dot(celdaF, vec2(41.3, 289.1))) * 43758.5453);
+      float puntoF = smoothstep(0.30, 0.12, length(fract(vMundoNZ.xz * 3.0) - 0.5 - (vec2(hF, fract(hF * 13.7)) - 0.5) * 0.45));
+      float hayF = step(1.0 - (0.12 + 0.5 * smoothstep(0.35, 0.85, manchaF)), hF) * puntoF * enCampo;
+      vec3 colF = domF < 0.5 ? vec3(0.95, 0.93, 0.82) : domF < 1.5 ? vec3(0.78, 0.10, 0.08) : domF < 2.5 ? vec3(0.50, 0.38, 0.85) : vec3(0.95, 0.75, 0.15);
+      if (fract(hF * 7.3) < 0.3) colF = vec3(0.95, 0.93, 0.82);
+      diffuseColor.rgb = mix(diffuseColor.rgb, colF, hayF * 0.75);`
   });
   const m = new THREE.Mesh(geo, mat);
   m.receiveShadow = true;
@@ -302,6 +314,73 @@ function crearTrigo(tex) {
     uniforms: { uSwayAmp: { value: 0.16 }, uSwayFreq: { value: 1.95 }, uAltoBase: { value: ALTO_M } },
     uvVertex: '#ifdef USE_MAP\nvMapUv = vec2((aCelda + 0.004 + vMapUv.x * 0.992) * 0.25, vMapUv.y * 0.99);\n#endif',
     // vaivén de pradera-atlas.js: ola + ráfaga en el espacio del mundo, más fuerte arriba
+    beginVertex: `
+      vec4 wPosG = instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0);
+      float hFlex = clamp(position.y / max(0.05, uAltoBase), 0.0, 1.0);
+      float bend = hFlex * hFlex;
+      float ola = sin(uTime * uSwayFreq - wPosG.x * 0.24 - wPosG.z * 0.19);
+      float rafaga = cos(uTime * (uSwayFreq * 1.47) + wPosG.x * 0.61 - wPosG.z * 0.47) * 0.35;
+      float racha = 0.6 + 0.4 * ruidoValor(wPosG.xz * 0.02 + vec2(uTime * 0.35, uTime * 0.2));
+      vec2 worldShift = vec2(0.84, 0.54) * ((ola + rafaga) * uSwayAmp * bend * racha);
+      vec2 c0 = instanceMatrix[0].xz; vec2 c2 = instanceMatrix[2].xz;
+      float detXZ = c0.x * c2.y - c2.x * c0.y;
+      if (abs(detXZ) > 0.0001) {
+        transformed.x += (worldShift.x * c2.y - worldShift.y * c2.x) / detXZ;
+        transformed.z += (c0.x * worldShift.y - c0.y * worldShift.x) / detXZ;
+      }`
+  });
+  mesh.receiveShadow = true;
+  mesh.frustumCulled = false;
+  return mesh;
+}
+
+// ---------------------------------------------------------------------------
+// Flores entre el trigo: atlas "flores" de Creador-de-mundos-Rpg (js/pradera-atlas.js, crearAtlasCanvas):
+// 2x2 celdas de margaritas, amapolas, lavanda y prado silvestre. En manchas, muy tupidas cerca del árbol.
+// ---------------------------------------------------------------------------
+function crearFlores(tex) {
+  const ALTO_M = 1.25;
+  const geo = geometriaMata(1.4, ALTO_M);
+  const puntos = [];
+  let semilla = 131;
+  const rnd = () => { semilla = (semilla * 16807) % 2147483647; return semilla / 2147483647; };
+  const anillos = [[1.2, 55, 1.6, 1.0], [55, 140, 0.32, 1.35], [140, R_CAMPO, 0.07, 1.9]];
+  for (const [r0, r1, dens, esc] of anillos) {
+    const n = Math.round(Math.PI * (r1 * r1 - r0 * r0) * dens);
+    for (let i = 0; i < n; i++) {
+      const r = Math.sqrt(r0 * r0 + rnd() * (r1 * r1 - r0 * r0));
+      const a = rnd() * Math.PI * 2;
+      const x = Math.cos(a) * r, z = Math.sin(a) * r;
+      if (r > R_CAMPO - 25 && ruido(x * 0.05, z * 0.05) * 25 < r - (R_CAMPO - 25)) continue;
+      // manchas: donde el ruido es alto hay muchas flores, donde es bajo pocas (nunca ninguna)
+      const mancha = ruido(x * 0.045 + 31, z * 0.045 + 7);
+      if (rnd() > 0.25 + 0.9 * mancha) continue;
+      puntos.push([x, z, esc, mancha]);
+    }
+  }
+  const mesh = new THREE.InstancedMesh(geo, null, puntos.length);
+  const celdas = new Float32Array(puntos.length);
+  const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), sc = new THREE.Vector3(), p = new THREE.Vector3();
+  puntos.forEach(([x, z, esc, mancha], i) => {
+    // asoman por encima del trigo (1,15 m) o se quedan a media altura
+    const k = (0.85 + rnd() * 0.55) * esc;
+    e.set((rnd() - 0.5) * 0.15, rnd() * Math.PI * 2, (rnd() - 0.5) * 0.15);
+    q.setFromEuler(e);
+    sc.set(k, Math.min(k, 1.45) * (0.9 + rnd() * 0.35), k);
+    p.set(x, altura(x, z) - H0 - 0.04, z);
+    m4.compose(p, q, sc);
+    mesh.setMatrixAt(i, m4);
+    // cada mancha tiene su flor dominante (como zonaPraderaEn: parches coherentes)
+    const dom = Math.floor(ruido(x * 0.02 + 90, z * 0.02 + 40) * 3.999);
+    celdas[i] = rnd() < 0.55 ? dom : Math.floor(rnd() * 3.999);
+  });
+  geo.setAttribute('aCelda', new THREE.InstancedBufferAttribute(celdas, 1));
+  mesh.material = nubesYZelda(new THREE.MeshLambertMaterial({ map: tex, alphaTest: 0.5, side: THREE.DoubleSide, vertexColors: true }), {
+    sinVolteo: true,
+    vertexDecl: 'attribute float aCelda;\nuniform float uSwayAmp;\nuniform float uSwayFreq;\nuniform float uAltoBase;',
+    uniforms: { uSwayAmp: { value: 0.12 }, uSwayFreq: { value: 2.25 }, uAltoBase: { value: ALTO_M } },
+    // celda 0 y 1 arriba del lienzo, 2 y 3 abajo (con flipY la fila de arriba es v 0,5-1)
+    uvVertex: '#ifdef USE_MAP\nfloat colF = mod(aCelda, 2.0); float filF = 1.0 - floor(aCelda / 2.0);\nvMapUv = vec2(colF * 0.5 + 0.004 + vMapUv.x * 0.492, filF * 0.5 + 0.004 + vMapUv.y * 0.492);\n#endif',
     beginVertex: `
       vec4 wPosG = instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0);
       float hFlex = clamp(position.y / max(0.05, uAltoBase), 0.0, 1.0);
@@ -447,12 +526,14 @@ function cargarTextura(url) {
 
 let hojasCayendo = null;
 async function montar() {
-  const [texTrigo, texHojas, gltf] = await Promise.all([
+  const [texTrigo, texHojas, texFlores, gltf] = await Promise.all([
     cargarTextura(DATOS.trigo),
     cargarTextura(DATOS.hojas),
+    cargarTextura(DATOS.flores),
     new GLTFLoader().parseAsync(base64ABuffer(DATOS.glb), '')
   ]);
   scene.add(crearTrigo(texTrigo));
+  scene.add(crearFlores(texFlores));
 
   // liquidámbar protagonista
   const arbol = gltf.scene;

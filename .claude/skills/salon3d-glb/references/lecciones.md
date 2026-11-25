@@ -211,6 +211,7 @@ Mira el script más parecido antes de empezar uno nuevo:
   color de la hoja maciza vecina, y lo transparente el color medio de alrededor, antes de reducir.
   Dos versiones del atlas (verde y magenta) no sirven para "triangulation matting" si no coinciden
   píxel a píxel (estas, generadas aparte, difieren ~30 niveles en la corteza).
+- **Flores en el trigo**: atlas "flores" generado con `PraderaAtlasLib.crearAtlasCanvas` de Creador-de-mundos (Playwright → `escena_liquidambar/flores.png`). Las cabezas del atlas son pequeñas y de lejos desaparecen: motas del color de la flor dominante en el suelo del campo (mismo ruido en JS y GLSL) para que se lea florido.
 - **Escena HTML con vuelo de dron** (`escena_liquidambar/`, 2026-11): plantilla three.js + GLB y
   texturas en base64 (`construir.py`) para que se abra con doble clic. Cielo, nubes FBM, sombras de
   nubes en el suelo y el filtro "Zelda" copiados de Creador-de-mundos-Rpg (`visor-mundo.html`,
