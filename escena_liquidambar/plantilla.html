@@ -1,0 +1,550 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Liquidámbar en la pradera</title>
+<!-- Escena hecha con salon-3d: el liquidámbar (liquidambar/liquidambar.glb) en una pradera de trigo verde
+     entre montañas, con el cielo, las nubes, las sombras de nubes y la luz del estilo Zelda del visor de
+     Creador-de-mundos-Rpg (visor-mundo.html, js/terreno.js y js/pradera-atlas.js).
+     Vuelo de dron automático: se acerca, rodea y sobrevuela el árbol, atraviesa la copa y se aleja.
+     Depuración: ?t=30 empieza en el segundo 30; &pausa lo congela ahí. -->
+<style>
+  :root { --tinta: #f8fafc; --sombra: rgba(15, 23, 42, 0.55); }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #8fd3f7; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
+  canvas { display: block; }
+  #rotulo { position: fixed; left: 16px; bottom: 18px; color: var(--tinta); text-shadow: 0 1px 6px var(--sombra); pointer-events: none; }
+  #rotulo h1 { margin: 0; font-size: clamp(18px, 3vw, 28px); font-weight: 650; letter-spacing: 0.01em; }
+  #fase { margin-top: 2px; font-size: clamp(12px, 1.8vw, 15px); opacity: 0.9; }
+  #barra { position: fixed; left: 0; bottom: 0; height: 3px; width: 0; background: rgba(255, 255, 255, 0.85); }
+  #carga { position: fixed; inset: 0; display: grid; place-items: center; color: #0f172a; font-size: 16px; background: linear-gradient(#5fb4ef, #c8ecfb); transition: opacity 0.8s; }
+  #repetir { position: fixed; right: 16px; bottom: 16px; padding: 10px 16px; border: 0; border-radius: 999px; background: rgba(255, 255, 255, 0.9); color: #0f172a; font: 600 15px system-ui, sans-serif; cursor: pointer; box-shadow: 0 2px 12px var(--sombra); display: none; }
+  #repetir:hover { background: #fff; }
+</style>
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.186.1/examples/jsm/"}}</script>
+</head>
+<body>
+<div id="carga">Preparando la pradera…</div>
+<div id="rotulo"><h1>Liquidámbar en la pradera</h1><div id="fase"></div></div>
+<div id="barra"></div>
+<button id="repetir" type="button">↻ Repetir el vuelo</button>
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+
+const DATOS = { glb: '__GLB__', trigo: '__TRIGO__', hojas: '__HOJAS__' };
+const params = new URLSearchParams(location.search);
+const T_INICIO = Number(params.get('t') || 0);
+const PAUSA = params.has('pausa');
+
+// ---------------------------------------------------------------------------
+// Atmósfera de día del estilo Zelda (ATMO_ZELDA.day de visor-mundo.html)
+// ---------------------------------------------------------------------------
+const ATMO = { fog: '#a9e5f8', hemi: '#d6f3ff', ground: '#557d44', hemiI: 0.72, sun: '#fffbe6', sunI: 2.05, sunPos: [950, 1380, 680] };
+const SOL = new THREE.Vector3(...ATMO.sunPos).normalize();
+
+const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.75));
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.15;
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+document.body.prepend(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.fog = new THREE.FogExp2(ATMO.fog, 0.00085);
+const camera = new THREE.PerspectiveCamera(55, innerWidth / innerHeight, 0.05, 9000);
+
+// Uniformes compartidos: tiempo, sombras de nubes y estilo Zelda (como terrainU en el visor)
+const U = { uTime: { value: 0 }, uNubesSombra: { value: 1.0 }, uEstiloZelda: { value: 1.0 } };
+
+// ---------------------------------------------------------------------------
+// Cielo procedural del visor: degradado, sol con halo y corona, nubes FBM que se mueven
+// ---------------------------------------------------------------------------
+const cielo = new THREE.Mesh(new THREE.SphereGeometry(6000, 48, 24), new THREE.ShaderMaterial({
+  side: THREE.BackSide, depthWrite: false, fog: false,
+  uniforms: {
+    uCenit: { value: new THREE.Color('#2b6cb0') }, uHorizonte: { value: new THREE.Color('#bfe6f7') },
+    uSunDir: { value: SOL }, uSunColor: { value: new THREE.Color(ATMO.sun) },
+    uTime: U.uTime, uNight: { value: 0 }, uBloomSky: { value: 0.4 }
+  },
+  vertexShader: 'varying vec3 vDir; void main() { vDir = normalize(position); vec4 p = projectionMatrix * modelViewMatrix * vec4(position, 1.0); gl_Position = p.xyww; }',
+  fragmentShader: `
+    uniform vec3 uCenit; uniform vec3 uHorizonte; uniform vec3 uSunDir; uniform vec3 uSunColor;
+    uniform float uTime; uniform float uNight; uniform float uBloomSky;
+    varying vec3 vDir;
+    float skyHash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123); }
+    float skyNoise(vec2 p) { vec2 i = floor(p); vec2 f = fract(p); vec2 u = f * f * (3.0 - 2.0 * f);
+      return mix(mix(skyHash(i), skyHash(i + vec2(1.0, 0.0)), u.x), mix(skyHash(i + vec2(0.0, 1.0)), skyHash(i + vec2(1.0, 1.0)), u.x), u.y); }
+    float skyFbm(vec2 p) { float v = 0.0; float a = 0.5; mat2 rot = mat2(0.80, -0.60, 0.60, 0.80);
+      for (int i = 0; i < 5; i++) { v += a * skyNoise(p); p = rot * p * 2.04 + vec2(13.1, 7.7); a *= 0.5; } return v; }
+    void main() {
+      vec3 dir = normalize(vDir);
+      float h = clamp(dir.y, 0.0, 1.0);
+      vec3 col = mix(uHorizonte, uCenit, pow(h, 0.45));
+      vec3 sDir = normalize(uSunDir);
+      float sDot = max(dot(dir, sDir), 0.0);
+      float halo = pow(sDot, 7.0);
+      col += uSunColor * halo * (0.30 + 0.34 * (1.0 - h));
+      float sunDisc = smoothstep(0.9985, 0.99935, sDot);
+      float sunCorona = pow(sDot, 130.0) * 0.52;
+      col += uSunColor * (sunCorona + sunDisc * (1.10 + 0.40 * uBloomSky));
+      if (dir.y > 0.02) {
+        vec2 uvCloud = dir.xz / (max(dir.y, 0.06) + 0.14);
+        float c = skyFbm(uvCloud * 0.68 + vec2(uTime * 0.010, uTime * 0.004));
+        float cMask = smoothstep(0.50, 0.80, c) * smoothstep(0.02, 0.22, dir.y);
+        vec3 cloudBase = vec3(0.94, 0.96, 0.98) + uSunColor * (0.24 + 0.28 * halo);
+        vec3 cloudCol = clamp(mix(uHorizonte * 0.92, cloudBase, 0.72), 0.0, 0.94);
+        // cara de la nube en sombra (más densa = más gris azulada) y borde iluminado hacia el sol
+        cloudCol *= mix(1.0, 0.82, smoothstep(0.62, 0.95, c)) ;
+        col = mix(col, cloudCol, cMask * 0.66);
+      }
+      gl_FragColor = vec4(col, 1.0);
+      #include <colorspace_fragment>
+    }`
+}));
+cielo.frustumCulled = false;
+cielo.renderOrder = -1;
+scene.add(cielo);
+
+// ---------------------------------------------------------------------------
+// Luces (HemisphereLight + sol + relleno, como ensureScene del visor)
+// ---------------------------------------------------------------------------
+scene.add(new THREE.HemisphereLight(ATMO.hemi, ATMO.ground, ATMO.hemiI));
+const sol = new THREE.DirectionalLight(ATMO.sun, ATMO.sunI);
+sol.position.copy(SOL).multiplyScalar(120);
+sol.castShadow = true;
+sol.shadow.mapSize.set(2048, 2048);
+Object.assign(sol.shadow.camera, { left: -22, right: 22, top: 22, bottom: -22, near: 40, far: 240 });
+sol.shadow.bias = -0.0004;
+sol.shadow.normalBias = 0.04;
+scene.add(sol, sol.target);
+const relleno = new THREE.DirectionalLight('#bfdfff', 0.28);
+relleno.position.set(-SOL.x, 0.6, -SOL.z).multiplyScalar(100);
+scene.add(relleno);
+
+// ---------------------------------------------------------------------------
+// Sombras de nubes + estilo Zelda en cualquier material (mismo ruido que js/terreno.js)
+// ---------------------------------------------------------------------------
+const RUIDO_GLSL = 'float ruidoValor(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f); float a = fract(sin(dot(i, vec2(127.1, 311.7))) * 43758.5453); float b = fract(sin(dot(i + vec2(1.0, 0.0), vec2(127.1, 311.7))) * 43758.5453); float c = fract(sin(dot(i + vec2(0.0, 1.0), vec2(127.1, 311.7))) * 43758.5453); float d = fract(sin(dot(i + vec2(1.0, 1.0), vec2(127.1, 311.7))) * 43758.5453); return mix(mix(a, b, f.x), mix(c, d, f.x), f.y); }';
+
+function nubesYZelda(material, extra = {}) {
+  material.onBeforeCompile = (shader) => {
+    Object.assign(shader.uniforms, U, extra.uniforms || {});
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', '#include <common>\nuniform float uTime;\nvarying vec3 vMundoNZ;\n' + RUIDO_GLSL + '\n' + (extra.vertexDecl || ''))
+      .replace('#include <uv_vertex>', '#include <uv_vertex>\n' + (extra.uvVertex || ''))
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\n' + (extra.beginVertex || ''))
+      .replace('#include <project_vertex>', `#include <project_vertex>
+        vec4 wpNZ = vec4(transformed, 1.0);
+        #ifdef USE_INSTANCING
+          wpNZ = instanceMatrix * wpNZ;
+        #endif
+        vMundoNZ = (modelMatrix * wpNZ).xyz;`);
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', '#include <common>\nuniform float uTime;\nuniform float uNubesSombra;\nuniform float uEstiloZelda;\nvarying vec3 vMundoNZ;\n' + RUIDO_GLSL + '\n' + (extra.fragmentDecl || ''))
+      .replace('#include <normal_fragment_begin>', '#include <normal_fragment_begin>\n' + (extra.sinVolteo ? 'normal = normalize(vNormal);' : ''))
+      .replace('#include <color_fragment>', `#include <color_fragment>
+        ${extra.colorFragment || ''}
+        if (uNubesSombra > 0.01) {
+          float nCb1 = ruidoValor(vMundoNZ.xz * 0.0036 + vec2(uTime * 0.016, uTime * 0.009));
+          float nCb2 = ruidoValor(vMundoNZ.xz * 0.0085 - vec2(uTime * 0.011, -uTime * 0.007));
+          float cloudSh = smoothstep(0.46, 0.78, nCb1 * 0.72 + nCb2 * 0.28) * uNubesSombra;
+          diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * vec3(0.75, 0.80, 0.90), cloudSh);
+        }
+        if (uEstiloZelda > 0.01) {
+          float zLum = dot(diffuseColor.rgb, vec3(0.299, 0.587, 0.114));
+          vec3 zPastoral = clamp(vec3(zLum) + (diffuseColor.rgb - vec3(zLum)) * 1.22, 0.0, 1.35);
+          diffuseColor.rgb = mix(diffuseColor.rgb, zPastoral, uEstiloZelda * 0.70);
+        }`);
+  };
+  return material;
+}
+
+// ---------------------------------------------------------------------------
+// Terreno: pradera llana en el centro y montañas alrededor
+// ---------------------------------------------------------------------------
+function hash2(x, y) { const s = Math.sin(x * 127.1 + y * 311.7) * 43758.5453; return s - Math.floor(s); }
+function ruido(x, y) {
+  const xi = Math.floor(x), yi = Math.floor(y), xf = x - xi, yf = y - yi;
+  const u = xf * xf * (3 - 2 * xf), v = yf * yf * (3 - 2 * yf);
+  const a = hash2(xi, yi), b = hash2(xi + 1, yi), c = hash2(xi, yi + 1), d = hash2(xi + 1, yi + 1);
+  return a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v;
+}
+function crestas(x, y) {   // fbm de crestas: picos afilados
+  let v = 0, a = 0.55, f = 1, w = 0;
+  for (let i = 0; i < 6; i++) {
+    let n = 1 - Math.abs(ruido(x * f, y * f) * 2 - 1);
+    n = n * n;
+    v += n * a; w += a; a *= 0.5; f *= 2.03;
+  }
+  return v / w;
+}
+const suave = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+const R_CAMPO = 270;
+function altura(x, z) {
+  const d = Math.hypot(x, z);
+  const valle = suave(260, 1150, d);
+  const ang = Math.atan2(z, x);
+  const montes = crestas(x * 0.0017 + 40, z * 0.0017 + 11) * (330 + 170 * ruido(ang * 1.7 + 5, 3.3)) * valle;
+  const lomas = (ruido(x * 0.006 + 3, z * 0.006 + 9) - 0.5) * 9 * suave(60, 420, d);
+  const ondula = (ruido(x * 0.03, z * 0.03) - 0.5) * 0.9;
+  return montes + lomas + ondula;
+}
+const H0 = altura(0, 0);
+
+function crearTerreno() {
+  const geo = new THREE.PlaneGeometry(6400, 6400, 320, 320);
+  geo.rotateX(-Math.PI / 2);
+  const pos = geo.attributes.position;
+  const col = new Float32Array(pos.count * 3);
+  const c = new THREE.Color();
+  const cCampo = new THREE.Color('#6f8d3a'), cPrado = new THREE.Color('#4f7a3a'), cPrado2 = new THREE.Color('#738f47');
+  const cRoca = new THREE.Color('#857f74'), cRoca2 = new THREE.Color('#6a665f'), cNieve = new THREE.Color('#f4f7fb'), cBosque = new THREE.Color('#3f6b34');
+  for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i), z = pos.getZ(i);
+    const y = altura(x, z) - H0;
+    pos.setY(i, y);
+    const d = Math.hypot(x, z);
+    const pend = Math.hypot(altura(x + 3, z) - altura(x - 3, z), altura(x, z + 3) - altura(x, z - 3)) / 6;
+    c.copy(cPrado).lerp(cPrado2, ruido(x * 0.01, z * 0.01));
+    c.lerp(cCampo, 1 - suave(R_CAMPO - 15, R_CAMPO + 25, d));
+    c.lerp(cBosque, suave(40, 160, y) * (1 - suave(0.9, 1.4, pend)) * 0.8 * (1 - suave(220, 320, y)));
+    c.lerp(ruido(x * 0.02, z * 0.02) > 0.5 ? cRoca : cRoca2, suave(0.55, 1.0, pend) * suave(25, 90, y));
+    c.lerp(cNieve, suave(300 + 60 * ruido(x * 0.004, z * 0.004), 370, y) * (1 - suave(1.1, 1.8, pend) * 0.6));
+    col[i * 3] = c.r; col[i * 3 + 1] = c.g; col[i * 3 + 2] = c.b;
+  }
+  geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  geo.computeVertexNormals();
+  const mat = nubesYZelda(new THREE.MeshLambertMaterial({ vertexColors: true }), {
+    colorFragment: `
+      float micro = 0.86 + 0.28 * ruidoValor(vMundoNZ.xz * 0.9) * ruidoValor(vMundoNZ.xz * 0.23 + 7.0);
+      // a lo lejos el campo es una textura de espigas: vetas y manchas del color del trigo
+      float surcos = 0.86 + 0.14 * ruidoValor(vMundoNZ.xz * vec2(1.6, 0.35)) + 0.08 * (ruidoValor(vMundoNZ.xz * 0.06) - 0.5);
+      diffuseColor.rgb *= micro * mix(1.0, surcos, 1.0 - smoothstep(${R_CAMPO - 10}.0, ${R_CAMPO + 20}.0, length(vMundoNZ.xz)));`
+  });
+  const m = new THREE.Mesh(geo, mat);
+  m.receiveShadow = true;
+  return m;
+}
+scene.add(crearTerreno());
+
+// ---------------------------------------------------------------------------
+// Trigo verde: matas del atlas en estrella de 3 planos con 2 tramos (como pradera-atlas.js), viento
+// ---------------------------------------------------------------------------
+function geometriaMata(ancho, alto) {
+  const P = [], N = [], UV = [], C = [], I = [];
+  for (let p = 0; p < 3; p++) {
+    const ang = (p * Math.PI) / 3, ca = Math.cos(ang), sa = Math.sin(ang), base = p * 6;
+    const v = (r, y, u, vv, k) => {
+      P.push(ca * r, y, sa * r);
+      const nx = ca * r * 0.24, ny = 0.97, nz = sa * r * 0.24, nl = Math.hypot(nx, ny, nz);
+      N.push(nx / nl, ny / nl, nz / nl);
+      UV.push(u, vv);
+      C.push(k, k, k);
+    };
+    v(-ancho * 0.5, 0, 0, 0, 0.62); v(ancho * 0.5, 0, 1, 0, 0.62);
+    v(-ancho * 0.52, alto * 0.5, 0, 0.5, 0.92); v(ancho * 0.52, alto * 0.5, 1, 0.5, 0.92);
+    v(-ancho * 0.55, alto, 0, 1, 1.06); v(ancho * 0.55, alto, 1, 1, 1.06);
+    I.push(base, base + 1, base + 2, base + 1, base + 3, base + 2, base + 2, base + 3, base + 4, base + 3, base + 5, base + 4);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(P, 3));
+  g.setAttribute('normal', new THREE.Float32BufferAttribute(N, 3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(UV, 2));
+  g.setAttribute('color', new THREE.Float32BufferAttribute(C, 3));
+  g.setIndex(I);
+  return g;
+}
+
+function crearTrigo(tex) {
+  const ALTO_M = 1.15;
+  const geo = geometriaMata(1.25, ALTO_M);
+  const puntos = [];
+  let semilla = 7;
+  const rnd = () => { semilla = (semilla * 16807) % 2147483647; return semilla / 2147483647; };
+  // denso cerca del árbol, más claro lejos (el suelo del campo tiene el mismo verde y tapa los huecos)
+  // [radio desde, hasta, matas por m², escala]: lejos menos matas pero más grandes
+  const anillos = [[1.4, 55, 1.3, 1.0], [55, 140, 0.55, 1.35], [140, R_CAMPO, 0.2, 1.9]];
+  for (const [r0, r1, dens, esc] of anillos) {
+    const n = Math.round(Math.PI * (r1 * r1 - r0 * r0) * dens);
+    for (let i = 0; i < n; i++) {
+      const r = Math.sqrt(r0 * r0 + rnd() * (r1 * r1 - r0 * r0));
+      const a = rnd() * Math.PI * 2;
+      const x = Math.cos(a) * r, z = Math.sin(a) * r;
+      // bordes del campo irregulares
+      if (r > R_CAMPO - 25 && ruido(x * 0.05, z * 0.05) * 25 < r - (R_CAMPO - 25)) continue;
+      puntos.push([x, z, esc]);
+    }
+  }
+  const mesh = new THREE.InstancedMesh(geo, null, puntos.length);
+  const celdas = new Float32Array(puntos.length);
+  const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), s = new THREE.Vector3(), p = new THREE.Vector3();
+  puntos.forEach(([x, z, esc], i) => {
+    const k = (0.8 + rnd() * 0.5) * esc;
+    e.set((rnd() - 0.5) * 0.12, rnd() * Math.PI * 2, (rnd() - 0.5) * 0.12);
+    q.setFromEuler(e);
+    s.set(k, Math.min(k, 1.5) * (0.85 + rnd() * 0.3), k);
+    p.set(x, altura(x, z) - H0 - 0.05, z);
+    m4.compose(p, q, s);
+    mesh.setMatrixAt(i, m4);
+    const r = rnd();
+    celdas[i] = r < 0.42 ? 0 : r < 0.66 ? 1 : r < 0.84 ? 2 : 3;
+  });
+  geo.setAttribute('aCelda', new THREE.InstancedBufferAttribute(celdas, 1));
+  mesh.material = nubesYZelda(new THREE.MeshLambertMaterial({ map: tex, alphaTest: 0.5, side: THREE.DoubleSide, vertexColors: true }), {
+    sinVolteo: true,
+    // trigo verde (el atlas es verde amarillento muy claro y con el sol salía pajizo)
+    colorFragment: 'diffuseColor.rgb *= vec3(0.7, 0.88, 0.54);',
+    vertexDecl: 'attribute float aCelda;\nuniform float uSwayAmp;\nuniform float uSwayFreq;\nuniform float uAltoBase;',
+    uniforms: { uSwayAmp: { value: 0.16 }, uSwayFreq: { value: 1.95 }, uAltoBase: { value: ALTO_M } },
+    uvVertex: '#ifdef USE_MAP\nvMapUv = vec2((aCelda + 0.004 + vMapUv.x * 0.992) * 0.25, vMapUv.y * 0.99);\n#endif',
+    // vaivén de pradera-atlas.js: ola + ráfaga en el espacio del mundo, más fuerte arriba
+    beginVertex: `
+      vec4 wPosG = instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0);
+      float hFlex = clamp(position.y / max(0.05, uAltoBase), 0.0, 1.0);
+      float bend = hFlex * hFlex;
+      float ola = sin(uTime * uSwayFreq - wPosG.x * 0.24 - wPosG.z * 0.19);
+      float rafaga = cos(uTime * (uSwayFreq * 1.47) + wPosG.x * 0.61 - wPosG.z * 0.47) * 0.35;
+      float racha = 0.6 + 0.4 * ruidoValor(wPosG.xz * 0.02 + vec2(uTime * 0.35, uTime * 0.2));
+      vec2 worldShift = vec2(0.84, 0.54) * ((ola + rafaga) * uSwayAmp * bend * racha);
+      vec2 c0 = instanceMatrix[0].xz; vec2 c2 = instanceMatrix[2].xz;
+      float detXZ = c0.x * c2.y - c2.x * c0.y;
+      if (abs(detXZ) > 0.0001) {
+        transformed.x += (worldShift.x * c2.y - worldShift.y * c2.x) / detXZ;
+        transformed.z += (c0.x * worldShift.y - c0.y * worldShift.x) / detXZ;
+      }`
+  });
+  mesh.receiveShadow = true;
+  mesh.frustumCulled = false;
+  return mesh;
+}
+
+// ---------------------------------------------------------------------------
+// Hojas que caen del árbol
+// ---------------------------------------------------------------------------
+function crearHojasCayendo(tex, centro, radio, alto) {
+  const N = 260;
+  const geo = new THREE.PlaneGeometry(0.16, 0.16);
+  const celdas = new Float32Array(N);
+  for (let i = 0; i < N; i++) celdas[i] = i % 4;
+  geo.setAttribute('aCelda', new THREE.InstancedBufferAttribute(celdas, 1));
+  const mat = nubesYZelda(new THREE.MeshLambertMaterial({ map: tex, alphaTest: 0.5, side: THREE.DoubleSide }), {
+    sinVolteo: true,
+    vertexDecl: 'attribute float aCelda;',
+    uvVertex: '#ifdef USE_MAP\nvMapUv = vec2((aCelda + vMapUv.x) * 0.25, vMapUv.y);\n#endif'
+  });
+  const mesh = new THREE.InstancedMesh(geo, mat, N);
+  mesh.frustumCulled = false;
+  const est = [];
+  for (let i = 0; i < N; i++) {
+    est.push({ fase: Math.random() * 100, vel: 0.5 + Math.random() * 0.5, r: Math.sqrt(Math.random()) * radio, a: Math.random() * 6.28, giro: (Math.random() - 0.5) * 4, deriva: 0.6 + Math.random() * 1.6 });
+  }
+  const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), p = new THREE.Vector3(), s = new THREE.Vector3(1, 1, 1);
+  mesh.actualizar = (t) => {
+    for (let i = 0; i < N; i++) {
+      const h = est[i];
+      const ciclo = alto / h.vel;
+      const k = ((t + h.fase) % ciclo) / ciclo;             // 0 arriba, 1 en el suelo
+      const y = centro.y + alto * (1 - k) + 0.05;
+      const vaiven = Math.sin((t + h.fase) * 1.7) * 0.5;
+      p.set(centro.x + Math.cos(h.a) * h.r + vaiven + k * h.deriva * 3, y, centro.z + Math.sin(h.a) * h.r + k * h.deriva * 1.8);
+      e.set(Math.sin((t + h.fase) * 2.3) * 1.2, (t + h.fase) * h.giro, Math.cos((t + h.fase) * 1.9) * 1.1);
+      q.setFromEuler(e);
+      m4.compose(p, q, s);
+      mesh.setMatrixAt(i, m4);
+    }
+    mesh.instanceMatrix.needsUpdate = true;
+  };
+  return mesh;
+}
+
+// ---------------------------------------------------------------------------
+// Vuelo del dron: puntos de paso con su segundo; se mira al árbol salvo al atravesar la copa
+// ---------------------------------------------------------------------------
+const RUTA = [
+  [0, -300, 40, 330], [6, -190, 19, 214], [12, -96, 7.5, 110], [17, -40, 4.2, 45], [21, -15, 5.5, 15],
+  [25, -12, 13.5, -6], [29, -2, 21.5, -13], [33, 9, 23.5, -3], [37, 14, 15, 8],
+  [40, 10, 10.6, 3.6], [42, 4.6, 9.9, 2.5], [44, 0, 9.5, 1.8], [46, -4.6, 9.2, 1.0], [48, -10, 9.4, 0],
+  [52, -24, 11, -4], [58, -58, 16, -14], [66, -135, 26, -34], [76, -270, 44, -68]
+];
+const T_FIN = RUTA[RUTA.length - 1][0];
+const T_TOTAL = T_FIN + 2.5;
+const FASES = [[0, 'Acercamiento sobre el trigo'], [21, 'Rodeando el liquidámbar'], [29, 'Sobrevolando la copa'], [39, 'Atravesando las hojas'], [49, 'Alejándose despacio']];
+let curva, centroArbol = new THREE.Vector3(0, 8.5, 0);
+// Paso por dentro de la copa (puntos 9 a 13 de RUTA): una recta horizontal que cruza la copa de +X a -X
+// a la altura y a la distancia del tronco que más se alejan de las ramas (se calcula al cargar el árbol)
+const TRAMO_COPA = [9, 10, 11, 12, 13];
+function prepararRuta() {
+  curva = new THREE.CatmullRomCurve3(RUTA.map(([, x, y, z]) => new THREE.Vector3(x, y, z)), false, 'centripetal');
+}
+function elegirPasoPorLaCopa(madera, alto) {
+  let mejor = null;
+  for (let h = alto * 0.45; h <= alto * 0.72; h += 0.25) {
+    for (const zc of [-2.4, -2.0, -1.6, -1.2, 1.2, 1.6, 2.0, 2.4]) {
+      // distancia mínima de la recta (x de -6 a 6) a la madera
+      let dmin = Infinity;
+      for (let j = 0; j < madera.length; j += 3) {
+        const x = madera[j];
+        if (x < -6 || x > 6) continue;
+        const dy = madera[j + 1] - h, dz = madera[j + 2] - zc;
+        const d2 = dy * dy + dz * dz;
+        if (d2 < dmin) dmin = d2;
+      }
+      const nota = Math.sqrt(dmin) - 0.05 * Math.abs(h - alto * 0.6);
+      if (!mejor || nota > mejor.nota) mejor = { nota, h, zc, d: Math.sqrt(dmin) };
+    }
+  }
+  TRAMO_COPA.forEach((i) => { RUTA[i][2] = mejor.h; RUTA[i][3] = mejor.zc; });
+  RUTA[8][2] = mejor.h + 4; RUTA[8][3] = mejor.zc + 4;        // llega desde arriba y algo de lado
+  RUTA[14][2] = mejor.h + 0.6; RUTA[14][3] = mejor.zc * 1.2;   // y sale recto
+  prepararRuta();
+  window.__pasoCopa = { altura: +mejor.h.toFixed(2), lado: mejor.zc, distanciaMinimaRama: +mejor.d.toFixed(2) };
+}
+function indiceRuta(t) {
+  for (let i = 0; i < RUTA.length - 1; i++) {
+    if (t <= RUTA[i + 1][0]) return (i + (t - RUTA[i][0]) / (RUTA[i + 1][0] - RUTA[i][0])) / (RUTA.length - 1);
+  }
+  return 1;
+}
+const tmpA = new THREE.Vector3(), tmpB = new THREE.Vector3(), mira = new THREE.Vector3();
+function colocarCamara(t) {
+  // el dron arranca despacio y acelera en los primeros 5 s (el reloj del vuelo va 2,5 s por detrás)
+  const tv = t < 5 ? (t * t) / 10 : t - 2.5;
+  const u = indiceRuta(Math.min(T_FIN, tv));
+  curva.getPoint(Math.min(1, u), tmpA);
+  curva.getPoint(Math.min(1, u + 0.0015), tmpB);
+  // vaivén de dron
+  tmpA.y += Math.sin(t * 0.9) * 0.12;
+  tmpA.x += Math.sin(t * 0.53) * 0.08;
+  camera.position.copy(tmpA);
+  const dirV = tmpB.sub(tmpA); dirV.y *= 0.2;
+  const adelante = dirV.normalize().multiplyScalar(12).add(tmpA);
+  const w = suave(38, 40.5, tv) * (1 - suave(46.5, 50, tv));
+  mira.copy(centroArbol).lerp(adelante, w);
+  camera.lookAt(mira);
+  camera.rotateZ(Math.sin(t * 0.41) * 0.012 - w * 0.03);
+}
+
+// ---------------------------------------------------------------------------
+// Carga de los recursos embebidos
+// ---------------------------------------------------------------------------
+function base64ABuffer(b64) {
+  const bin = atob(b64.split(',').pop());
+  const buf = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
+  return buf.buffer;
+}
+function cargarTextura(url) {
+  return new Promise((res) => new THREE.TextureLoader().load(url, (t) => {
+    t.colorSpace = THREE.SRGBColorSpace;
+    t.anisotropy = renderer.capabilities.getMaxAnisotropy();
+    res(t);
+  }));
+}
+
+let hojasCayendo = null;
+async function montar() {
+  const [texTrigo, texHojas, gltf] = await Promise.all([
+    cargarTextura(DATOS.trigo),
+    cargarTextura(DATOS.hojas),
+    new GLTFLoader().parseAsync(base64ABuffer(DATOS.glb), '')
+  ]);
+  scene.add(crearTrigo(texTrigo));
+
+  // liquidámbar protagonista
+  const arbol = gltf.scene;
+  arbol.traverse((o) => {
+    if (!o.isMesh) return;
+    o.castShadow = true;
+    o.receiveShadow = true;
+    const mat = o.material;
+    const esHoja = mat.alphaTest > 0;
+    nubesYZelda(mat, esHoja ? {
+      sinVolteo: false,
+      colorFragment: 'diffuseColor.rgb *= 1.3;',
+      // brisa suave en las hojas (más arriba y más fuera, más se mueven)
+      beginVertex: `
+        float alturaH = max(0.0, position.y - 3.0);
+        transformed.x += sin(uTime * 1.3 + position.y * 0.6 + position.z * 0.4) * 0.035 * alturaH * 0.12;
+        transformed.z += cos(uTime * 1.1 + position.x * 0.5) * 0.03 * alturaH * 0.12;`
+    } : {});
+    mat.needsUpdate = true;
+  });
+  const caja = new THREE.Box3().setFromObject(arbol);
+  const centro = caja.getCenter(new THREE.Vector3());
+  arbol.position.set(-centro.x, -caja.min.y - 0.15, -centro.z);
+  scene.add(arbol);
+  const alto = caja.max.y - caja.min.y;
+  centroArbol.set(0, alto * 0.56, 0);
+  arbol.updateMatrixWorld(true);
+  const madera = [];
+  arbol.traverse((o) => {
+    if (!o.isMesh || o.material.alphaTest > 0) return;
+    const pa = o.geometry.attributes.position, v = new THREE.Vector3();
+    for (let i = 0; i < pa.count; i += 2) {
+      v.fromBufferAttribute(pa, i).applyMatrix4(o.matrixWorld);
+      madera.push(v.x, v.y, v.z);
+    }
+  });
+  elegirPasoPorLaCopa(madera, alto);
+
+  // otros liquidámbares a lo lejos, al borde del campo y en las lomas
+  const lejanos = [[-150, 120, 0.9], [210, 60, 1.05], [140, -230, 0.85], [-260, -180, 1.1], [330, 260, 0.95], [-60, -330, 0.8], [400, -60, 1.0]];
+  for (const [x, z, k] of lejanos) {
+    const c = arbol.clone();
+    c.traverse((o) => { if (o.isMesh) { o.castShadow = false; o.receiveShadow = false; } });
+    c.scale.setScalar(k);
+    c.rotation.y = x * 0.37;
+    c.position.set(x - centro.x * k, altura(x, z) - H0 - caja.min.y * k - 0.2, z - centro.z * k);
+    scene.add(c);
+  }
+
+  hojasCayendo = crearHojasCayendo(texHojas, new THREE.Vector3(0, 0, 0), 3.8, alto * 0.78);
+  scene.add(hojasCayendo);
+  sol.target.position.set(0, alto * 0.4, 0);
+  sol.position.copy(SOL).multiplyScalar(120).add(sol.target.position);
+}
+
+// ---------------------------------------------------------------------------
+// Bucle
+// ---------------------------------------------------------------------------
+const $fase = document.getElementById('fase'), $barra = document.getElementById('barra'), $repetir = document.getElementById('repetir');
+let t0 = 0;
+function empezar() { t0 = performance.now() / 1000 - T_INICIO; $repetir.style.display = 'none'; }
+$repetir.addEventListener('click', empezar);
+addEventListener('resize', () => { camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight); });
+
+function cuadro() {
+  const ahora = performance.now() / 1000;
+  const t = PAUSA ? T_INICIO : Math.min(T_TOTAL, ahora - t0);
+  U.uTime.value = PAUSA ? T_INICIO : ahora;
+  colocarCamara(t);
+  cielo.position.copy(camera.position);
+  if (hojasCayendo) hojasCayendo.actualizar(U.uTime.value);
+  let nombre = FASES[0][1];
+  const tvF = t < 5 ? (t * t) / 10 : t - 2.5;
+  for (const [tf, n] of FASES) if (tvF >= tf) nombre = n;
+  $fase.textContent = nombre;
+  $barra.style.width = (100 * t / T_TOTAL).toFixed(2) + '%';
+  if (t >= T_TOTAL && !PAUSA) $repetir.style.display = 'block';
+  renderer.render(scene, camera);
+  window.__cuadros = (window.__cuadros || 0) + 1;
+}
+
+montar().then(() => {
+  const carga = document.getElementById('carga');
+  carga.style.opacity = '0';
+  setTimeout(() => carga.remove(), 900);
+  empezar();
+  renderer.setAnimationLoop(cuadro);
+  window.__listo = true;
+}).catch((err) => {
+  document.getElementById('carga').textContent = 'No se pudo cargar la escena: ' + err.message;
+  console.error(err);
+});
+</script>
+</body>
+</html>

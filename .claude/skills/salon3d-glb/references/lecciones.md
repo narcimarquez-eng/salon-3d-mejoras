@@ -211,3 +211,11 @@ Mira el script más parecido antes de empezar uno nuevo:
   color de la hoja maciza vecina, y lo transparente el color medio de alrededor, antes de reducir.
   Dos versiones del atlas (verde y magenta) no sirven para "triangulation matting" si no coinciden
   píxel a píxel (estas, generadas aparte, difieren ~30 niveles en la corteza).
+- **Escena HTML con vuelo de dron** (`escena_liquidambar/`, 2026-11): plantilla three.js + GLB y
+  texturas en base64 (`construir.py`) para que se abra con doble clic. Cielo, nubes FBM, sombras de
+  nubes en el suelo y el filtro "Zelda" copiados de Creador-de-mundos-Rpg (`visor-mundo.html`,
+  `js/terreno.js`, `js/pradera-atlas.js`), inyectados con `onBeforeCompile`. Tarjetas de doble cara
+  en three.js: anular el volteo de la normal en la cara trasera (`normal = normalize(vNormal)`) o la
+  mitad de las matas salen negras. Para atravesar la copa, buscar la recta por dentro (a menos de
+  2,5 m del tronco) más alejada de la madera; una búsqueda libre acaba rodeando el árbol.
+  Para probar sin red: Playwright con `page.route` sirviendo three desde `node_modules`.
