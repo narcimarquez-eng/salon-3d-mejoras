@@ -1,7 +1,8 @@
 # Texturas del eucalipto a partir del atlas del usuario (eucalipto/fotos/atlas_eucalipto.jpg):
 #   public/eucalipto/hojas.png   2048x2048, 4x4 celdas de 512:
 #       0-1 ramilletes colgantes (tallo arriba), 2-4 ramas de hojas (tallo abajo),
-#       5 hojas redondas plateadas, 6 ramita pequena, 7 ramita plateada, 8-9 frutos (cuelgan)
+#       5 hojas redondas plateadas, 6 ramita pequena, 7 ramita plateada, 8-9 frutos (cuelgan),
+#       10-11 tiras de corteza que cuelgan, 12-13 ramitas peladas
 #   public/eucalipto/corteza.jpg  corteza lisa que se desprende en tiras (gris, ocre y rosada), repetible
 #   public/eucalipto/corteza_base.jpg  corteza rugosa de la base del tronco, repetible
 # Fondo de cuadros gris neutro (saturacion 0): alpha por color y luminancia; los recortes van por dentro
@@ -26,6 +27,10 @@ PIEZAS = [
     ((1406, 910, 1594, 1108), False),  # 7 ramita plateada
     ((1606, 910, 1794, 1108), True),   # 8 frutos
     ((1806, 910, 1994, 1108), True),   # 9 rama con frutos
+    ((36, 910, 196, 1108), True),      # 10 tiras de corteza que se desprenden (cuelgan)
+    ((206, 910, 396, 1108), True),     # 11 tira de corteza retorcida (cuelga)
+    ((406, 910, 596, 1108), False),    # 12 ramita pelada en Y
+    ((606, 910, 796, 1108), False),    # 13 ramita pelada curva
 ]
 
 

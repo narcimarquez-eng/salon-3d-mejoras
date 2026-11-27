@@ -220,7 +220,7 @@ Mira el script más parecido antes de empezar uno nuevo:
   mitad de las matas salen negras. Para atravesar la copa, buscar la recta por dentro (a menos de
   2,5 m del tronco) más alejada de la madera; una búsqueda libre acaba rodeando el árbol.
   Para probar sin red: Playwright con `page.route` sirviendo three desde `node_modules`.
-- **Eucalipto** (`eucalipto/eucalipto.py`, 2026-11): dos cortezas = dos mallas; tras crear la
+- **Eucalipto** (`eucalipto/eucalipto.py`, 2026-11): tiras de corteza del atlas (celdas 10-11) como tarjetas colgando pegadas al tronco, con la normal hacia fuera del tronco (parámetro `nfija` de `tarjeta`), en el paso de corteza rugosa a lisa: tapan el borde del manguito. dos cortezas = dos mallas; tras crear la
   primera se vacían las listas globales (`M_VERTS = []`...) y `tubo` sigue llenando las nuevas (el
   motor lo admite). La base rugosa es un "manguito" algo más ancho que el fuste (si no, el fuste
   asoma entre la corteza). Corteza en tiras verticales: el fundido normal deja un corte horizontal

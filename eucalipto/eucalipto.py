@@ -294,7 +294,7 @@ def sombra(p):
         a = a * 0.88
     return a
 
-def tarjeta(base, d, lado, alto, ancho, celda, tinte, colgando=False):
+def tarjeta(base, d, lado, alto, ancho, celda, tinte, colgando=False, nfija=[]):
     col = celda % 4
     fil = int(celda / 4)
     u0 = col / 4.0 + 0.002
@@ -320,8 +320,12 @@ def tarjeta(base, d, lado, alto, ancho, celda, tinte, colgando=False):
             H_UVS.append(uvs[k][0])
             H_UVS.append(uvs[k][1])
             n = normal_copa(pts[k])
+            if len(nfija) > 0:
+                n = nfija
             H_NORM.append((n[0], n[1], n[2]))
             s = sombra(pts[k])
+            if len(nfija) > 0:
+                s = 0.95
             if k < 2 and not colgando:
                 s = s * 0.85
             H_COL.append(s * tinte[0])
@@ -363,6 +367,32 @@ for i in range(130):
     g = SITIOS[int(azar() * len(SITIOS)) % len(SITIOS)]
     p = suma(g[0], [entre(-2.6, 2.6), entre(-2.6, 2.6), entre(-2.2, 1.4)])
     mechon(p, unit([p[0] - CC[0], p[1] - CC[1], 0.01]), entre(0.8, 1.1))
+
+# tiras de corteza que se desprenden (celdas 10-11 del atlas): cuelgan pegadas al tronco donde la
+# corteza rugosa da paso a la lisa (5 m), en la cruz y a lo largo de los brazos
+def tira(eje, t, radio, largo, ang):
+    c = punto_en(eje, t)
+    fuera = [math.cos(ang), math.sin(ang), 0.0]
+    lado = [-math.sin(ang), math.cos(ang), 0.0]
+    arriba = suma(c, por(fuera, radio + 0.04))
+    d = unit(suma([0, 0, -1.0], por(fuera, entre(0.12, 0.3))))
+    tarjeta(arriba, d, lado, largo, largo * 0.7, 10 + int(azar() * 2) % 2, [entre(0.9, 1.05), 0.95, 0.9], True, fuera)
+
+for i in range(22):
+    a = i * 0.2856 + entre(-0.12, 0.12)
+    tira(fuste, entre(6.0, 7.2) / Z_CRUZ, 0.58, entre(2.2, 3.4), a)
+for i in range(14):
+    a = entre(0, 6.28)
+    tira(fuste, entre(0.6, 0.98), 0.5, entre(1.6, 2.6), a)
+
+# ramitas peladas y secas (celdas 12-13) entre la copa
+for i in range(28):
+    g = SITIOS[int(azar() * len(SITIOS)) % len(SITIOS)]
+    p = suma(g[0], [entre(-1.5, 1.5), entre(-1.5, 1.5), entre(-1.5, 0.5)])
+    a = entre(0, 3.14)
+    d = unit([entre(-0.4, 0.4), entre(-0.4, 0.4), 1.0])
+    lado = unit(resta([math.cos(a), math.sin(a), 0.0], por(d, punto([math.cos(a), math.sin(a), 0.0], d))))
+    tarjeta(p, d, lado, entre(1.0, 1.6), entre(1.0, 1.6), 12 + (i % 2), [1.0, 1.0, 1.0])
 
 # frutos colgando
 for i in range(24):
