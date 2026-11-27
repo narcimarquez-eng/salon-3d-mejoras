@@ -226,3 +226,12 @@ Mira el script más parecido antes de empezar uno nuevo:
   asoma entre la corteza). Corteza en tiras verticales: el fundido normal deja un corte horizontal
   al repetir; mezclarla con ella misma desplazada media altura (peso sin² que es 0 en el borde).
   Las vistas propias (`CAMARAS`) van en metros cuando el modelo mide 0,08–35 m (no se reescala).
+- **Eucalipto gigante a escala de una foto** (2026-11): la persona al pie da la escala (≈1,7 m →
+  árbol de 40 m, tronco de 3 m). Con más de 35 m la app reescala el modelo y las vistas en metros
+  (`CAMARAS`) dejan de valer: usa `RELATIVAS` (fracciones de la caja del modelo) en el script de
+  captura. Copa frondosa sin que parezca un bloque: mechones repartidos por la capa exterior de la
+  cúpula (espiral de Fibonacci) y huecos donde una suma de senos es baja; tarjetas de ramas de
+  pie más pequeñas (si no, hojas de 60 cm y parece una encina). En Python del motor no uses
+  `largo` como variable: tapa la función `largo()` de los ayudantes.
+- `pino/optimizar_glb.py` también une vértices repetidos con índices (el exportador deja cada
+  triángulo con sus 3 vértices): eucalipto 135.504 → 92.552 vértices, 7,0 → 5,5 MB.

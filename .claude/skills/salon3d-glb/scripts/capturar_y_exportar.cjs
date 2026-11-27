@@ -101,6 +101,17 @@ const URL = process.env.URL || 'http://127.0.0.1:5173/?visor-api=1';
     await vistaBoton('side', 'Vista Perfil');
     await vistaBoton('back', 'Vista Espalda');
   }
+  // Vistas relativas a la caja del modelo (sirven aunque la app reescale el modelo): cada número es la
+  // fracción de la caja en ese eje de la escena (x, y arriba, z hacia la cámara de frente; 0 = mínimo, 1 = máximo).
+  // RELATIVAS='[{"nombre":"abajo","pos":[1.3,0.04,1.4],"target":[0.5,0.45,0.5]}]'
+  for (const v of JSON.parse(process.env.RELATIVAS || '[]')) {
+    const caja = await page.evaluate(() => window.celshadeViewer.worldBox());
+    const enCaja = (f) => f.map((k, i) => caja.min[i] + k * (caja.max[i] - caja.min[i]));
+    await page.evaluate(([p, t]) => window.celshadeViewer.setCameraPose(p, t), [enCaja(v.pos), enCaja(v.target)]);
+    await page.mouse.move(1300, 120);
+    await page.waitForTimeout(2500);
+    await page.screenshot({ path: `${prefijo}_${v.nombre}.png` });
+  }
   // Vistas libres en coordenadas de la escena de la app: CAMARAS='[{"nombre":"abajo","pos":[x,y,z],"target":[x,y,z]}]'
   for (const v of JSON.parse(process.env.CAMARAS || '[]')) {
     await page.evaluate(([p, t]) => window.celshadeViewer.setCameraPose(p, t), [v.pos, v.target]);
